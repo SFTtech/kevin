@@ -1,0 +1,19 @@
+tamale:
+	- env: STUFF="hot hot"
+	echo "do you like tamale?"
+	sleep 1
+	echo "$STUFF tamale?"
+	sleep 2
+
+sudo:
+	- hidden
+	sudo echo "i got root!"
+	return $?
+
+cpuinfo: tamale sudo
+	echo awsum vm:
+	cat /proc/cpuinfo
+
+great_success: cpuinfo
+	echo "raus raus raus, die nyan-katze"
+	return 0
