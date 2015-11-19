@@ -28,13 +28,16 @@ class Job:
     used to ensure that this constraint is met.
     """
     def __init__(self, job_id):
-        if not job_id.isalnum() or not len(job_id) == 40:
+        if not (job_id.isalnum() or len(job_id) == 40):
             raise ValueError("bad commit SHA: " + repr(job_id))
         self.job_id = job_id
 
         # callbacks that are to be invoked for each job update during the
         # 'building' phase.
         self.watchers = set()
+
+        # gathered sources of this job.
+        self.sources = set()
 
         # URL where the repo containing this commit can be cloned from
         # during the 'building' phase.
@@ -55,10 +58,13 @@ class Job:
 
         # all commited output items
         self.output_items = set()
+
         # current uncommited output item
         self.current_output_item = None
+
         # current step name of the job
         self.current_step = None
+
         # remaining size limit
         self.remaining_output_size = CFG.max_output
 
@@ -68,7 +74,7 @@ class Job:
             # load update list from file
             with self.path.joinpath("_updates").open() as updates_file:
                 for json_line in updates_file:
-                    self.update(JobUpdate.construct(json_line))
+                    self.update(JobUpdate.construct(json_line), True)
         else:
             # make sure that there are no remains of previous aborted jobs.
             try:
@@ -86,9 +92,11 @@ class Job:
         Once the end of updates has come, there will be one last, fatal call,
         passing StopIteration.
         """
+
         with self.update_lock:
             self.watchers.add(watcher)
             # send all previous updates to the watcher
+
             for update in self.updates:
                 watcher.new_update(update)
 
@@ -100,7 +108,7 @@ class Job:
         with self.update_lock:
             self.watchers.remove(watcher)
 
-    def update(self, update):
+    def update(self, update, reconstructing=False):
         """
         Applies an update to self, broadcasts it, appends it to self.updates.
 
@@ -108,7 +116,18 @@ class Job:
         """
         with self.update_lock:
             print("\x1b[33mjob.update\x1b[m: " + repr(update))
-            if update != StopIteration:
+
+            store_update = True
+            if isinstance(update, JobUpdate):
+                if update in self.sources:
+                    store_update = False
+                else:
+                    self.sources.add(update)
+
+            if update == StopIteration:
+                store_update = False
+
+            if store_update:
                 # this automatically manages the pending_steps set.
                 update.apply_to(self)
                 self.updates.append(update)
@@ -116,20 +135,22 @@ class Job:
             for watcher in self.watchers:
                 watcher.new_update(update)
 
-            if self.completed and update != StopIteration:
-                # append this update to the updates file
-                with self.path.joinpath("_updates").open("a") as updates_file:
-                    updates_file.write(update.json() + "\n")
+            if not reconstructing:
+                if self.completed and update != StopIteration:
+                    # append this update to the updates file
+                    with self.path.joinpath("_updates").open("a") as ufile:
+                        ufile.write(update.json() + "\n")
 
     def build(self):
         """
         Attempts to build the job.
         """
-        # create the output directory structure
-        self.path.mkdir()
-        self.update(BuildState("pending", "booting VM"))
 
         try:
+            # create the output directory structure
+            self.path.mkdir()
+            self.update(BuildState("pending", "booting VM"))
+
             with Chantal() as chantal:
                 chantal.wait_for_ssh_port(timeout=30)
                 print("installing chantal via scp")
@@ -223,7 +244,7 @@ class Job:
         interprets them.
         Note: The data chunks are entirely untrusted.
         """
-        data = b""
+        data = bytearray()
         raw_file, raw_remaining = None, 0
         while True:
             if raw_file is not None:
@@ -239,12 +260,12 @@ class Job:
                 else:
                     raw_file.write(data)
                     raw_remaining -= len(data)
-                    data = b""
+                    data = bytearray()
                 continue
 
             # control stream is in regular JSON+'\n' mode
-            newline = data.find(b"\n")
-            if newline == -1:
+            newline = data.rfind(b"\n")
+            if not newline >= 0:
                 if len(data) > (8 * 1024 * 1024):
                     # chantal is trying to crash us with a >= 8MiB msg
                     raise ValueError("Control message too long")
@@ -252,73 +273,77 @@ class Job:
                 data += yield
                 continue
 
-            msg, data = data[:newline], data[newline + 1:]
-            msg = msg.decode()
-            print("control: " + msg)
-            msg = json.loads(msg)
+            msgs, data = bytes(data[:newline]), data[newline + 1:]
 
-            cmd = msg["cmd"]
+            for msg in msgs.split(b"\n"):
+                self.control_message(msg.decode().strip())
 
-            if cmd == 'build-state':
-                self.update(BuildState(msg["state"], msg["text"]))
+    def control_message(self, msg):
+        print("control: " + msg)
+        msg = json.loads(msg)
 
-            elif cmd == 'step-state':
-                self.current_step = msg["step"]
-                self.update(StepState(
-                    msg["step"],
-                    msg["state"],
-                    msg["text"]
-                ))
+        cmd = msg["cmd"]
 
-            elif cmd == 'output-item':
-                name = msg["name"]
+        if cmd == 'build-state':
+            self.update(BuildState(msg["state"], msg["text"]))
 
+        elif cmd == 'step-state':
+            self.current_step = msg["step"]
+            self.update(StepState(
+                msg["step"],
+                msg["state"],
+                msg["text"]
+            ))
+
+        elif cmd == 'output-item':
+            name = msg["name"]
+
+            if self.current_output_item is None:
+                raise ValueError("no data received for " + name)
+            if self.current_output_item.name != name:
+                raise ValueError(
+                    "wrong output item name: " + name + ", "
+                    "expected: " + self.current_output_item.name
+                )
+
+            self.update(self.current_output_item)
+            self.current_output_item = None
+
+        elif cmd in {'output-dir', 'output-file'}:
+            path = msg["path"]
+            if '/' in path:
                 if self.current_output_item is None:
-                    raise ValueError("no data received for " + name)
-                if self.current_output_item.name != name:
-                    raise ValueError(
-                        "wrong output item name: " + name + ", "
-                        "expected: " + self.current_output_item.name
-                    )
-
-                self.update(self.current_output_item)
-                self.current_output_item = None
-
-            elif cmd in {'output-dir', 'output-file'}:
-                path = msg["path"]
-                if '/' in path:
-                    if self.current_output_item is None:
-                        raise ValueError("no current output item")
-                    self.current_output_item.validate_path(path)
-                else:
-                    if self.current_output_item is not None:
-                        raise ValueError("an output item is already present")
-
-                    self.current_output_item = OutputItem(
-                        path,
-                        isdir=(cmd == 'output-dir')
-                    )
-
-                if cmd == 'output-file':
-                    # prevent attackers from using negative integers/floats
-                    size = abs(int(msg["size"]))
-                else:
-                    size = 0
-
-                # also account for metadata size
-                # (prevent DOSers from creating billions of empty files)
-                self.current_output_item.size += (size + 512)
-                if self.current_output_item.size > self.remaining_output_size:
-                    raise ValueError("output size limit exceeded")
-
-                pathobj = self.path.joinpath(path)
-                if pathobj.exists():
-                    raise ValueError("duplicate output path: " + path)
-
-                if cmd == 'output-file':
-                    raw_file, raw_remaining = pathobj.open('wb'), size
-                else:
-                    pathobj.mkdir()
-
+                    raise ValueError("no current output item")
+                self.current_output_item.validate_path(path)
             else:
-                raise ValueError("unknown build control command: " + repr(cmd))
+                if self.current_output_item is not None:
+                    raise ValueError("an output item is already present")
+
+                self.current_output_item = OutputItem(
+                    path,
+                    isdir=(cmd == 'output-dir')
+                )
+
+            if cmd == 'output-file':
+                # prevent attackers from using negative integers/floats
+                size = abs(int(msg["size"]))
+            else:
+                size = 0
+
+            # also account for metadata size
+            # (prevent DOSers from creating billions of empty files)
+            self.current_output_item.size += (size + 512)
+            if self.current_output_item.size > self.remaining_output_size:
+                raise ValueError("output size limit exceeded")
+
+            pathobj = self.path.joinpath(path)
+            if pathobj.exists():
+                raise ValueError("duplicate output path: " + path)
+
+            if cmd == 'output-file':
+                raw_file, raw_remaining = pathobj.open('wb'), size
+            else:
+                pathobj.mkdir()
+
+        else:
+            raise ValueError("unknown build control command: %r" % (cmd))

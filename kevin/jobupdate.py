@@ -1,8 +1,8 @@
 """ The various job update objects """
 
+import json
+import time as clock
 from abc import ABCMeta, abstractmethod
-from json import loads, dumps
-from time import time as get_time
 
 ALLOWED_BUILD_STATES = {"pending", "success", "failure", "error"}
 
@@ -45,22 +45,22 @@ class JobUpdate(metaclass=JobUpdateMeta):
         """
         result = self.dump()
         result['class'] = type(self).__name__
-        return dumps(result)
+        return json.dumps(result)
 
     def __repr__(self):
         return self.json()
 
     @staticmethod
-    def construct(json):
+    def construct(jsonmsg):
         """
         Constructs an JobUpdate object from a JSON-serialized string.
         The 'class' member is used to determine the subclass that shall be
         built, the rest is passed on to the constructor as kwargs.
         """
-        data = loads(json)
-        classname = json['class']
+        data = json.loads(jsonmsg)
+        classname = data['class']
         del data['class']
-        JOB_UPDATE_CLASSES[classname](**data)
+        return JOB_UPDATE_CLASSES[classname](**data)
 
 
 class JobSource(JobUpdate):
@@ -72,9 +72,6 @@ class JobSource(JobUpdate):
     buildable (we must know a clone_url).
     """
     def __init__(self, clone_url, repo_url, author, branch, comment):
-        if not clone_url.startswith('https://github.com/'):
-            raise ValueError("Bad clone URL: " + clone_url)
-
         self.clone_url = clone_url
         self.repo_url = repo_url
         self.author = author
@@ -102,9 +99,11 @@ class BuildState(JobUpdate):
         if not text.isprintable():
             raise ValueError("State.text not printable: " + repr(text))
         if time is None:
-            time = get_time()
-        elif not isinstance(time, int) or isinstance(time, float):
-            raise TypeError("State.time not a number: " + repr(time))
+            time = clock.time()
+        elif not (isinstance(time, int) or isinstance(time, float)):
+            raise TypeError("State.time not a number, is %s: %s" % (
+                type(time), repr(time)
+            ))
 
         self.state = state
         self.text = text
@@ -124,7 +123,7 @@ class StepState(JobUpdate):
         if not step_name.isidentifier():
             raise ValueError("StepState.step_name invalid: " + repr(step_name))
         if time is None:
-            time = get_time()
+            time = clock.time()
 
         self.step_name = step_name
         self.step_number = step_number

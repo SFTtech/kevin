@@ -28,7 +28,7 @@ def main():
 
     try:
         while True:
-            print("\x1b[32mwaiting for job.\x1b[m")
+            print("\x1b[32mWaiting for job...\x1b[m")
             current_job = httpd.get_job()
             current_job.build()
             jobs.put_in_cache(current_job)

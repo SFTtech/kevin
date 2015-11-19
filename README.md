@@ -44,7 +44,10 @@ You need a server for it.
 
 ##### Host system (Kevin)
 
- - Install `python >=3.4` and `tornado`
+ - Install
+  - `python >=3.4`
+  - `tornado`
+  - `requests`
  - Create user `kevin`
  - Add `kevin` to group `kvm`
  - TODO/optional: create firewall rules to prevent the VM from talking to internals of your network
