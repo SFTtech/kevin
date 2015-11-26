@@ -34,3 +34,20 @@ def get_hash(repo):
         return head_hash
 
     return repo_query(repo)
+
+
+def update_server_info(repo):
+    """
+    call `git update-server-info` in the given repo.
+    """
+
+    @asyncio.coroutine
+    def repo_update(repo):
+        print("updating http server info in '%s'..." % repo)
+        proc = yield from asyncio.create_subprocess_shell(
+            "cd %s && git update-server-info" % repo
+        )
+
+        yield from proc.wait()
+
+    return repo_update(repo)

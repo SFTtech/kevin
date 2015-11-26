@@ -151,7 +151,6 @@ class GitHubBuildStatusUpdater:
         ))
 
         try:
-            print("Pushing update to github...")
             reply = requests.post(self.statuses_update_url, data,
                                   auth=self.authtok)
         except requests.exceptions.ConnectionError as exc:

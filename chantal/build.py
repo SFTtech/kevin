@@ -24,25 +24,27 @@ def update_step_status(step, state, text):
     msg(cmd="step-state", step=step.name, state=state, text=text)
 
 
-def build_job(clone_url, commit_sha, desc_file):
+def build_job(args):
     """
     Main entry point for building a job.
     """
     msg(cmd="build-state", state="pending", text="cloning repo")
 
-    # TODO: allow shallow clone! cfgoption etc..
-    run_command("git clone " + shlex.quote(clone_url) + " repo")
+    shallow = ("--depth %d " % args.shallow) if args.shallow > 0 else ""
+
+    run_command("git clone " + shallow + shlex.quote(args.clone_url) +
+                " repo")
     os.chdir("repo")
-    run_command("git checkout -q " + commit_sha)
+    run_command("git checkout -q " + args.commit_sha)
 
     try:
-        with open(desc_file) as controlfile:
+        with open(args.desc_file) as controlfile:
             steps = parse_control_file(controlfile.read())
     except FileNotFoundError:
-        raise FatalBuildError("no kevin config file named "
-                              "'%s' was found" % (desc_file))
+        raise FatalBuildError(
+            "no kevin config file named '%s' was found" % (args.desc_file))
     except ParseError as exc:
-        raise FatalBuildError("%s:%d: %s" % (desc_file, exc.args[0],
+        raise FatalBuildError("%s:%d: %s" % (args.desc_file, exc.args[0],
                                              exc.args[1]))
 
     for step in steps:

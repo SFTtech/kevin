@@ -4,9 +4,9 @@ Program entry point
 
 import argparse
 
+from . import jobs
 from .config import CFG
 from .httpd import HTTPD
-from . import jobs
 
 
 def main():
@@ -14,7 +14,7 @@ def main():
     cmd = argparse.ArgumentParser(
         description="Kevin CI - the trashy continuous integration service")
 
-    cmd.add_argument("-c", "--config", default="/etc/kevin.conf",
+    cmd.add_argument("-c", "--config", default="/etc/kevin/kevin.conf",
                      help="file name of the configuration to use.")
 
     args = cmd.parse_args()

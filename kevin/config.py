@@ -17,12 +17,6 @@ class Config:
         self.job_timeout = None
         self.silence_timeout = None
 
-        self.vm_ssh_port = None
-        self.vm_base_image = None
-        self.vm_overlay_image = None
-        self.vm_image_username = None
-        self.vm_command = None
-
         self.github_authtok = None
         self.github_hooksecret = None
 
@@ -30,6 +24,8 @@ class Config:
         self.web_folder = None
         self.dyn_port = None
         self.dyn_url = None
+
+        self.falks = dict()
 
     def load(self, filename):
         """ Loads the attributes from the config file """
@@ -46,12 +42,6 @@ class Config:
             self.job_timeout = int(raw["kevin"]["job_timeout"])
             self.silence_timeout = int(raw["kevin"]["silence_timeout"])
 
-            self.vm_ssh_port = int(raw["chantal"]["ssh_port"])
-            self.vm_base_image = pathlib.Path(raw["chantal"]["base_image"])
-            self.vm_overlay_image = pathlib.Path(raw["chantal"]["tmp_image"])
-            self.vm_image_username = raw["chantal"]["image_username"]
-            self.vm_command = raw["chantal"]["command"]
-
             self.github_authtok = raw["github"]["user"], raw["github"]["token"]
             self.github_hooksecret = raw["github"]["hooksecret"].encode()
 
@@ -59,6 +49,32 @@ class Config:
             self.web_folder = pathlib.Path(raw["web"]["folder"])
             self.dyn_port = int(raw["web"]["dyn_port"])
             self.dyn_url = raw["web"]["dyn_url"]
+
+            falk_entries = raw["falk"]
+            for name, url in falk_entries.items():
+                if name in self.falks:
+                    raise ValueError("Falk double-defined: %s" % name)
+
+                try:
+                    user, target = url.split("@")
+                except ValueError:
+                    raise ValueError("%s=user@target malformed" % name)
+
+                if ":" in target:
+                    # ssh connection
+                    host, port = target.split(":")
+                    location = (host, port)
+                    connection = "ssh"
+                else:
+                    # unix socket
+                    location = target
+                    connection = "unix"
+
+                self.falks[name] = dict(
+                    user=user,
+                    connection=connection,
+                    location=location,
+                )
 
         except KeyError as exc:
             print("\x1b[31mConfig file is missing entry: %s\x1b[m" % (exc))
@@ -68,10 +84,6 @@ class Config:
 
     def verify(self):
         """ Verifies the validity of the loaded attributes """
-        if not self.vm_base_image.is_file():
-            raise FileNotFoundError("base image: " + str(self.vm_base_image))
-        if self.vm_overlay_image == self.vm_base_image:
-            raise ValueError("overlay image can't be the same as base image")
         if not self.web_url.endswith('/'):
             raise ValueError("web URL must end in '/'")
         if not self.web_folder.is_dir():

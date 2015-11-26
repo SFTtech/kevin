@@ -1,0 +1,12 @@
+[Unit]
+Description=Falk VM provider for Kevin
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m falk
+Restart=on-abnormal
+RestartForceExitStatus=SIGSEGV SEGV SIGILL SIGKILL
+
+[Install]
+WantedBy=multi-user.target

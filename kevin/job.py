@@ -3,13 +3,18 @@ Job processing code
 """
 
 import json
+import os
+from pathlib import Path
 import shutil
 from threading import Lock
 import traceback
 
 from .chantal import Chantal
 from .config import CFG
-from .util import coroutine, ProcTimeoutError
+from .falk import FalkSSH, FalkSocket
+from falk.control import VMError
+from .process import ProcTimeoutError
+from .util import coroutine
 from .jobupdate import JobUpdate, BuildState, StepState, StdOut, OutputItem
 
 
@@ -44,7 +49,7 @@ class Job:
         self.clone_url = None
 
         # List of job status update JSON objects.
-        self.updates = []
+        self.updates = list()
         self.update_lock = Lock()
 
         self.path = CFG.web_folder.joinpath(self.job_id)
@@ -82,6 +87,39 @@ class Job:
             except FileNotFoundError:
                 pass
 
+    def get_falk(self, name):
+        """
+        return a suitable falk instance.
+
+        currently this just filters by name.
+        """
+
+        for falkname, falkcfg in CFG.falks.items():
+
+            # TODO: selection if this falk is suitable, e.g. has machine
+            #       for this job. either via cache or direct query.
+
+            if falkname != name:
+                continue
+
+            if falkcfg["connection"] == "ssh":
+                host, port = falkcfg["location"]
+                return FalkSSH(self, host, port, falkcfg["user"])
+
+            elif falkcfg["connection"] == "unix":
+                return FalkSocket(self, falkcfg["location"], falkcfg["user"])
+
+            else:
+                raise Exception("unknown falk connection type: %s -> %s" % (
+                    falkname, falkcfg["connection"]))
+
+    def get_vm(self, falk):
+        """
+        Return a machine id that will be acquired for the build.
+        """
+        # TODO: select the vm the given falk can provide and suits this job.
+        return "debian0"
+
     def watch(self, watcher):
         """
         Registers a watcher object.
@@ -115,17 +153,18 @@ class Job:
         The argument shall be a JobUpdate object.
         """
         with self.update_lock:
-            print("\x1b[33mjob.update\x1b[m: " + repr(update))
-
             store_update = True
+
+            if update == StopIteration:
+                store_update = False
+            else:
+                print("\x1b[33mjob.update\x1b[m: " + repr(update))
+
             if isinstance(update, JobUpdate):
                 if update in self.sources:
                     store_update = False
                 else:
                     self.sources.add(update)
-
-            if update == StopIteration:
-                store_update = False
 
             if store_update:
                 # this automatically manages the pending_steps set.
@@ -149,14 +188,30 @@ class Job:
         try:
             # create the output directory structure
             self.path.mkdir()
+
+            # TODO: allow falk bypass by launching VM locally!
+
+            # falk contact
+            self.update(BuildState("pending", "requesting VM"))
+
+            # TODO: falk selection
+            falk = self.get_falk("falk0")
+            vm = falk.create_vm(self.get_vm(falk))
+
+            # TODO: run job on multiple VMs.
+            # insert for loop for all VMs that should be run for
+            # that job. the ones to use are defined in the project
+            # associated with the job.
+
+            # vm was acquired, now boot it.
             self.update(BuildState("pending", "booting VM"))
 
-            with Chantal() as chantal:
+            with Chantal(vm) as chantal:
                 chantal.wait_for_ssh_port(timeout=30)
                 print("installing chantal via scp")
 
-                # TODO: location detection
-                chantal.upload("/home/kevin/kevin/chantal")
+                kevindir = Path(__file__)
+                chantal.upload(kevindir.parent.parent / "chantal")
 
                 print("running chantal via ssh")
                 chantal_output = chantal.run_command(
@@ -205,11 +260,20 @@ class Job:
                     # bad step is unknown:
                     self.error("Silence for > %.2fs!" % (CFG.silence_timeout))
 
+        except VMError as exc:
+            print("\x1b[31;1mMachine action failed\x1b[m", end=" ")
+            print("[\x1b[33m" + self.job_id + "\x1b[m]")
+            self.error("VM Error: " + repr(exc))
+
         except BaseException as exc:
             print("\x1b[31;1mexception in Job.build()\x1b[m", end=" ")
             print("[\x1b[33m" + self.job_id + "\x1b[m]")
             traceback.print_exc()
-            self.error("Job.build(): " + repr(exc))
+            try:
+                self.error("Job.build(): " + repr(exc))
+            except BaseException as exc:
+                print("\x1b[31;1mfailed to notify service about error\x1b[m")
+                traceback.print_exc()
 
         finally:
             for step in self.pending_steps:

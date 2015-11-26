@@ -2,6 +2,7 @@
 CLI entry point for chantal.
 """
 
+import argparse
 import sys
 import traceback
 
@@ -23,11 +24,16 @@ def main():
     msg.MSG_CHANNEL = wrap_in_pty()
 
     try:
-        if len(sys.argv) != 4:
-            raise ValueError("usage: chantal clone_url commit_sha cfgfile_name")
-        clone_url, commit_sha, desc_file = sys.argv[1:]
+        cmd = argparse.ArgumentParser()
+        cmd.add_argument("clone_url")
+        cmd.add_argument("commit_sha")
+        cmd.add_argument("desc_file")
+        cmd.add_argument("--shallow", type=int, default=0)
 
-        build_job(clone_url, commit_sha, desc_file)
+        args = cmd.parse_args()
+
+        build_job(args)
+
     except FatalBuildError as exc:
         msg.msg(
             cmd="build-state",

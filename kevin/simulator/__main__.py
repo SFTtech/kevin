@@ -26,8 +26,15 @@ def main():
     cmd.add_argument("config_file", help="config file of to-be-tested kevin")
     cmd.add_argument("-p", "--port", type=int, default=8423,
                      help="port to run the simulation on")
-    cmd.add_argument("-l", "--listen", default="::1",
+    cmd.add_argument("-l", "--listen", default="127.0.0.1",
                      help="address to listen on for requests")
+    cmd.add_argument("--local-repo", action="store_true",
+                     help=("serve a filesystem-local repo via http. "
+                           "beware: provide the .git of that repo! "
+                           "`git update-server-info` is called on that!"))
+    cmd.add_argument("--local-repo-address", default="10.0.2.2",
+                     help=("the vm can reach this simulator "
+                           "under the given address."))
 
     args = cmd.parse_args()
 

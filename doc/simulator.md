@@ -12,7 +12,13 @@ Example for letting `some-repo` been built by the kevin currently running with
 the given config file:
 
 ```
-python -m kevin.simulator github ~/devel/some-repo/ /some/kevin.conf
+python -m kevin.simulator github http://github.com/SFTtech/openage /some/kevin.conf
+```
+
+Alternatively, for a local repo on your machine:
+
+```
+python -m kevin.simulator --local-repo github ~/devel/some-repo/.git /some/kevin.conf
 ```
 
 

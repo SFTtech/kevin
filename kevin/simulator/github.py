@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import pathlib
 import requests
 import traceback
 
@@ -26,7 +27,9 @@ class GitHub(service.Service):
     def __init__(self, args):
         super().__init__(args)
 
+        # url where to push updates to.
         self.status_handler = "/statusupdate"
+        self.repo_handler = "/repo"
 
     def run(self):
         """
@@ -38,10 +41,29 @@ class GitHub(service.Service):
         print("Creating simulated server...")
 
         # create server
-        self.app = web.Application([
+        handlers = [
             (self.status_handler, UpdateHandler, dict(config=self.cfg)),
-        ])
+        ]
 
+        # add http server to serve a local repo to qemu
+        if self.local_repo and pathlib.Path(self.repo).is_dir():
+            print("Serving '%s' on 'http://%s:%d%s/'" % (
+                self.repo,
+                self.listen,
+                self.port,
+                self.repo_handler
+            ))
+
+            handlers.append(
+                (r"%s/(.*)" % self.repo_handler,
+                 web.StaticFileHandler, dict(path=self.repo))
+            )
+            self.repo_vm = "http://%s:%d%s" % (self.local_repo_address,
+                                               self.port,
+                                               self.repo_handler)
+
+        self.app = web.Application(handlers)
+        print("listening on port %s:%d" % (self.listen, self.port))
         self.app.listen(self.port, address=str(self.listen))
 
         # submit web hook
@@ -66,15 +88,22 @@ class GitHub(service.Service):
 
         if isinstance(self.listen, ipaddress.IPv6Address):
             ip = "[%s]" % (self.listen)
+        else:
+            ip = str(self.listen)
 
         status_url = "http://%s:%d%s" % (ip, self.port, self.status_handler)
         head_commit = yield from util.get_hash(self.repo)
+
+        if self.repo_vm:
+            yield from util.update_server_info(self.repo)
+
+        repo = self.repo_vm or self.repo
 
         pull_req = {
             "pull_request": {
                 "head": {
                     "repo": {
-                        "clone_url": self.repo,
+                        "clone_url": repo,
                     },
                     "sha": head_commit,
                 },
@@ -92,7 +121,7 @@ class GitHub(service.Service):
         def submit_post():
             try:
                 return requests.post(
-                    url=self.cfg.dyn_url + "hook",
+                    url=self.cfg.dyn_url + "hook-github",
                     data=payload,
                     headers=headers,
                     timeout=5.0,
@@ -121,7 +150,8 @@ class UpdateHandler(web.RequestHandler):
         self.finish()
 
     def post(self):
-        print("\x1b[34mUpdate from %s\x1b[m" % self.request.remote_ip)
+        print("\x1b[34mUpdate from %s:\x1b[m" % self.request.remote_ip,
+              end=" ")
         blob = self.request.body
         try:
             auth_header = self.request.headers.get('Authorization').encode()
@@ -161,4 +191,12 @@ class UpdateHandler(web.RequestHandler):
         self.finish()
 
     def handle_update(self, data):
-        print("got update: %s" % data)
+        """
+        Process a received update and present it in a shiny way graphically.
+        Ensures maximum readability by dynamically formatting the text in
+        a responsive way, that is even available on mobile devices.
+
+        This output is plattform-independent, it may even work on windows.
+        TODO: write testcases
+        """
+        print("%s" % data)

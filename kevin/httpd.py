@@ -3,11 +3,9 @@ Web server to receive WebHook notifications from GitHub,
 and provide them in a job queue.
 """
 
-import json
 from tornado import websocket, web, ioloop, queues, gen
 from threading import Thread
 import queue
-import requests
 
 from .config import CFG
 from . import jobs
@@ -21,14 +19,14 @@ class HTTPD(Thread):
     notifications to provide new jobs via the blocking get_job(),
     and offers job information via websocket and plain streams.
 
-    TODO: service switch to support other than github.
+    Further git services can be added by adding a new hook url.
     """
     def __init__(self):
         super().__init__()
         self.app = web.Application([
             ('/', PlainStreamHandler),
             ('/ws', WebSocketHandler),
-            ('/hook', github.HookHandler)
+            ('/hook-github', github.HookHandler)
         ])
 
         self.app.job_queue = queue.Queue(maxsize=CFG.max_jobs_queued)
@@ -60,6 +58,9 @@ class WebSocketHandler(websocket.WebSocketHandler):
     def on_close(self):
         if self.job is not None:
             self.job.unwatch(self)
+
+    def on_message(self, message):
+        pass
 
     def new_update(self, msg):
         """
