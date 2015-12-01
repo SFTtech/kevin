@@ -16,18 +16,20 @@ class Config:
         self.machines = dict()
 
     def load(self, filename, shell=False):
-        raw = ConfigParser()
-        raw.read(filename)
+        cfg = ConfigParser()
+        cfg.read(filename)
 
         try:
-            self.name = raw["falk"]["name"]
-            self.control_socket = raw["falk"]["control_socket"]
+            falkcfg = cfg["falk"]
+
+            self.name = falkcfg["name"]
+            self.control_socket = falkcfg["control_socket"]
 
             self.control_socket_permissions = (
-                raw["falk"].get("control_socket_permissions"))
+                falkcfg.get("control_socket_permissions"))
 
             self.control_socket_group = (
-                raw["falk"].get("control_socket_group"))
+                falkcfg.get("control_socket_group"))
 
             # config ideas:
             # max parallel vms, memory usage checking
@@ -37,12 +39,12 @@ class Config:
             exit(1)
 
         if not shell:
-            self.load_machines(raw)
+            self.load_machines(cfg)
 
         self.verify()
 
-    def load_machines(self, raw):
-        for machinename, machinecfg in raw.items():
+    def load_machines(self, cfg):
+        for machinename, machinecfg in cfg.items():
             if machinename in ("falk", "DEFAULT"):
                 # is for the main config above.
                 continue

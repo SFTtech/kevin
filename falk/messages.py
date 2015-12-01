@@ -57,16 +57,21 @@ class Message(metaclass=MessageMeta):
     requested mode -> When sending a message, do send(message.pack(mode))
     """
 
+    # member export blacklist to prevent members from being dump()ed
+    BLACKLIST = set()
+
     def __init__(self):
         pass
 
-    @abstractmethod
     def dump(self):
         """
-        Shall dump the members as a dict.
+        Dump members as a dict, except those in BLACKLIST.
         The dict shall be suitable for feeding back into __init__ as kwargs.
         """
-        raise NotImplementedError()
+        return {
+            k: v for k, v in self.__dict__.items()
+            if k not in self.BLACKLIST
+        }
 
     def pack(self, mode=ProtoType.json):
         """
@@ -89,16 +94,14 @@ class Message(metaclass=MessageMeta):
         """
         return cls.__name__.lower()
 
-    def json(self, encode=True):
+    def json(self):
         """
         Returns a JSON-serialized string of self (via self.dump()).
         This string will be broadcast via WebSocket and saved to disk.
         """
         result = self.dump()
         result['class'] = type(self).__name__
-        ret = json.dumps(result)
-        if encode:
-            ret = ret.encode()
+        ret = json.dumps(result).encode()
         return ret
 
     def shelldump(self):
@@ -109,8 +112,7 @@ class Message(metaclass=MessageMeta):
         ret = [self.cmd()]
 
         for key, val in self.dump().items():
-            if " " in str(val):
-                val = "'%s'" % val
+            val = shlex.quote(str(val))
             ret.append("%s=%s" % (key, val))
 
         return " ".join(ret)
@@ -145,11 +147,11 @@ class Message(metaclass=MessageMeta):
                 raise ValueError("unknown message type '%s'" % classname)
 
         elif mode == ProtoType.text:
-            argv = list()
-            argvk = dict()
+            argv = []
+            argvk = {}
 
             params = shlex.split(msg)
-            if not len(params) > 0:
+            if not params:
                 raise ValueError("no command given.")
 
             # first word determines the message class
@@ -207,9 +209,6 @@ class Request(Message):
     def __init__(self):
         pass
 
-    def dump(self):
-        return dict()
-
     @classmethod
     def parse_args(cls, argv, argvk):
         return cls()
@@ -221,11 +220,6 @@ class RequestID(Message):
     """
     def __init__(self, run_id=None):
         self.run_id = int(run_id) if run_id is not None else None
-
-    def dump(self):
-        return dict(
-            run_id=self.run_id,
-        )
 
     @classmethod
     def parse_args(cls, argv, argvk):
@@ -249,11 +243,6 @@ class Version(Message):
     def __init__(self, version):
         self.version = int(version)
 
-    def dump(self):
-        return dict(
-            version=self.version,
-        )
-
 
 class Mode(Message):
     """
@@ -263,11 +252,6 @@ class Mode(Message):
     def __init__(self, mode):
         self.check_mode(mode)
         self.mode = mode
-
-    def dump(self):
-        return dict(
-            mode=self.mode,
-        )
 
     @staticmethod
     def check_mode(mode):
@@ -294,11 +278,6 @@ class Error(Message):
     def __init__(self, msg=""):
         self.msg = msg
 
-    def dump(self):
-        return dict(
-            msg=self.msg,
-        )
-
     @classmethod
     def parse_args(cls, argv, argvk):
         try:
@@ -318,11 +297,6 @@ class OK(Message):
 
     def __init__(self, msg=""):
         self.msg = msg
-
-    def dump(self):
-        return dict(
-            msg=self.msg,
-        )
 
     @classmethod
     def parse_args(cls, argv, argvk):
@@ -344,12 +318,6 @@ class Login(Message):
         self.name = name
         self.source = source
 
-    def dump(self):
-        return dict(
-            name=self.name,
-            source=self.source,
-        )
-
     @classmethod
     def parse_args(cls, argv, argvk):
         try:
@@ -370,12 +338,6 @@ class Welcome(Message):
     def __init__(self, msg, name):
         self.msg = msg
         self.name = name
-
-    def dump(self):
-        return dict(
-            msg=self.msg,
-            name=self.name,
-        )
 
     @classmethod
     def parse_args(cls, argv, argvk):
@@ -439,11 +401,6 @@ class MachineList(Message):
     def __init__(self, machines):
         self.machines = dict(machines)
 
-    def dump(self):
-        return dict(
-            machines=self.machines,
-        )
-
 
 class Select(Message):
     """
@@ -452,11 +409,6 @@ class Select(Message):
     """
     def __init__(self, name):
         self.name = name
-
-    def dump(self):
-        return dict(
-            name=self.name,
-        )
 
     @classmethod
     def parse_args(cls, argv, argvk):
@@ -476,11 +428,6 @@ class RunID(Message):
     def __init__(self, run_id):
         self.run_id = int(run_id)
 
-    def dump(self):
-        return dict(
-            run_id=self.run_id,
-        )
-
 
 class Prepare(Message):
     """
@@ -492,18 +439,13 @@ class Prepare(Message):
         self.run_id = int(run_id) if run_id is not None else None
         self.manage = manage
 
-    def dump(self):
-        return dict(
-            run_id=self.run_id,
-            manage=self.manage,
-        )
-
     @classmethod
     def parse_args(cls, argv, argvk):
         try:
             run_id = argvk.get("run_id") or\
-                         (len(argv) >= 1 and argv[0]) or\
-                         None
+                     (len(argv) >= 1 and argv[0]) or\
+                     None
+
             if run_id is not None:
                 run_id = int(run_id)
 
@@ -550,15 +492,6 @@ class VMStatus(Message):
         self.ssh_host = ssh_host
         self.ssh_port = int(ssh_port)
 
-    def dump(self):
-        return dict(
-            run_id=self.run_id,
-            running=self.running,
-            ssh_user=self.ssh_user,
-            ssh_host=self.ssh_host,
-            ssh_port=self.ssh_port,
-        )
-
 
 class Terminate(RequestID):
     """
@@ -572,6 +505,7 @@ class Cleanup(RequestID):
     Remove leftover files from the VM run, e.g. the the temporary disk image.
     """
     pass
+
 
 class Exit(Request):
     """

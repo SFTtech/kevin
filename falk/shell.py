@@ -154,7 +154,7 @@ def main():
                     if mask & selectors.EVENT_WRITE:
                         buf = event.data
                         pipe = event.fileobj
-                        if len(buf) == 0:
+                        if not buf:
                             # no more data to send, dequeue send.
                             del_writer(pipe)
                             break
