@@ -32,8 +32,7 @@ def build_job(args):
 
     shallow = ("--depth %d " % args.shallow) if args.shallow > 0 else ""
 
-    run_command("git clone " + shallow + shlex.quote(args.clone_url) +
-                " repo")
+    run_command("git clone " + shallow + shlex.quote(args.clone_url) + " repo")
     os.chdir("repo")
     run_command("git checkout -q " + args.commit_sha)
 
@@ -133,7 +132,7 @@ def output_file(path, targetpath):
                 data = '\0' * chunksize
 
             raw_msg(data)
-            remaining -= len(remaining)
+            remaining -= len(data)
 
 
 def output_dir(path, targetpath):

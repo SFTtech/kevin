@@ -14,10 +14,8 @@ def run_command(cmd, env=None):
 
     If a dict is given for env, those additional environment variables are
     passed.
-
-    If use_pts == True, the command is run in its own pty,
-    such that isatty() == 1. It's also passed through sh -c then.
     """
+
     print("\x1b[32;1m$\x1b[m " + cmd)
 
     cmdenv = os.environ.copy()
