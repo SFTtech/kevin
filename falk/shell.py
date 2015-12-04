@@ -128,7 +128,6 @@ def main():
     add_writer(write_pipes[Buf.inbuf], inbuf, Buf.inbuf)
 
     # process events
-    # TODO: connection close detection/relay
     while len(sel.get_map().keys()) > 0:
         events = sel.select()
         for event, mask in events:
@@ -142,8 +141,11 @@ def main():
                         free = max_size - len(buf)
 
                         data = os.read(event.fd, min(16384, free))
-                        if not data:  # end of file
+                        if not data:  # end of file, cya!
                             sel.unregister(event.fileobj)
+
+                            # one of the streams closed, let's exit
+                            exit()
                             break
 
                         buf.extend(data)
