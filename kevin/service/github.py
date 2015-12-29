@@ -33,13 +33,15 @@ class HookHandler(service.HookHandler):
         blob = self.request.body
         try:
             # verify signature
-            signature = hmac.new(CFG.github_hooksecret, blob, sha1)
-            signature = 'sha1=' + signature.hexdigest()
-            if self.request.headers["X-Hub-Signature"] != signature:
+            goodsig = hmac.new(CFG.github_hooksecret, blob, sha1)
+            goodsig = 'sha1=' + goodsig.hexdigest()
+            msgsig = self.request.headers["X-Hub-Signature"]
+
+            if not hmac.compare_digest(msgsig, goodsig):
                 raise ValueError(
                     "signature invalid",
-                    self.request.headers["X-Hub-Signature"],
-                    signature
+                    msgsig,
+                    goodsig
                 )
             self.handle_json_blob(blob)
 
