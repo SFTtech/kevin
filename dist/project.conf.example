@@ -1,0 +1,16 @@
+[project]
+# general project configuration
+name = murrica-freedom-simulator-9001
+job_max_output = 500MiB
+job_timeout = 10m
+job_silence_timeout = 5min
+job_desc_file = .kevin
+
+
+[github_webhook]
+hooksecret = roflsharedsecret
+repos = yourmom/repo, yourdad/somerepo
+
+[github_status]
+user = yourmom
+token = tokentokentokenbaby

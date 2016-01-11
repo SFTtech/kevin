@@ -3,5 +3,7 @@ __pycache__
 *.pyo
 ~*
 .*.swp
+\#*
+.#*
 kevin.conf
 falk.conf

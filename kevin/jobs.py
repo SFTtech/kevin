@@ -16,7 +16,7 @@ COMPLETED_JOB_CACHE = dict()
 JOB_LOCK = Lock()
 
 
-def get(job_id, create_new=True):
+def get(job_id, project=None, create_new=True):
     """
     Searches for an existing job with the given id,
     and returns a tuple of (job, newly_created).
@@ -25,7 +25,7 @@ def get(job_id, create_new=True):
     with JOB_LOCK:
         job = JOBS.get(job_id) or COMPLETED_JOB_CACHE.get(job_id)
         if job is None:
-            job = Job(job_id)
+            job = Job(job_id, project)
             if job.completed:
                 COMPLETED_JOB_CACHE[job_id] = job
             elif create_new:
@@ -41,7 +41,7 @@ def get_existing(job_id):
     """
     Like get(), but raises ValueError instead of creating a new job.
     """
-    job, _ = get(job_id, False)
+    job, _ = get(job_id, None, False)
     if job is None:
         raise ValueError("no such job: " + job_id)
     return job

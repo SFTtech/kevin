@@ -6,9 +6,9 @@ import socket
 
 from .process import Process
 
-from falk.control import VM
+from falk.control import VM, VMError
 from falk.messages import (Message, ProtoType, Mode, Version, List,
-                           Select, Status, OK, Login, Welcome)
+                           Select, Status, OK, Login, Welcome, Error)
 from falk.protocol import FalkProto, VERSION
 from falk.vm import ContainerConfig
 
@@ -74,7 +74,7 @@ class Falk:
         if cfg["ssh_host"] == "localhost":
             cfg["ssh_host"] = self.get_vm_host()
 
-        config = ContainerConfig(name, cfg, keep_port=True)
+        config = ContainerConfig(name, cfg)
         return VM(config, run_id, self)
 
     def query(self, msg=None):
@@ -82,6 +82,8 @@ class Falk:
         answers = self.send(msg, self.proto_mode)
         ret = None
         for answer in answers:
+            if isinstance(answer, Error):
+                raise RuntimeError("error: %s" % answer)
             if not ret:
                 ret = answer
                 continue
@@ -126,8 +128,8 @@ class FalkSSH(Falk):
         # connect to the actual falk host
         self.connection = Process([
             "ssh",
-            self.ssh_user + "@" + self.ssh_host,
             "-p", str(self.ssh_port),
+            self.ssh_user + "@" + self.ssh_host,
         ])
 
         self.init()
@@ -173,8 +175,8 @@ class FalkSocket(Falk):
             self.sock.connect(self.path)
         except FileNotFoundError:
             raise FileNotFoundError(
-                "falk socket not found: '%s' missing" % self.path)\
-                from None
+                "falk socket not found: "
+                "'%s' missing" % self.path) from None
 
         # send login message
         msg = Login(self.user, self.path)

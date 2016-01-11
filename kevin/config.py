@@ -2,9 +2,13 @@
 Code for loading and parsing config options.
 """
 
+from collections import defaultdict
 from configparser import ConfigParser
 import os
 import pathlib
+
+from .project import Project
+from .service import HookTrigger
 
 
 class Config:
@@ -12,19 +16,13 @@ class Config:
     def __init__(self):
         self.ci_name = None
         self.max_jobs_queued = None
-        self.job_desc_file = None
-        self.max_output = None
-        self.job_timeout = None
-        self.silence_timeout = None
-
-        self.github_authtok = None
-        self.github_hooksecret = None
 
         self.web_url = None
         self.web_folder = None
         self.dyn_port = None
         self.dyn_url = None
 
+        self.projects = dict()
         self.falks = dict()
 
     def load(self, filename):
@@ -33,23 +31,71 @@ class Config:
         raw.read(filename)
 
         try:
-            self.ci_name = raw["kevin"]["name"]
-            self.max_jobs_queued = int(raw["kevin"]["max_jobs_queued"])
-            self.job_desc_file = raw["kevin"]["desc_file"]
+            cfglocation = pathlib.Path(filename).parent
 
-            # TODO: size suffixes like M, G, T
-            self.max_output = int(raw["kevin"]["max_output"])
-            self.job_timeout = int(raw["kevin"]["job_timeout"])
-            self.silence_timeout = int(raw["kevin"]["silence_timeout"])
+            # main config
+            kevin = raw["kevin"]
+            self.ci_name = kevin["name"]
+            self.max_jobs_queued = int(kevin["max_jobs_queued"])
 
-            self.github_authtok = raw["github"]["user"], raw["github"]["token"]
-            self.github_hooksecret = raw["github"]["hooksecret"].encode()
+            # project configurations.
+            projects = raw["projects"]
 
-            self.web_url = raw["web"]["url"]
-            self.web_folder = pathlib.Path(raw["web"]["folder"])
-            self.dyn_port = int(raw["web"]["dyn_port"])
-            self.dyn_url = raw["web"]["dyn_url"]
+            # for each project, there's a projname.conf in that folder
+            projfolder = pathlib.Path(projects["config_folder"])
+            if not projfolder.is_absolute():
+                projfolder = cfglocation / projfolder
 
+            if not projfolder.is_dir():
+                raise NotADirectoryError(str(proj_folder))
+
+            self.project_folder = projfolder
+
+            # TODO: maybe explicitly require file paths to be listed
+            #       instead of iterating through all present files.
+            for projectfile in self.project_folder.iterdir():
+                if not str(projectfile).endswith(".conf"):
+                    print("ignoring non .conf file '%s'" % projectfile)
+                    continue
+
+                # create the project
+                newproj = Project(str(projectfile))
+                if newproj.name in self.projects:
+                    raise NameError("Project '%s' defined twice!" % (
+                        newproj.name))
+
+                self.projects[newproj.name] = newproj
+
+            # for all projects, now merge their configurations.
+
+            # gather triggers to be installed.
+            # TODO: relocate to service.py?
+            # (handlerurl, handlerclass) -> {triggers: [cfg, cfg, ...]}
+            self.urlhandlers = defaultdict(lambda: defaultdict(list))
+            for name, project in self.projects.items():
+                # for each handler type (e.g. github webhook),
+                # collect all the configs
+                for trigger in project.triggers:
+                    if isinstance(trigger, HookTrigger):
+                        # fetch the tornado request handler
+                        handlerkwargs = self.urlhandlers[trigger.get_handler()]
+
+                        # and add the config to it.
+                        handlerkwargs["triggers"].append(trigger)
+                    else:
+                        raise Exception("unknown trigger type %s" % trigger)
+
+            # web configuration
+            web = raw["web"]
+            self.web_url = web["url"]
+            self.web_folder = pathlib.Path(web["folder"])
+            self.dyn_port = int(web["dyn_port"])
+            self.dyn_url = web["dyn_url"]
+
+            if not self.web_folder.is_absolute():
+                self.web_folder = cfglocation / self.web_folder
+
+            # vm providers
             falk_entries = raw["falk"]
             for name, url in falk_entries.items():
                 if name in self.falks:
@@ -70,11 +116,11 @@ class Config:
                     location = target
                     connection = "unix"
 
-                self.falks[name] = dict(
-                    user=user,
-                    connection=connection,
-                    location=location,
-                )
+                self.falks[name] = {
+                    "user": user,
+                    "connection": connection,
+                    "location": location,
+                }
 
         except KeyError as exc:
             print("\x1b[31mConfig file is missing entry: %s\x1b[m" % (exc))
@@ -83,9 +129,11 @@ class Config:
         self.verify()
 
     def verify(self):
-        """ Verifies the validity of the loaded attributes """
+        """
+        Verifies the validity of the loaded attributes
+        """
         if not self.web_url.endswith('/'):
-            raise ValueError("web URL must end in '/'")
+            raise ValueError("web URL must end in '/': '%s'" % self.web_url)
         if not self.web_folder.is_dir():
             raise NotADirectoryError(str(self.web_folder))
         if not os.access(str(self.web_folder), os.W_OK):
@@ -93,5 +141,10 @@ class Config:
         if not self.dyn_url.endswith('/'):
             raise ValueError("public status URL must end in '/'")
 
+    def project_postprocess(self):
+        """
+        Postprocessing for all the project triggers/actions.
+        """
 
+# global config instance for the running kevin.
 CFG = Config()

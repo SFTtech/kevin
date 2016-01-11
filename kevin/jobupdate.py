@@ -21,13 +21,18 @@ class JobUpdate(metaclass=JobUpdateMeta):
     Abstract base class for all JSON-serializable JobUpdate objects.
     __init__() should simply set the update's member variables.
     """
-    @abstractmethod
+
+    BLACKLIST = set()
+
     def dump(self):
         """
-        Shall dump the members as a dict.
+        Dump members as a dict, except those in BLACKLIST.
         The dict shall be suitable for feeding back into __init__ as kwargs.
         """
-        pass
+        return {
+            k: v for k, v in self.__dict__.items()
+            if k not in self.BLACKLIST
+        }
 
     def apply_to(self, job):
         """
@@ -78,15 +83,6 @@ class JobSource(JobUpdate):
         self.branch = branch
         self.comment = comment
 
-    def dump(self):
-        return dict(
-            clone_url=self.clone_url,
-            repo_url=self.repo_url,
-            author=self.author,
-            branch=self.branch,
-            comment=self.comment
-        )
-
     def apply_to(self, job):
         job.clone_url = self.clone_url
 
@@ -109,16 +105,13 @@ class BuildState(JobUpdate):
         self.text = text
         self.time = time
 
-    def dump(self):
-        return dict(
-            state=self.state,
-            text=self.text,
-            time=self.time
-        )
-
 
 class StepState(JobUpdate):
     """ Step build state change """
+
+    # don't dump these
+    BLACKLIST = {"step_number"}
+
     def __init__(self, step_name, state, text, time=None, step_number=None):
         if not step_name.isidentifier():
             raise ValueError("StepState.step_name invalid: " + repr(step_name))
@@ -130,14 +123,6 @@ class StepState(JobUpdate):
         self.state = state
         self.text = text
         self.time = time
-
-    def dump(self):
-        return dict(
-            step_name=self.step_name,
-            state=self.state,
-            text=self.text,
-            time=self.time
-        )
 
     def apply_to(self, job):
         if self.state == "pending":
@@ -182,13 +167,6 @@ class OutputItem(JobUpdate):
             if component in {'.', '..'}:
                 raise ValueError("invalid component name(s): " + path)
 
-    def dump(self):
-        return dict(
-            name=self.name,
-            isdir=self.isdir,
-            size=self.size
-        )
-
     def apply_to(self, job):
         job.output_items.add(self)
         job.remaining_output_size -= self.size
@@ -201,6 +179,3 @@ class StdOut(JobUpdate):
             raise TypeError("StdOut.data not str: " + repr(data))
 
         self.data = data
-
-    def dump(self):
-        return dict(data=self.data)

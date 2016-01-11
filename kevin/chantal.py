@@ -10,6 +10,8 @@ import time
 from .util import INF
 from .process import Process
 
+# TODO: support chantal interaction through a non-ssh connection
+
 
 class Chantal:
     """

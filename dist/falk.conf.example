@@ -1,15 +1,15 @@
 # configuration for a falk vm provider
 
 [falk]
-name=test-falk
-control_socket=/run/kevin/falk
-control_socket_permissions=770
-#control_socket_group=kevin
+name = test-falk
+control_socket = /run/kevin/falk
+control_socket_permissions = 770
+#control_socket_group = kevin
+ssh_port = [7777,8000]
 
 [debian0]
-type=qemu
-ssh_port=[4444,4450]
-ssh_user=chantal
-base_image=/path/to/IMAGENAME/diskimage.qcow2
-overlay_image=/tmp/temporary-runimage.img
-command=qemu-system-x86_64 -machine type=q35,accel=kvm -drive file=IMAGENAME,if=virtio,format=qcow2 -m 2G -smp 2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:SSHPORT-:22
+type = qemu
+ssh_user = chantal
+base_image = /path/to/IMAGENAME/diskimage.qcow2
+overlay_image = /tmp/temporary-runimage.img
+command = qemu-system-x86_64 -machine type=q35,accel=kvm -drive file=IMAGENAME,if=virtio,format=qcow2 -m 2G -smp 2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:SSHPORT-:22

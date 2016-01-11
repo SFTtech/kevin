@@ -21,12 +21,18 @@ class Service:
         self.local_repo_address = args.local_repo_address
         self.repo_vm = None
 
-        # repo uri
+        # repo config
         self.repo = args.repo
+        self.project = args.project
+        if self.project not in self.cfg.projects:
+            raise ValueError("unknown project '%s', available: %s" % (
+                self.project, self.cfg.projects.keys()
+            ))
 
         # simulator reachability:
         self.port = args.port
         self.listen = ipaddress.ip_address(args.listen)
 
     def run(self):
+        """ simulator-specific code """
         raise NotImplementedError()

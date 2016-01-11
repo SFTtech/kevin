@@ -3,6 +3,7 @@ Falk daemon config parsing
 """
 
 from configparser import ConfigParser
+import re
 
 from .vm import CONTAINERS
 
@@ -31,7 +32,20 @@ class Config:
             self.control_socket_group = (
                 falkcfg.get("control_socket_group"))
 
-            # config ideas:
+            # ssh ports may be a range or a single port
+            ssh_port_range = falkcfg["vm_ports"]
+            mat = re.match(r"\[(\d+),(\d+)\]", ssh_port_range)
+            if mat:
+                # port range
+                lower, upper = int(mat.group(1)), int(mat.group(2))
+                if not lower < upper:
+                    raise ValueError("invalid port range (>): [%d,%d]" % (
+                        lower, upper))
+                self.ssh_port_range = lower, upper
+            else:
+                raise ValueError("vm_ports malformed, should be =[from,to]")
+
+            # further config ideas:
             # max parallel vms, memory usage checking
 
         except KeyError as exc:
@@ -62,6 +76,8 @@ class Config:
                 raise ValueError("Unknown Machine type %s" % (
                     machineclassname)) from None
 
+            # each machine type requests different config options,
+            # these are parsed here.
             machineconfig = machineclass.config(machinename, machinecfg)
             self.machines[machinename] = (machineconfig, machineclass)
 

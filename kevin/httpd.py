@@ -5,32 +5,59 @@ and provide them in a job queue.
 
 from tornado import websocket, web, ioloop, queues, gen
 from threading import Thread
-import queue
 
-from .config import CFG
 from . import jobs
-from .jobupdate import StdOut
-from .service import github
+from .config import CFG
+from .job import new_job
+from .jobupdate import StdOut, BuildState
+from .watcher import Watcher
 
 
 class HTTPD(Thread):
     """
-    This thread contains a server that listens for Github WebHook
-    notifications to provide new jobs via the blocking get_job(),
+    This thread contains a server that listens for WebHook
+    notifications to put jobs in the job_queue,
     and offers job information via websocket and plain streams.
 
-    Further git services can be added by adding a new hook url.
+    handlers: (url, handlercls) -> [cfg, cfg, cfg, ...]
     """
-    def __init__(self):
+    def __init__(self, handlers, job_queue):
         super().__init__()
-        self.app = web.Application([
-            ('/', PlainStreamHandler),
-            ('/ws', WebSocketHandler),
-            ('/hook-github', github.HookHandler)
-        ])
 
-        self.app.job_queue = queue.Queue(maxsize=CFG.max_jobs_queued)
+        urlhandlers = dict()
+        urlhandlers[("/", PlainStreamHandler)] = None
+        urlhandlers[("/ws", WebSocketHandler)] = None
 
+        urlhandlers.update(handlers)
+
+        # create the tornado application
+        # that serves assigned urls to handlers.
+        handlers = list()
+        for (url, handler), cfgs in urlhandlers.items():
+            if cfgs is not None:
+                handlers.append((url, handler, cfgs))
+            else:
+                handlers.append((url, handler))
+
+        self.app = web.Application(handlers)
+
+        # TODO: find a better location, same reason as below
+        self.app.job_queue = job_queue
+
+        # TODO: sanitize... dirty hack because tornado sucks.
+        #       that way, a request handler can add jobs to the global queue
+        def enqueue_job(job, timeout=0):
+            try:
+                # place the job into the pending list.
+                job_queue.put(job, timeout)
+            except queue.Full:
+                job.error("overloaded; job was dropped.")
+
+            job.update(BuildState("pending", "enqueued"))
+
+        self.app.enqueue_job = enqueue_job
+
+        # bind to tcp port
         self.app.listen(CFG.dyn_port)
 
     def run(self):
@@ -41,12 +68,8 @@ class HTTPD(Thread):
         ioloop.IOLoop.instance().stop()
         self.join()
 
-    def get_job(self):
-        """ Returns the next job from job_queue. """
-        return self.app.job_queue.get()
 
-
-class WebSocketHandler(websocket.WebSocketHandler):
+class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     """ Provides a job description stream via WebSocket """
     def open(self):
         self.job = None
@@ -60,6 +83,7 @@ class WebSocketHandler(websocket.WebSocketHandler):
             self.job.unwatch(self)
 
     def on_message(self, message):
+        # TODO: websocket protocol
         pass
 
     def new_update(self, msg):
@@ -72,7 +96,7 @@ class WebSocketHandler(websocket.WebSocketHandler):
             self.write_message(msg.json())
 
 
-class PlainStreamHandler(web.RequestHandler):
+class PlainStreamHandler(web.RequestHandler, Watcher):
     """ Provides the job stdout stream via plain HTTP GET """
     @gen.coroutine
     def get(self):
@@ -102,6 +126,8 @@ class PlainStreamHandler(web.RequestHandler):
             if isinstance(update, StdOut):
                 self.write(update.data.encode())
                 self.flush()
+
+        self.finish()
 
     def new_update(self, msg):
         """ Pur a message to the stream queue """

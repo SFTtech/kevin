@@ -9,5 +9,7 @@ setup(
     author="SFT Technologies",
     author_email="michael@ensslin.cc",
     url="https://github.com/SFTtech/kevin",
-    packages=["kevin", "chantal"],
+    packages=["kevin",
+              "chantal",
+              "falk"],
 )

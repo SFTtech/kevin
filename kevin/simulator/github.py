@@ -42,7 +42,8 @@ class GitHub(service.Service):
 
         # create server
         handlers = [
-            (self.status_handler, UpdateHandler, dict(config=self.cfg)),
+            (self.status_handler, UpdateHandler, {"config": self.cfg,
+                                                  "project": self.project}),
         ]
 
         # add http server to serve a local repo to qemu
@@ -98,25 +99,35 @@ class GitHub(service.Service):
             yield from util.update_server_info(self.repo)
 
         repo = self.repo_vm or self.repo
+        reponame = self.cfg.projects[self.project].triggers[0].repos[0]
+        hooksecret = self.cfg.projects[self.project].triggers[0].hooksecret
 
         pull_req = {
+            "action": "synchronize",
+            "sender": {"login": "rolf"},
             "pull_request": {
                 "head": {
                     "repo": {
                         "clone_url": repo,
+                        "html_url": repo,
                     },
                     "sha": head_commit,
+                    "label": "lol:epic_update",
                 },
                 "statuses_url": status_url,
+            },
+            "repository": {
+                "full_name": reponame,
             },
         }
 
         payload = json.dumps(pull_req).encode()
 
         # calculate hmac
-        signature = 'sha1=' + hmac.new(self.cfg.github_hooksecret,
+        signature = 'sha1=' + hmac.new(hooksecret,
                                        payload, hashlib.sha1).hexdigest()
-        headers = {"X-Hub-Signature": signature}
+        headers = {"X-Hub-Signature": signature,
+                   "X-GitHub-Event": "pull_request"}
 
         def submit_post():
             try:
@@ -141,8 +152,9 @@ class UpdateHandler(web.RequestHandler):
     Handles a POST from kevin.
     """
 
-    def initialize(self, config):
+    def initialize(self, config, project):
         self.cfg = config
+        self.project = project
 
     def get(self):
         self.write(b"Expected a JSON-formatted POST request.\n")
@@ -165,9 +177,10 @@ class UpdateHandler(web.RequestHandler):
 
             auth = base64.decodebytes(auth_header[6:]).decode().split(":", 2)
 
-            if tuple(auth) != self.cfg.github_authtok:
+            authtok = self.cfg.projects[self.project].actions[0].authtoken
+            if tuple(auth) != authtok:
                 print("wrong auth tried: %s" % (auth,))
-                print("expected: %s" % (self.cfg.github_authtok,))
+                print("expected: %s" % (authtok,))
                 raise ValueError("wrong authentication")
 
             self.handle_update(blob)

@@ -11,11 +11,57 @@ import traceback
 
 from .chantal import Chantal
 from .config import CFG
-from .falk import FalkSSH, FalkSocket
-from falk.control import VMError
+from .falk import FalkSSH, FalkSocket, VMError
+from .jobupdate import (JobSource, JobUpdate, BuildState,
+                        StepState, StdOut, OutputItem)
 from .process import ProcTimeoutError
+from .project import Project
 from .util import coroutine
-from .jobupdate import JobUpdate, BuildState, StepState, StdOut, OutputItem
+from .watcher import Watcher
+
+
+def new_job(project, commit_sha, clone_url, repo_url=None, user=None,
+            branch=None, status_update_url=None, comment=None):
+    """
+    Create a job by its commit hash.
+    If the job is known (by its commit hash), it's fetched from the cache.
+
+    returns (job, was_unknown_hash)
+    """
+
+    # brand_new says whether the job has not prevoiusly existed
+    # and should be enqueued.
+    from . import jobs
+    job, brand_new = jobs.get(commit_sha, project, create_new=True)
+
+    if status_update_url:
+        # store the status update url for the build status updater
+        job.add_info("status_update_url", status_update_url)
+
+    # TODO: may have multiple sources (e.g. branch, pullreq, ...)
+    #       each webhook adds this source again!
+    #       -> check if it's already in there.
+    job.update(JobSource(
+        clone_url=clone_url,
+        repo_url=repo_url,
+        author=user,
+        branch=branch,
+        comment=comment,
+    ))
+
+    # attach all project actions
+    project.attach_actions(job)
+
+    if not brand_new:
+        print("got known job: \x1b[2m[%s]\x1b[m @ %s" % (
+            job.job_id, job.clone_url))
+    else:
+        print("enqueueing job: \x1b[2m[%s]\x1b[m @ %s" % (
+            job.job_id, job.clone_url))
+        print("\x1b[1mcurl -N %s?job=%s\x1b[m" % (
+            CFG.dyn_url, job.job_id))
+
+    return job, brand_new
 
 
 class Job:
@@ -32,10 +78,18 @@ class Job:
     The JOBS, COMPLETED_JOB_CACHE, and JOB_LOCK objects are to be
     used to ensure that this constraint is met.
     """
-    def __init__(self, job_id):
+    def __init__(self, job_id, project):
         if not (job_id.isalnum() or len(job_id) == 40):
             raise ValueError("bad commit SHA: " + repr(job_id))
         self.job_id = job_id
+
+        if not isinstance(project, Project):
+            raise ValueError("invalid project type: %s" % type(project))
+        self.project = project
+
+        # Special information storage, for example the status update url,
+        # or other custom used by triggers and actions.
+        self.info = dict()
 
         # callbacks that are to be invoked for each job update during the
         # 'building' phase.
@@ -52,6 +106,8 @@ class Job:
         self.updates = list()
         self.update_lock = Lock()
 
+        # storage path for the job output
+        # TODO: /project/jobs/hash[:2]/hash/vmname/
         self.path = CFG.web_folder.joinpath(self.job_id)
         self.target_url = CFG.web_url + "?job=" + self.job_id
 
@@ -71,7 +127,7 @@ class Job:
         self.current_step = None
 
         # remaining size limit
-        self.remaining_output_size = CFG.max_output
+        self.remaining_output_size = self.project.cfg.job_max_output
 
         # Check the current status of the job.
         self.completed = self.path.joinpath("_completed").is_file()
@@ -86,6 +142,22 @@ class Job:
                 shutil.rmtree(str(self.path))
             except FileNotFoundError:
                 pass
+
+    def add_info(self, key, value):
+        """
+        A webhook may provide special information like the url where to send
+        status updates to.
+
+        Things like that can be stored with this function so they're
+        assigned to this job.
+        """
+        self.info[key] = value
+
+    def get_info(self, key):
+        """
+        Fetch special information that was set previously with `add_info`.
+        """
+        return self.info.get(key)
 
     def get_falk(self, name):
         """
@@ -130,6 +202,9 @@ class Job:
         Once the end of updates has come, there will be one last, fatal call,
         passing StopIteration.
         """
+
+        if not isinstance(watcher, Watcher):
+            raise Exception("invalid watcher type: %s" % type(watcher))
 
         with self.update_lock:
             self.watchers.add(watcher)
@@ -207,18 +282,23 @@ class Job:
             self.update(BuildState("pending", "booting VM"))
 
             with Chantal(vm) as chantal:
+                # TODO: support contacting chantal through
+                #       plain socket and not only ssh
+                #       and allow preinstallations of chantal
                 chantal.wait_for_ssh_port(timeout=30)
                 print("installing chantal via scp")
 
+                # TODO: allow to skip chantal installation
                 kevindir = Path(__file__)
                 chantal.upload(kevindir.parent.parent / "chantal")
 
                 print("running chantal via ssh")
                 chantal_output = chantal.run_command(
                     "python3", "-u", "-m",
-                    "chantal", self.clone_url, self.job_id, CFG.job_desc_file,
-                    timeout=CFG.job_timeout,
-                    silence_timeout=CFG.silence_timeout,
+                    "chantal", self.clone_url, self.job_id,
+                    self.project.cfg.job_desc_file,
+                    timeout=self.project.cfg.job_timeout,
+                    silence_timeout=self.project.cfg.job_silence_timeout,
                 )
                 control_handler = self.control_handler()
                 for stream_id, data in chantal_output:
@@ -232,33 +312,37 @@ class Job:
                         control_handler.send(data)
 
         except ProcTimeoutError as exc:
-            # did it too long to finish?
+            job_timeout = self.project.cfg.job_timeout
+            silence_timeout = self.project.cfg.job_silence_timeout
+
+            # did it take too long to finish?
             if exc.was_global:
                 print("\x1b[31;1mJob timeout! Took %.03fs, "
                       "over global limit of %.2fs.\x1b[m" % (
                     exc.timeout,
-                    CFG.job_timeout,
+                    job_timeout,
                 ))
 
                 if self.current_step:
-                    self.update(StepState(self.current_step, "error", "Timeout!"))
+                    self.update(StepState(self.current_step,
+                                          "error", "Timeout!"))
 
-                self.error("Job took > %.02fs." % (CFG.job_timeout))
+                self.error("Job took > %.02fs." % (job_timeout))
 
             # or too long to provide a message?
             else:
                 print("\x1b[31;1mJob silence timeout! Quiet for %.03fs > "
-                      "%.2fs.\x1b[m" % (exc.timeout, CFG.silence_timeout))
+                      "%.2fs.\x1b[m" % (exc.timeout, silence_timeout))
 
                 # a specific step is responsible:
                 if self.current_step:
                     self.update(StepState(self.current_step, "error",
                                           "Silence for > %.02fs." % (
-                                              CFG.silence_timeout)))
+                                              silence_timeout)))
                     self.error("Silence Timeout!")
                 else:
                     # bad step is unknown:
-                    self.error("Silence for > %.2fs!" % (CFG.silence_timeout))
+                    self.error("Silence for > %.2fs!" % (silence_timeout))
 
         except VMError as exc:
             print("\x1b[31;1mMachine action failed\x1b[m", end=" ")

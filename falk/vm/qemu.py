@@ -82,12 +82,12 @@ class QEMU(Container):
         else:
             running = False
 
-        return dict(
-            running=running,
-            ssh_user=self.ssh_user,
-            ssh_host=self.ssh_host,
-            ssh_port=self.ssh_port,
-        )
+        return {
+            "running": running,
+            "ssh_user": self.ssh_user,
+            "ssh_host": self.ssh_host,
+            "ssh_port": self.ssh_port,
+        }
 
     def terminate(self):
         if self.process:

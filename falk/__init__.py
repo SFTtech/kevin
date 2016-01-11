@@ -4,6 +4,8 @@ Falk module properties
 
 from collections import defaultdict
 
+from .config import CFG
+
 
 class Falk:
     """
@@ -21,16 +23,18 @@ class Falk:
         # hostname -> used ports
         self.used_ports = defaultdict(lambda: set())
 
-    def get_free_port(self, portrange, hostname):
+    def get_free_port(self, hostname):
         """
         Return a free ssh port.
         `port` is (lower, upper), this function returns the next
         available port in that range.
 
         if no free port can be found, returns None
+
+        TODO: check if another process owns the port.
         """
 
-        lower, upper = portrange
+        lower, upper = CFG.ssh_port_range
 
         current = lower
         while True:
