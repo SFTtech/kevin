@@ -47,7 +47,7 @@ class Service(metaclass=ServiceMeta):
         the value of that key is the config filename containing
         stuff about this service.
         """
-        ...
+        pass
 
     def __init__(self, project):
         self.project = project
@@ -63,7 +63,11 @@ class Trigger(Service):
     These can start a job by some means, either by external notification,
     or by active polling.
     """
-    pass
+
+    @classmethod
+    @abstractmethod
+    def name(cls):
+        pass
 
 
 class HookTrigger(Trigger):
@@ -76,7 +80,7 @@ class HookTrigger(Trigger):
         """
         Return the (url, HookHandler class) to register at tornado for webhooks
         """
-        ...
+        pass
 
 
 class Action(Service):
@@ -90,7 +94,7 @@ class Action(Service):
         """
         Return a watcher to register for job updates.
         """
-        ...
+        pass
 
 
 class HookHandler(web.RequestHandler):

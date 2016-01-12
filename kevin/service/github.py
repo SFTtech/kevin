@@ -4,13 +4,13 @@ GitHub backend for Kevin.
 All github interaction originates from this module.
 """
 
-import hmac
 import json
-import requests
+import hmac
 import traceback
-import queue
 
 from hashlib import sha1
+
+import requests
 
 from . import (HookHandler, HookTrigger, Action)
 from ..job import new_job
@@ -134,8 +134,8 @@ class GitHubHookHandler(HookHandler):
         verify the hmac signature with our shared secret.
         """
 
-        goodsig = hmac.new(secret, blob, sha1)
-        goodsig = 'sha1=' + goodsig.hexdigest()
+        localsignature = hmac.new(secret, blob, sha1)
+        goodsig = 'sha1=' + localsignature.hexdigest()
         msgsig = headers.get("X-Hub-Signature")
         if not msgsig:
             raise ValueError("message doesn't have a signature.")
@@ -196,6 +196,10 @@ class GitHubHookHandler(HookHandler):
 
 
 class GitHubStatus(Action):
+    """
+    GitHub status updater action, enable in a project to
+    allow real-time build updates via the github api.
+    """
     @classmethod
     def name(cls):
         return "github_status"
@@ -265,8 +269,9 @@ class GitHubBuildStatusUpdater(Watcher):
             reply = requests.post(self.status_update_url, data,
                                   auth=self.cfg.authtoken)
         except requests.exceptions.ConnectionError as exc:
-            raise RuntimeError("Failed status connection to '%s': "
-                               "%s" % (self.statuses_update_url, exc)
+            raise RuntimeError(
+                "Failed status connection to '%s': "
+                "%s" % (self.status_update_url, exc)
             ) from None
 
         if not reply.ok:

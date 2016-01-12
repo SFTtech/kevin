@@ -22,8 +22,12 @@ class Config:
         self.dyn_port = None
         self.dyn_url = None
 
+        self.project_folder = None
+
         self.projects = dict()
         self.falks = dict()
+
+        self.urlhandlers = defaultdict(lambda: defaultdict(list))
 
     def load(self, filename):
         """ Loads the attributes from the config file """
@@ -47,7 +51,7 @@ class Config:
                 projfolder = cfglocation / projfolder
 
             if not projfolder.is_dir():
-                raise NotADirectoryError(str(proj_folder))
+                raise NotADirectoryError(str(projfolder))
 
             self.project_folder = projfolder
 
@@ -71,7 +75,6 @@ class Config:
             # gather triggers to be installed.
             # TODO: relocate to service.py?
             # (handlerurl, handlerclass) -> {triggers: [cfg, cfg, ...]}
-            self.urlhandlers = defaultdict(lambda: defaultdict(list))
             for name, project in self.projects.items():
                 # for each handler type (e.g. github webhook),
                 # collect all the configs

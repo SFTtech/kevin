@@ -3,12 +3,10 @@ Project configuration file definition
 """
 
 from configparser import ConfigParser
-import os
-import pathlib
 import re
 import traceback
 
-from ..service import SERVICES, Trigger, Action
+from ..service import SERVICES
 from ..util import parse_size, parse_time
 
 
@@ -26,7 +24,7 @@ class Config:
     def __init__(self, filename, project):
 
         # trigger the class instanciation for all services
-        from ..service.github import Action
+        from ..service.github import GitHubHook
 
         # parse the project config file
         raw = ConfigParser()

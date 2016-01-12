@@ -3,7 +3,6 @@ Job processing code
 """
 
 import json
-import os
 from pathlib import Path
 import shutil
 from threading import Lock
@@ -11,13 +10,15 @@ import traceback
 
 from .chantal import Chantal
 from .config import CFG
-from .falk import FalkSSH, FalkSocket, VMError
+from .falk import FalkSSH, FalkSocket
 from .jobupdate import (JobSource, JobUpdate, BuildState,
                         StepState, StdOut, OutputItem)
 from .process import ProcTimeoutError
 from .project import Project
 from .util import coroutine
 from .watcher import Watcher
+
+from falk.control import VMError
 
 
 def new_job(project, commit_sha, clone_url, repo_url=None, user=None,
@@ -107,8 +108,14 @@ class Job:
         self.update_lock = Lock()
 
         # storage path for the job output
-        # TODO: /project/jobs/hash[:2]/hash/vmname/
-        self.path = CFG.web_folder.joinpath(self.job_id)
+        # TODO: /project/jobs/hash[:2]/hash/task/
+        self.path = CFG.web_folder.joinpath(
+            self.project.name,
+            "jobs",
+            self.job_id[:2],
+            self.job_id,
+            "task",        # TODO: name of the task
+        )
         self.target_url = CFG.web_url + "?job=" + self.job_id
 
         # Internal cache, used when erroring all remaining pending states.
@@ -128,6 +135,10 @@ class Job:
 
         # remaining size limit
         self.remaining_output_size = self.project.cfg.job_max_output
+
+        # receive files from chantal
+        self.raw_file = None
+        self.raw_remaining = 0
 
         # Check the current status of the job.
         self.completed = self.path.joinpath("_completed").is_file()
@@ -319,9 +330,9 @@ class Job:
             if exc.was_global:
                 print("\x1b[31;1mJob timeout! Took %.03fs, "
                       "over global limit of %.2fs.\x1b[m" % (
-                    exc.timeout,
-                    job_timeout,
-                ))
+                          exc.timeout,
+                          job_timeout,
+                      ))
 
                 if self.current_step:
                     self.update(StepState(self.current_step,
@@ -393,27 +404,27 @@ class Job:
         Note: The data chunks are entirely untrusted.
         """
         data = bytearray()
-        raw_file, raw_remaining = None, 0
         while True:
-            if raw_file is not None:
+            if self.raw_file is not None:
                 # control stream is in raw binary mode
                 if not data:
                     # wait for more data
                     data += yield
+
                 if len(data) < raw_remaining:
-                    raw_file.write(data[:raw_remaining])
-                    data = data[raw_remaining:]
-                    raw_file.close()
-                    raw_file = None
+                    self.raw_file.write(data[:self.raw_remaining])
+                    data = data[self.raw_remaining:]
+                    self.raw_file.close()
+                    self.raw_file = None
                 else:
-                    raw_file.write(data)
-                    raw_remaining -= len(data)
+                    self.raw_file.write(data)
+                    self.raw_remaining -= len(data)
                     data = bytearray()
                 continue
 
             # control stream is in regular JSON+'\n' mode
             newline = data.rfind(b"\n")
-            if not newline >= 0:
+            if newline < 0:
                 if len(data) > (8 * 1024 * 1024):
                     # chantal is trying to crash us with a >= 8MiB msg
                     raise ValueError("Control message too long")
@@ -427,6 +438,10 @@ class Job:
                 self.control_message(msg.decode().strip())
 
     def control_message(self, msg):
+        """
+        control message parser, chantal sends state through this channel.
+        """
+
         print("control: " + msg)
         msg = json.loads(msg)
 
@@ -489,7 +504,7 @@ class Job:
                 raise ValueError("duplicate output path: " + path)
 
             if cmd == 'output-file':
-                raw_file, raw_remaining = pathobj.open('wb'), size
+                self.raw_file, self.raw_remaining = pathobj.open('wb'), size
             else:
                 pathobj.mkdir()
 

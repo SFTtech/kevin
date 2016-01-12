@@ -6,7 +6,7 @@ import socket
 
 from .process import Process
 
-from falk.control import VM, VMError
+from falk.control import VM
 from falk.messages import (Message, ProtoType, Mode, Version, List,
                            Select, Status, OK, Login, Welcome, Error)
 from falk.protocol import FalkProto, VERSION

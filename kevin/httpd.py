@@ -3,8 +3,10 @@ Web server to receive WebHook notifications from GitHub,
 and provide them in a job queue.
 """
 
-from tornado import websocket, web, ioloop, queues, gen
+import queue
 from threading import Thread
+
+from tornado import websocket, web, ioloop, queues, gen
 
 from . import jobs
 from .config import CFG
@@ -47,6 +49,7 @@ class HTTPD(Thread):
         # TODO: sanitize... dirty hack because tornado sucks.
         #       that way, a request handler can add jobs to the global queue
         def enqueue_job(job, timeout=0):
+            """ put a job in the global queue """
             try:
                 # place the job into the pending list.
                 job_queue.put(job, timeout)
@@ -116,7 +119,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
             self.write(("no such job: " + repr(job_id) + "\n").encode())
             return
         else:
-            self.queue = queues.Queue()
+            self.queue = queue.Queue()
             self.job.watch(self)
 
         while True:

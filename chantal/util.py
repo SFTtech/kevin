@@ -43,7 +43,7 @@ def wrap_in_pty():
     old_stderr = os.dup(sys.stderr.fileno())
     child_pid, tty_fd = os.forkpty()
 
-    if not child_pid == 0:
+    if child_pid != 0:
         # we're not the child.
         os.close(old_stderr)
 

@@ -123,7 +123,7 @@ class Step:
         if line.startswith(header_marker):
             if not line.startswith(header_marker + ' '):
                 raise ParseError(lineno, "Expected ' ' after '%s'" % (
-                                 header_marker))
+                    header_marker))
 
             if not self.in_header:
                 raise ParseError(lineno, "Expected shell command, "

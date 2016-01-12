@@ -63,7 +63,7 @@ class Process:
             return self.proc.wait(timeout)
 
         # if it doesn't exit, kill it
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
             self.proc.kill()
             return self.proc.wait(timeout)
 
@@ -181,7 +181,7 @@ class Process:
                     self.proc.wait(kill_timeout)
 
                 # still not dead, kill it again.
-                except subprocess.TimeoutExpired as exc:
+                except subprocess.TimeoutExpired:
                     self.proc.kill()
                     self.proc.wait(kill_timeout)
 
@@ -212,7 +212,7 @@ class Process:
 
                                 # if we're not linechopping, flush
                                 # out the remaining data now.
-                                if can_chop and not linecount < INF:
+                                if can_chop and linecount >= INF:
                                     yield vfd, self.buf
                                     del self.buf[:]
                                 break

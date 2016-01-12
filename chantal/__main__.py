@@ -3,7 +3,6 @@ CLI entry point for chantal.
 """
 
 import argparse
-import sys
 import traceback
 
 from .build import build_job
