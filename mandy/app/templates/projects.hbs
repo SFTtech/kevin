@@ -2,7 +2,14 @@
 
 <p>List of registered projects</p>
 
-<p>TODO.</p>
+<table>
+	<tr><td>Name</td></tr>
+	{{#each model as |project|}}
+	<tr>
+	<td>{{project.name}}</td>
+	</tr>
+	{{/each}}
+</table>
 
 
 {{outlet}}

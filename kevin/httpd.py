@@ -116,8 +116,14 @@ class HTTPD:
 
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     """ Provides a job description stream via WebSocket """
-    def open(self):
+
+    def initialize(self):
+        self.job = None
         self.build = None
+
+    def open(self):
+        # TODO: activate nodelay mode just for realtime data?
+        self.set_nodelay(True)
 
         project = self.request.query_arguments["project"][0].decode()
         build_id = self.request.query_arguments["hash"][0].decode()
@@ -133,9 +139,39 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         if self.build is not None:
             self.build.unwatch(self)
 
-    def on_message(self, message):
-        # TODO: websocket protocol
-        pass
+    def check_origin(self, origin):
+        # TODO: check if came from correct site?
+        # parsed_origin = urllib.parse.urlparse(origin)
+        # allowed_origins = [urllib.parse.urlparse(CFG.web_url),
+        #                    "localhost"]
+        # return any(parsed_origin.netloc.endswith() for ori in origins)
+        return True
+
+    def on_message(self, msg):
+        # TODO: actual websocket protocol
+        # TODO: periodic self.ping(data)
+
+        if msg == "gimme projects":
+            print("websocket: providing project list")
+
+            entries = list()
+            for project in CFG.projects.values():
+                entries.append({
+                    "type": "project",
+                    "id": 1,
+                    "attributes": {
+                        "name": project.name,
+                    },
+                })
+
+            self.write_message({
+                "data": entries,
+            })
+        else:
+            self.write_message("nope")
+
+    def on_pong(self, data):
+        print("websocket pong: %s" % data)
 
     def on_update(self, msg):
         """
