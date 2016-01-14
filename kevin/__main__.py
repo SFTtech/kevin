@@ -23,8 +23,13 @@ def main():
 
     args = cmd.parse_args()
 
+    print("\x1b[1;32mKevin CI initializing...\x1b[m")
+
     # load all config files
     CFG.load(args.config)
+
+    # pass commandline args
+    CFG.set_cmdargs(args)
 
     # the main job processing queue
     job_queue = queue.Queue(maxsize=CFG.max_jobs_queued)

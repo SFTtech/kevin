@@ -88,6 +88,9 @@ class Job:
             raise ValueError("invalid project type: %s" % type(project))
         self.project = project
 
+        # No more tasks to perform for this job?
+        self.completed = False
+
         # Special information storage, for example the status update url,
         # or other custom used by triggers and actions.
         self.info = dict()
@@ -99,6 +102,9 @@ class Job:
         # gathered sources of this job.
         self.sources = set()
 
+        # the tasks required to run for this job.
+        self.tasks = set()
+
         # URL where the repo containing this commit can be cloned from
         # during the 'building' phase.
         self.clone_url = None
@@ -108,7 +114,7 @@ class Job:
         self.update_lock = Lock()
 
         # storage path for the job output
-        # TODO: /project/jobs/hash[:2]/hash/task/
+        # TODO: /project/jobs/hash[:2]/hash/$task/
         self.path = CFG.web_folder.joinpath(
             self.project.name,
             "jobs",
@@ -140,19 +146,22 @@ class Job:
         self.raw_file = None
         self.raw_remaining = 0
 
-        # Check the current status of the job.
-        self.completed = self.path.joinpath("_completed").is_file()
-        if self.completed:
-            # load update list from file
-            with self.path.joinpath("_updates").open() as updates_file:
-                for json_line in updates_file:
-                    self.update(JobUpdate.construct(json_line), True)
-        else:
-            # make sure that there are no remains of previous aborted jobs.
-            try:
-                shutil.rmtree(str(self.path))
-            except FileNotFoundError:
-                pass
+        # only reconstruct if we wanna use the local storage
+        if not CFG.args.volatile:
+            # Check the current status of the job.
+            self.completed = self.path.joinpath("_completed").is_file()
+            if self.completed:
+                # load update list from file
+                with self.path.joinpath("_updates").open() as updates_file:
+                    for json_line in updates_file:
+                        self.update(JobUpdate.construct(json_line), True)
+            else:
+                # make sure that there are no remains
+                # of previous aborted jobs.
+                try:
+                    shutil.rmtree(str(self.path))
+                except FileNotFoundError:
+                    pass
 
     def add_info(self, key, value):
         """
@@ -260,7 +269,7 @@ class Job:
             for watcher in self.watchers:
                 watcher.new_update(update)
 
-            if not reconstructing:
+            if not reconstructing and not CFG.args.volatile:
                 if self.completed and update != StopIteration:
                     # append this update to the updates file
                     with self.path.joinpath("_updates").open("a") as ufile:
@@ -273,7 +282,8 @@ class Job:
 
         try:
             # create the output directory structure
-            self.path.mkdir()
+            if not CFG.args.volatile:
+                self.path.mkdir(parents=True, exist_ok=False)
 
             # TODO: allow falk bypass by launching VM locally!
 
@@ -358,7 +368,7 @@ class Job:
         except VMError as exc:
             print("\x1b[31;1mMachine action failed\x1b[m", end=" ")
             print("[\x1b[33m" + self.job_id + "\x1b[m]")
-            self.error("VM Error: " + repr(exc))
+            self.error("VM Error: " + str(exc))
 
         except BaseException as exc:
             print("\x1b[31;1mexception in Job.build()\x1b[m", end=" ")
@@ -375,15 +385,19 @@ class Job:
                 self.update(
                     StepState(step, 'error', 'step result was not reported')
                 )
-            # dump all job updates to the filesystem
-            with self.path.joinpath("_updates").open("w") as updates_file:
-                with self.update_lock:
-                    for update in self.updates:
-                        updates_file.write(update.json() + "\n")
-            # the job is now officially completed
-            self.path.joinpath("_completed").touch()
+
+            if not CFG.args.volatile:
+                # dump all job updates to the filesystem
+                with self.path.joinpath("_updates").open("w") as updates_file:
+                    with self.update_lock:
+                        for update in self.updates:
+                            updates_file.write(update.json() + "\n")
+                # the job is now officially completed
+                self.path.joinpath("_completed").touch()
+
             with self.update_lock:
                 self.completed = True
+
             self.update(StopIteration)
 
     def error(self, text):
@@ -503,10 +517,13 @@ class Job:
             if pathobj.exists():
                 raise ValueError("duplicate output path: " + path)
 
-            if cmd == 'output-file':
-                self.raw_file, self.raw_remaining = pathobj.open('wb'), size
+            if CFG.args.volatile:
+                print("'%s' ignored because of volatile mode active." % cmd)
+            elif cmd == 'output-file':
+                self.raw_file = pathobj.open('wb')
+                self.raw_remaining = size
             else:
-                pathobj.mkdir()
+                pathobj.mkdir(parents=True, exist_ok=True)
 
         else:
             raise ValueError("unknown build control command: %r" % (cmd))

@@ -6,7 +6,7 @@ import socket
 
 from .process import Process
 
-from falk.control import VM
+from falk.control import VM, VMError
 from falk.messages import (Message, ProtoType, Mode, Version, List,
                            Select, Status, OK, Login, Welcome, Error)
 from falk.protocol import FalkProto, VERSION
@@ -177,6 +177,9 @@ class FalkSocket(Falk):
             raise FileNotFoundError(
                 "falk socket not found: "
                 "'%s' missing" % self.path) from None
+        except ConnectionRefusedError:
+            raise VMError("falk socket doesn't accept connections "
+                          "at '%s'" % (self.path)) from None
 
         # send login message
         msg = Login(self.user, self.path)

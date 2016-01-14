@@ -27,7 +27,17 @@ class Config:
         self.projects = dict()
         self.falks = dict()
 
+        self.args = None
+
         self.urlhandlers = defaultdict(lambda: defaultdict(list))
+
+    def set_cmdargs(self, args):
+        """ Set runtime arguments """
+        self.args = args
+
+        if self.args.volatile:
+            print("\x1b[1;31mYou are running in volatile mode, "
+                  "nothing will be stored on disk!\x1b[m")
 
     def load(self, filename):
         """ Loads the attributes from the config file """
@@ -70,23 +80,8 @@ class Config:
 
                 self.projects[newproj.name] = newproj
 
-            # for all projects, now merge their configurations.
-
-            # gather triggers to be installed.
-            # TODO: relocate to service.py?
-            # (handlerurl, handlerclass) -> {triggers: [cfg, cfg, ...]}
-            for name, project in self.projects.items():
-                # for each handler type (e.g. github webhook),
-                # collect all the configs
-                for trigger in project.triggers:
-                    if isinstance(trigger, HookTrigger):
-                        # fetch the tornado request handler
-                        handlerkwargs = self.urlhandlers[trigger.get_handler()]
-
-                        # and add the config to it.
-                        handlerkwargs["triggers"].append(trigger)
-                    else:
-                        raise Exception("unknown trigger type %s" % trigger)
+            # merge things required by projects
+            self.project_postprocess()
 
             # web configuration
             web = raw["web"]
@@ -147,7 +142,27 @@ class Config:
     def project_postprocess(self):
         """
         Postprocessing for all the project triggers/actions.
+
+        Accross projects, configurations may need merging.
+        Namely, if there's only one webhook handler for multiple projects,
+        the configs need to be prepared for that.
         """
+        # gather triggers to be installed.
+        # TODO: relocate to service.py?
+        # (handlerurl, handlerclass) -> {triggers: [cfg, cfg, ...]}
+        for name, project in self.projects.items():
+            # for each handler type (e.g. github webhook),
+            # collect all the configs
+            for trigger in project.triggers:
+                if isinstance(trigger, HookTrigger):
+                    # fetch the tornado request handler
+                    handlerkwargs = self.urlhandlers[trigger.get_handler()]
+
+                    # and add the config to it.
+                    handlerkwargs["triggers"].append(trigger)
+                else:
+                    raise Exception("unknown trigger type %s" % trigger)
+
 
 # global config instance for the running kevin.
 CFG = Config()
