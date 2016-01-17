@@ -155,12 +155,13 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             print("websocket: providing project list")
 
             entries = list()
-            for project in CFG.projects.values():
+            for idx, project in enumerate(CFG.projects.values()):
                 entries.append({
                     "type": "project",
-                    "id": 1,
+                    "id": idx,
                     "attributes": {
                         "name": project.name,
+                        "state": "dunno",
                     },
                 })
 

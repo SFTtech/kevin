@@ -3,11 +3,9 @@
 <p>List of registered projects</p>
 
 <table>
-	<tr><td>Name</td></tr>
+	<tr><td>Name</td><td>State</td></tr>
 	{{#each model as |project|}}
-	<tr>
-	<td>{{project.name}}</td>
-	</tr>
+		{{project-entry project=project}}
 	{{/each}}
 </table>
 
