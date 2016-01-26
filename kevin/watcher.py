@@ -3,20 +3,70 @@ Job watching.
 You can receive job updates with a Watcher.
 """
 
-from abc import ABCMeta, abstractmethod
+from threading import RLock
 
 
-class Watcher(metaclass=ABCMeta):
+class Watchable:
     """
-    Abstract job watcher.
-
-    When registered to job.watch(Watcher(...)),
-    each job update will be supplied to the watcher then.
+    Abstract watchable which can be watched by a Watcher.
     """
 
-    @abstractmethod
-    def new_update(self, update):
+    def __init__(self):
+        self.update_lock = RLock()
+        self.watchers = set()
+
+    def watch(self, watcher):
         """
-        Process the JobUpdate here.
+        Register a watcher object,
+        which gets updates sent by send_update(update).
+        """
+
+        if not isinstance(watcher, Watcher):
+            raise Exception("invalid watcher type: %s" % type(watcher))
+
+        with self.update_lock:
+            self.watchers.add(watcher)
+            self.on_watch(watcher)
+
+    def on_watch(self, watcher):
+        """
+        Custom actions when a watcher subscribes for receiving new updates
+        """
+        pass
+
+    def unwatch(self, watcher):
+        """ Un-subscribe a watcher from the notification list """
+        with self.update_lock:
+            self.watchers.remove(watcher)
+
+    def on_unwatch(self, watcher):
+        """ Custom actions when a watcher unsubscribes """
+        pass
+
+    def send_update(self, update, **kwargs):
+        """ Send an update to all registered watchers """
+
+        with self.update_lock:
+            self.on_send_update(update, **kwargs)
+
+            for watcher in self.watchers:
+                watcher.on_update(update)
+
+    def on_send_update(self, update, **kwargs):
+        """ Called when an update is about to be sent """
+        pass
+
+
+class Watcher:
+    """
+    Abstract event watcher. Gets notified by a Watchable.
+
+    When registered to SomeWatchable.watch(Watcher(...)),
+    each update will be supplied to the watcher then.
+    """
+
+    def on_update(self, update):
+        """
+        Process the update here.
         """
         pass

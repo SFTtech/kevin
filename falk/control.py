@@ -28,9 +28,12 @@ class VM(Container):
         self.run_id = run_id
         self.falk = falk
 
+    def config(cls, machine_id, cfgdata, cfgpath):
+        return
+
     def prepare(self, manage=False):
         msg = self.falk.query(messages.Prepare(run_id=self.run_id,
-                                              manage=manage))
+                                               manage=manage))
         if not isinstance(msg, messages.OK):
             raise VMError("Failed to prepare: %s" % msg.msg)
 
@@ -41,6 +44,11 @@ class VM(Container):
 
     def status(self):
         return self.falk.query(messages.Status(run_id=self.run_id))
+
+    def is_running(self):
+        # we have to implement it because @abstractmethod, but
+        # we override `status` as well, so it's never called.
+        raise Exception("VM proxy 'is_running' should never be called!")
 
     def terminate(self):
         msg = self.falk.query(messages.Terminate(run_id=self.run_id))

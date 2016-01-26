@@ -485,12 +485,13 @@ class VMStatus(Message):
     """
     Shows status information about a selected VM.
     """
-    def __init__(self, run_id, running, ssh_user, ssh_host, ssh_port):
+    def __init__(self, run_id, running, ssh_user, ssh_host, ssh_port, ssh_key):
         self.run_id = int(run_id)
         self.running = running
         self.ssh_user = ssh_user
         self.ssh_host = ssh_host
         self.ssh_port = int(ssh_port)
+        self.ssh_key = ssh_key
 
 
 class Terminate(RequestID):

@@ -1,10 +1,10 @@
 [Unit]
-Description=Kevin Continuous Integration
+Description=Kevin CI In-VM agent
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 -m kevin
+ExecStart=/usr/bin/python3 -m chantal
 Restart=on-abnormal
 RestartForceExitStatus=SIGSEGV SEGV SIGILL SIGKILL
 

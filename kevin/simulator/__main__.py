@@ -12,16 +12,8 @@ import argparse
 from . import github
 
 
-# available services to simulate
-SERVICES = {
-    "github": github.GitHub,
-}
-
-
 def main():
     cmd = argparse.ArgumentParser()
-    cmd.add_argument("service", choices=SERVICES.keys(),
-                     help="the service to simulate")
     cmd.add_argument("repo", help="clone url/path to the test repo")
     cmd.add_argument("project", help="project to trigger the build for")
     cmd.add_argument("config_file", help="config file of to-be-tested kevin")
@@ -37,10 +29,18 @@ def main():
                      help=("the vm can reach this simulator "
                            "under the given address."))
 
+    sp = cmd.add_subparsers(dest="module")
+
+    # call argparser hooks
+    github.GitHub.argparser(sp)
+
     args = cmd.parse_args()
 
-    srv = SERVICES[args.service](args)
-    srv.run()
+    if args.module is None:
+        cmd.print_help()
+    else:
+        service = args.service(args)
+        service.run()
 
 
 if __name__ == "__main__":

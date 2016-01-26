@@ -3,27 +3,26 @@ Web server to receive WebHook notifications from GitHub,
 and provide them in a job queue.
 """
 
-import queue
 from threading import Thread
 
-from tornado import websocket, web, ioloop, queues, gen
+from tornado import websocket, web, ioloop, gen
+from tornado.queues import Queue
 
-from . import jobs
+from .build import get_build
 from .config import CFG
-from .job import new_job
-from .jobupdate import StdOut, BuildState
+from .update import StdOut, BuildState, JobState
 from .watcher import Watcher
 
 
 class HTTPD(Thread):
     """
     This thread contains a server that listens for WebHook
-    notifications to put jobs in the job_queue,
-    and offers job information via websocket and plain streams.
+    notifications to spawn triggered actions, e.g. new Builds.
+    It also provides the websocket API and plain log streams for curl.
 
-    handlers: (url, handlercls) -> [cfg, cfg, cfg, ...]
+    handlers: (url, handlercls) -> [cfg, cfg, ...]
     """
-    def __init__(self, handlers, job_queue):
+    def __init__(self, handlers, queue):
         super().__init__()
 
         urlhandlers = dict()
@@ -43,22 +42,9 @@ class HTTPD(Thread):
 
         self.app = web.Application(handlers)
 
-        # TODO: find a better location, same reason as below
-        self.app.job_queue = job_queue
-
         # TODO: sanitize... dirty hack because tornado sucks.
-        #       that way, a request handler can add jobs to the global queue
-        def enqueue_job(job, timeout=0):
-            """ put a job in the global queue """
-            try:
-                # place the job into the pending list.
-                job_queue.put(job, timeout)
-            except queue.Full:
-                job.error("overloaded; job was dropped.")
-
-            job.update(BuildState("pending", "enqueued"))
-
-        self.app.enqueue_job = enqueue_job
+        #       that way, a request handler can add jobs to the queue
+        self.app.queue = queue
 
         # bind to tcp port
         self.app.listen(CFG.dyn_port)
@@ -75,23 +61,29 @@ class HTTPD(Thread):
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     """ Provides a job description stream via WebSocket """
     def open(self):
-        self.job = None
+        self.build = None
 
-        job_id = self.request.query_arguments["job"][0]
-        self.job = jobs.get_existing(job_id.decode())
-        self.job.watch(self)
+        project = self.request.query_arguments["project"][0].decode()
+        build_id = self.request.query_arguments["hash"][0].decode()
+        self.build = get_build(project, build_id)
+
+        if not self.build:
+            self.write_message("no such build")
+            return
+        else:
+            self.build.watch(self)
 
     def on_close(self):
-        if self.job is not None:
-            self.job.unwatch(self)
+        if self.build is not None:
+            self.build.unwatch(self)
 
     def on_message(self, message):
         # TODO: websocket protocol
         pass
 
-    def new_update(self, msg):
+    def on_update(self, msg):
         """
-        Called by the watched job when an update arrives.
+        Called by the watched build when an update arrives.
         """
         if msg is StopIteration:
             self.close()
@@ -103,44 +95,102 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
     """ Provides the job stdout stream via plain HTTP GET """
     @gen.coroutine
     def get(self):
-        print("plain opened")
         self.job = None
 
         try:
-            job_id = self.request.query_arguments["job"][0]
+            project_name = self.request.query_arguments["project"][0]
         except (KeyError, IndexError):
-            self.write(b"no job id given\n")
+            self.write(b"no project given\n")
             return
 
-        job_id = job_id.decode(errors='replace')
         try:
-            self.job = jobs.get_existing(job_id)
-        except ValueError:
-            self.write(("no such job: " + repr(job_id) + "\n").encode())
+            build_id = self.request.query_arguments["hash"][0]
+        except (KeyError, IndexError):
+            self.write(b"no build hash given\n")
+            return
+
+        try:
+            job_name = self.request.query_arguments["job"][0]
+        except (KeyError, IndexError):
+            self.write(b"no job given\n")
+            return
+
+        project_name = project_name.decode(errors='replace')
+        build_id = build_id.decode(errors='replace')
+        job_name = job_name.decode(errors='replace')
+
+        try:
+            project = CFG.projects[project_name]
+
+        except KeyError:
+            self.write(b"unknown project requested\n")
+            return
+
+        build = get_build(project, build_id)
+        if not build:
+            self.write(("no such build: project %s [%s]\n" % (
+                project_name, build_id)).encode())
             return
         else:
-            self.queue = queue.Queue()
+            self.job = build.jobs.get(job_name)
+            if not self.job:
+                self.write(("unknown job in project %s [%s]: %s\n" % (
+                    project_name, build_id, job_name)).encode())
+                return
+
+            # the message queue to be sent to the http client
+            self.queue = Queue()
+
+            # request the updates from the watched jobs
             self.job.watch(self)
+
+            # emit the updates and wait until no more are coming
+            yield self.watch_job()
+
+    @gen.coroutine
+    def watch_job(self):
+        """ Process updates and send them to the client """
+
+        self.set_header("Content-Type", "text/plain")
 
         while True:
             update = yield self.queue.get()
+
             if update is StopIteration:
-                return
+                break
+
             if isinstance(update, StdOut):
                 self.write(update.data.encode())
-                self.flush()
 
-        self.finish()
+            elif isinstance(update, JobState):
+                if update.is_errored():
+                    self.write(
+                        ("\x1b[31merror:\x1b[m %s\n" %
+                         (update.text)).encode()
+                    )
+                elif update.is_succeeded():
+                    self.write(
+                        ("\x1b[32msuccess:\x1b[m %s\n" %
+                         (update.text)).encode()
+                    )
+                elif update.is_finished():
+                    self.write(
+                        ("\x1b[31mfailed:\x1b[m %s\n" %
+                         (update.text)).encode()
+                    )
 
-    def new_update(self, msg):
-        """ Pur a message to the stream queue """
-        self.queue.put(msg)
+            yield self.flush()
+
+        return self.finish()
+
+    def on_update(self, update):
+        """ Put a message to the stream queue """
+        self.queue.put(update)
 
     def on_connection_close(self):
-        """ add a connection-end marker to the queue """
-        self.new_update(StopIteration)
+        """ Add a connection-end marker to the queue """
+        self.on_update(StopIteration)
 
     def on_finish(self):
-        print("plain closed")
         if self.job is not None:
             self.job.unwatch(self)

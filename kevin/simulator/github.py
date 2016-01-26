@@ -17,6 +17,7 @@ from tornado.platform.asyncio import AsyncIOMainLoop
 
 from . import util
 from . import service
+from ..service.github import GitHubHook
 
 
 class GitHub(service.Service):
@@ -28,8 +29,15 @@ class GitHub(service.Service):
         super().__init__(args)
 
         # url where to push updates to.
-        self.status_handler = "/statusupdate"
+        self.status_handler = "/%s" % args.statuspath
         self.repo_handler = "/repo"
+
+    @classmethod
+    def argparser(cls, subparsers):
+        cli = subparsers.add_parser("github", help="simulate github")
+        cli.add_argument("--statuspath", default="statusupdate",
+                         help="url component where status updates are sent")
+        cli.set_defaults(service=cls)
 
     def run(self):
         """
@@ -99,8 +107,21 @@ class GitHub(service.Service):
             yield from util.update_server_info(self.repo)
 
         repo = self.repo_vm or self.repo
-        reponame = self.cfg.projects[self.project].triggers[0].repos[0]
-        hooksecret = self.cfg.projects[self.project].triggers[0].hooksecret
+        project = self.cfg.projects[self.project]
+
+        # chose first github trigger in the project config
+        trigger = None
+        for trigger_test in project.triggers:
+            if isinstance(trigger_test, GitHubHook):
+                trigger = trigger_test
+                break
+
+        if trigger is None:
+            raise Exception("couldn't find github trigger in project.")
+
+        # select first allowed repo as virtual "origin"
+        reponame = trigger.repos[0]
+        hooksecret = trigger.hooksecret
 
         pull_req = {
             "action": "synchronize",

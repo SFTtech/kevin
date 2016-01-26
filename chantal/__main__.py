@@ -35,14 +35,14 @@ def main():
 
     except FatalBuildError as exc:
         msg.msg(
-            cmd="build-state",
+            cmd="job-state",
             state="error",
             text=str(exc)
         )
         print("\x1b[31;1mFATAL\x1b[m " + str(exc))
     except BaseException as exc:
         msg.msg(
-            cmd="build-state",
+            cmd="job-state",
             state="error",
             text="Internal error in Chantal: %r" % exc
         )

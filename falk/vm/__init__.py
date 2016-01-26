@@ -3,6 +3,7 @@ VM management functionality
 """
 
 from abc import ABCMeta, abstractmethod
+from pathlib import Path
 import re
 
 
@@ -22,23 +23,66 @@ class ContainerMeta(ABCMeta):
 class ContainerConfig:
     """
     Configuration for a container.
-    Guarantees the existence of access data.
+    Guarantees the existence of:
+     * VM access data (SSH)
+     * Machine ID     (id unique in this falk instance)
+     * Machine Name   (to match for)
 
     Created from a config dict that contains key-value pairs.
     """
-    def __init__(self, name, cfg):
-        self.name = name
-        for key in ("ssh_user", "ssh_host", "ssh_port"):
+    def __init__(self, machine_id, cfg, cfgpath):
+
+        # store the machine id
+        self.machine_id = machine_id
+        self.cfgpath = cfgpath
+
+        # standard keys that exist for every machine.
+        # more config options are specified in each container type,
+        # e.g. Qemu, Xen, ...
+        for key in ("name", "ssh_user", "ssh_host", "ssh_port", "ssh_key"):
+
+            # test if the key is in the file
             if key in cfg:
-                setattr(self, key, cfg[key])
+
+                # ssh key loading:
+                if key == "ssh_key":
+                    # it's either the key directly or a file
+                    sshkey_entry = cfg[key]
+                    if sshkey_entry.startswith("ssh-"):
+                        # it's directly stored
+                        self.ssh_key = sshkey_entry
+                    else:
+                        # it's given as path to public key storage file
+                        path = Path(sshkey_entry)
+
+                        # determine location relative to the falk.conf
+                        if not path.is_absolute():
+                            path = cfgpath / path
+
+                        with open(str(path)) as keyfile:
+                            self.ssh_key = keyfile.read().strip()
+
+                # simply copy the value from the config:
+                else:
+                    setattr(self, key, cfg[key])
+
                 continue
 
             elif key == "ssh_host":
-                # implicit default:
+                # if host is not specified, assume the falk localhost
                 self.ssh_host = "localhost"
 
             elif key == "ssh_port":
                 self.ssh_port = None
+
+            elif key == "ssh_key":
+                print("[vm] warning: '%s' doesn't have ssh-key configured, "
+                      "making key check impossible!" % (self.machine_id))
+                self.ssh_key = None
+
+            elif key == "name":
+                # if no name to "match" for is given, use the unique id.
+                self.name = machine_id
 
             else:
                 raise KeyError("%s config is missing %s=" % (
@@ -63,11 +107,13 @@ class Container(metaclass=ContainerMeta):
         self.cfg = cfg
         self.ssh_user = self.cfg.ssh_user
         self.ssh_host = self.cfg.ssh_host
+        self.ssh_key = self.cfg.ssh_key
+        self.ssh_port = self.cfg.ssh_port
 
-        if self.cfg.ssh_port is None:
+        if self.ssh_port is None:
             raise ValueError("ssh port not yet set!")
-        else:
-            self.ssh_port = self.cfg.ssh_port
+        if self.ssh_user is None:
+            raise ValueError("ssh user not set!")
 
     @classmethod
     def containertype(cls):
@@ -75,13 +121,16 @@ class Container(metaclass=ContainerMeta):
         return cls.__name__.lower()
 
     @classmethod
-    def config(cls, machine_name, cfgdata):
+    @abstractmethod
+    def config(cls, machine_id, cfgdata, cfgpath):
         """
         Create configuration dict for this container type.
         This method allows container-type specific config options.
 
+        machine_id: the unique id of the machine in the cfgfile
         cfgdata: key-value pairs from configuration file
-        returns: ContainerConfig object.
+        cfgpath: folder where the config files was in
+        returns: ContainerConfig object
         """
         raise NotImplementedError()
 
@@ -98,9 +147,22 @@ class Container(metaclass=ContainerMeta):
         """ Launch the virtual machine container """
         pass
 
-    @abstractmethod
     def status(self):
-        """ Return information about the running container """
+        """ Return runtime information for the container """
+
+        return {
+            "running": self.is_running(),
+            "ssh_user": self.ssh_user,
+            "ssh_host": self.ssh_host,
+            "ssh_port": self.ssh_port,
+            "ssh_key": self.ssh_key,
+        }
+
+    @abstractmethod
+    def is_running(self):
+        """
+        Return if the container is still running.
+        """
         pass
 
     @abstractmethod

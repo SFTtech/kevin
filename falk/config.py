@@ -3,6 +3,7 @@ Falk daemon config parsing
 """
 
 from configparser import ConfigParser
+from pathlib import Path
 import re
 
 from .vm import CONTAINERS
@@ -53,21 +54,22 @@ class Config:
             exit(1)
 
         if not shell:
-            self.load_machines(cfg)
+            cfgpath = Path(filename).parent
+            self.load_machines(cfg, cfgpath)
 
         self.verify()
 
-    def load_machines(self, cfg):
-        for machinename, machinecfg in cfg.items():
-            if machinename in ("falk", "DEFAULT"):
+    def load_machines(self, cfg, cfgpath):
+        for machineid, machinecfg in cfg.items():
+            if machineid in ("falk", "DEFAULT"):
                 # is for the main config above.
                 continue
-            elif machinename in self.machines:
+            elif machineid in self.machines:
                 raise ValueError("Machine %s specified more than once" % (
-                    machinename))
+                    machineid))
 
             if "type" not in machinecfg:
-                raise KeyError("Machine %s has no type=" % (machinename))
+                raise KeyError("Machine %s has no type=" % (machineid))
 
             machineclassname = machinecfg["type"]
             try:
@@ -78,8 +80,10 @@ class Config:
 
             # each machine type requests different config options,
             # these are parsed here.
-            machineconfig = machineclass.config(machinename, machinecfg)
-            self.machines[machinename] = (machineconfig, machineclass)
+            machineconfig = machineclass.config(machineid,
+                                                machinecfg,
+                                                cfgpath)
+            self.machines[machineid] = (machineconfig, machineclass)
 
     def verify(self):
         """ Verifies the validity of the loaded config attributes """

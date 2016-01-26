@@ -22,10 +22,14 @@ class QEMU(Container):
         self.running_image = None
 
     @classmethod
-    def config(cls, name, cfgdata):
-        cfg = ContainerConfig(name, cfgdata)
+    def config(cls, machine_id, cfgdata, cfgpath):
+        cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
 
-        cfg.base_image = Path(cfgdata["base_image"])
+        base_img = Path(cfgdata["base_image"])
+        if base_img.is_absolute():
+            base_img = cfgpath / base_img
+
+        cfg.base_image = base_img
         cfg.overlay_image = Path(cfgdata["overlay_image"])
         cfg.command = cfgdata["command"]
 
@@ -68,26 +72,16 @@ class QEMU(Container):
             part = part.replace("SSHPORT", str(self.ssh_port))
             command.append(part)
 
-        self.process = subprocess.Popen(
-            command, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-
+        self.process = subprocess.Popen(command, stdin=subprocess.PIPE)
         self.process.stdin.close()
 
-    def status(self):
+    def is_running(self):
         if self.process:
             running = self.process.poll() is None
         else:
             running = False
 
-        return {
-            "running": running,
-            "ssh_user": self.ssh_user,
-            "ssh_host": self.ssh_host,
-            "ssh_port": self.ssh_port,
-        }
+        return running
 
     def terminate(self):
         if self.process:

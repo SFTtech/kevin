@@ -3,11 +3,11 @@ Program entry point
 """
 
 import argparse
-import queue
+import traceback
 
-from . import jobs
 from .config import CFG
 from .httpd import HTTPD
+from .jobqueue import Queue
 
 
 def main():
@@ -31,30 +31,27 @@ def main():
     # pass commandline args
     CFG.set_cmdargs(args)
 
-    # the main job processing queue
-    job_queue = queue.Queue(maxsize=CFG.max_jobs_queued)
-
     print("\x1b[1;32mKevin CI starting...\x1b[m")
 
+    # build job queue
+    queue = Queue()
+
     # start thread for receiving webhooks
-    httpd = HTTPD(CFG.urlhandlers, job_queue)
+    httpd = HTTPD(CFG.urlhandlers, queue)
     httpd.start()
 
     try:
         while True:
             print("\x1b[32mWaiting for job...\x1b[m")
-            current_job = job_queue.get()
+            current_job = queue.get_job()
 
             # TODO: for job parallelism, fork off here:
-            current_job.build()
-
-            jobs.put_in_cache(current_job)
+            current_job.run()
 
     except (KeyboardInterrupt, SystemExit):
-        print("exiting...")
+        print("\nexiting...")
     except BaseException:
         print("\x1b[31;1mfatal exception in main loop\x1b[m")
-        import traceback
         traceback.print_exc()
     finally:
         httpd.stop()

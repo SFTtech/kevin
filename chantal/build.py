@@ -28,7 +28,7 @@ def build_job(args):
     """
     Main entry point for building a job.
     """
-    msg(cmd="build-state", state="pending", text="cloning repo")
+    msg(cmd="job-state", state="pending", text="cloning repo")
 
     shallow = ("--depth %d " % args.shallow) if args.shallow > 0 else ""
 
@@ -56,7 +56,7 @@ def build_job(args):
 
         if not errors:
             msg(
-                cmd="build-state",
+                cmd="job-state",
                 state="pending",
                 text="running (" + step.name + ")"
             )
@@ -85,7 +85,7 @@ def build_job(args):
             if not step.hidden:
                 errors.append(step.name)
                 msg(
-                    cmd="build-state",
+                    cmd="job-state",
                     state="failure",
                     text="steps failed: " + ", ".join(sorted(errors))
                 )
@@ -97,7 +97,7 @@ def build_job(args):
             success.add(step.name)
 
     if not errors:
-        msg(cmd="build-state", state="success", text="completed")
+        msg(cmd="job-state", state="success", text="completed")
 
 
 def output_item(path):

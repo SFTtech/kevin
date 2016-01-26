@@ -69,7 +69,8 @@ class Config:
             #       instead of iterating through all present files.
             for projectfile in self.project_folder.iterdir():
                 if not str(projectfile).endswith(".conf"):
-                    print("ignoring non .conf file '%s'" % projectfile)
+                    print("[projects] ignoring non .conf file '%s'" % (
+                        projectfile))
                     continue
 
                 # create the project
@@ -77,6 +78,8 @@ class Config:
                 if newproj.name in self.projects:
                     raise NameError("Project '%s' defined twice!" % (
                         newproj.name))
+
+                print("[projects] loaded %s" % newproj.name)
 
                 self.projects[newproj.name] = newproj
 

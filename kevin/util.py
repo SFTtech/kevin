@@ -3,6 +3,8 @@ Various utility functions.
 """
 
 import re
+import tempfile
+
 
 # convenience infinity.
 INF = float("inf")
@@ -73,3 +75,44 @@ def parse_time(text, allow_inf=True):
 
     factor = {"s": 1, "min": 60, "m": 60, "h": 3600}[suffix]
     return number * factor
+
+
+class SSHKnownHostFile:
+    """
+    provide a temporary known hosts file for ssh
+    """
+    def __init__(self, host, port, key):
+        self.host = host
+        self.port = port
+        self.key = key
+        self.tmpfile = None
+
+    def get_options(self):
+        """ Return the ssh options to use this temporary known hosts file """
+        if self.key is None:
+            # should we warn if we disable the host key checking?
+            return [
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "StrictHostKeyChecking=no",
+            ]
+        else:
+            return [
+                "-o", "UserKnownHostsFile=%s" % self.tmpfile.name,
+                "-o", "StrictHostKeyChecking=yes",
+            ]
+
+    def __enter__(self):
+        if self.key is not None:
+            self.tmpfile = tempfile.NamedTemporaryFile(mode='w')
+
+            # entry in the known hosts file
+            key_data = "[%s]:%d %s\n" % (self.host, self.port, self.key)
+
+            self.tmpfile.write(key_data)
+            self.tmpfile.file.flush()
+
+        return self
+
+    def __exit__(self, exc, value, tb):
+        if self.key is not None:
+            self.tmpfile.close()

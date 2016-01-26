@@ -35,10 +35,11 @@ class Project:
         """ return the unique project name """
         return self.cfg.project_name
 
-    def attach_actions(self, job):
+    def attach_actions(self, watchable):
         """
-        Register all requested actions to the job to receive
-        job updates.
+        Register all requested actions to the update provider to receive
+        progress updates.
         """
         for action in self.actions:
-            job.watch(action.get_watcher(job))
+            watcher = action.get_watcher(watchable)
+            watchable.watch(watcher)

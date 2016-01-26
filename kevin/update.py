@@ -5,23 +5,27 @@ import time as clock
 from abc import ABCMeta
 
 ALLOWED_BUILD_STATES = {"pending", "success", "failure", "error"}
+FINISH_STATES = {"success", "failure", "error"}
+SUCCESS_STATES = {"success"}
+ERROR_STATES = {"error"}
 
-JOB_UPDATE_CLASSES = {}
+UPDATE_CLASSES = {}
 
 
-class JobUpdateMeta(ABCMeta):
-    """ JobUpdate metaclass. Adds the classes to JOB_UPDATE_CLASSES. """
+class UpdateMeta(ABCMeta):
+    """ Update metaclass. Adds the classes to UPDATE_CLASSES. """
     def __init__(cls, name, bases, classdict):
         super().__init__(name, bases, classdict)
-        JOB_UPDATE_CLASSES[name] = cls
+        UPDATE_CLASSES[name] = cls
 
 
-class JobUpdate(metaclass=JobUpdateMeta):
+class Update(metaclass=UpdateMeta):
     """
-    Abstract base class for all JSON-serializable JobUpdate objects.
+    Abstract base class for all JSON-serializable Update objects.
     __init__() should simply set the update's member variables.
     """
 
+    # which of the member variables should not be sent via json?
     BLACKLIST = set()
 
     def dump(self):
@@ -33,15 +37,6 @@ class JobUpdate(metaclass=JobUpdateMeta):
             k: v for k, v in self.__dict__.items()
             if k not in self.BLACKLIST
         }
-
-    def apply_to(self, job):
-        """
-        Update-specific code to modify the job object on job.update().
-        No-op by default.
-        This, and __init__, are where validations should happen.
-        Raise to report errors.
-        """
-        pass
 
     def json(self):
         """
@@ -58,22 +53,71 @@ class JobUpdate(metaclass=JobUpdateMeta):
     @staticmethod
     def construct(jsonmsg):
         """
-        Constructs an JobUpdate object from a JSON-serialized string.
+        Constructs an Update object from a JSON-serialized string.
         The 'class' member is used to determine the subclass that shall be
         built, the rest is passed on to the constructor as kwargs.
         """
         data = json.loads(jsonmsg)
         classname = data['class']
         del data['class']
-        return JOB_UPDATE_CLASSES[classname](**data)
+        return UPDATE_CLASSES[classname](**data)
 
 
-class JobSource(JobUpdate):
+class GeneratedUpdate(Update):
     """
-    A new source for the job.
+    An update that is created by processing other updates,
+    therefore should never be stored.
+
+    When the other updates are replayed, this update is triggered again.
+    This is why it must not be stored.
+    """
+    pass
+
+
+class JobUpdate(Update):
+    """
+    An update that is assigned to a job.
+    """
+
+    def apply_to(self, job):
+        """
+        Update-specific code to modify the thing object on job.update().
+        No-op by default.
+        Raise to report errors.
+        """
+        pass
+
+
+class BuildUpdate(Update):
+    """
+    An update that is assigned to a build.
+    """
+    pass
+
+
+class JobCreated(GeneratedUpdate, JobUpdate):
+    """
+    Update that notifies the creation of a job.
+    """
+    def __init__(self, build_id, job_name):
+        self.build_id = build_id
+        self.job_name = job_name
+
+
+class JobAbort(JobUpdate):
+    """
+    Update that notifies a job it should abort now.
+    """
+    def __init__(self, job_name):
+        self.job_name = job_name
+
+
+class BuildSource(Update):
+    """
+    A new source for the build.
     A source is a place from which the request to build this SHA1 has
     originated.
-    A job must have at least one of these updates in order to be
+    A build must have at least one of these updates in order to be
     buildable (we must know a clone_url).
     """
     def __init__(self, clone_url, repo_url, author, branch, comment):
@@ -83,12 +127,9 @@ class JobSource(JobUpdate):
         self.branch = branch
         self.comment = comment
 
-    def apply_to(self, job):
-        job.clone_url = self.clone_url
 
-
-class BuildState(JobUpdate):
-    """ Overall build state change """
+class State(Update):
+    """ Overall state change """
     def __init__(self, state, text, time=None):
         if state not in ALLOWED_BUILD_STATES:
             raise ValueError("Illegal state: " + repr(state))
@@ -105,6 +146,33 @@ class BuildState(JobUpdate):
         self.text = text
         self.time = time
 
+    def is_succeeded(self):
+        """ return if the build succeeded """
+        return self.state in SUCCESS_STATES
+
+    def is_finished(self):
+        """ return if the build is no longer running """
+        return self.state in FINISH_STATES
+
+    def is_errored(self):
+        """ return if the build is no longer running """
+        return self.state in ERROR_STATES
+
+
+class BuildState(GeneratedUpdate, State):
+    """ Build specific state changes """
+
+    def __init__(self, state, text, time=None):
+        State.__init__(self, state, text, time)
+
+
+class JobState(JobUpdate, State):
+    """ Job specific state changes """
+
+    def __init__(self, job_name, state, text, time=None):
+        State.__init__(self, state, text, time)
+        self.job_name = job_name
+
 
 class StepState(JobUpdate):
     """ Step build state change """
@@ -112,12 +180,14 @@ class StepState(JobUpdate):
     # don't dump these
     BLACKLIST = {"step_number"}
 
-    def __init__(self, step_name, state, text, time=None, step_number=None):
+    def __init__(self, job_name, step_name, state, text, time=None,
+                 step_number=None):
         if not step_name.isidentifier():
-            raise ValueError("StepState.step_name invalid: " + repr(step_name))
+            raise ValueError("StepState.step_name invalid: %r" % (step_name))
         if time is None:
             time = clock.time()
 
+        self.job_name = job_name
         self.step_name = step_name
         self.step_number = step_number
         self.state = state
@@ -125,18 +195,7 @@ class StepState(JobUpdate):
         self.time = time
 
     def apply_to(self, job):
-        if self.state == "pending":
-            job.pending_steps.add(self.step_name)
-        else:
-            try:
-                job.pending_steps.remove(self.step_name)
-            except KeyError:
-                pass
-
-        if self.step_number is None:
-            if self.step_name not in job.step_numbers:
-                job.step_numbers[self.step_name] = len(job.step_numbers)
-            self.step_number = job.step_numbers[self.step_name]
+        job.step_update(self)
 
 
 class OutputItem(JobUpdate):
@@ -176,6 +235,15 @@ class StdOut(JobUpdate):
     """ Process has produced output on the TTY """
     def __init__(self, data):
         if not isinstance(data, str):
-            raise TypeError("StdOut.data not str: " + repr(data))
+            raise TypeError("StdOut.data not str: %r" % (data,))
 
         self.data = data
+
+
+class Enqueued(GeneratedUpdate):
+    """ The build was enqueued and jobs can be run. """
+
+    BLACKLIST = {"queue"}
+
+    def __init__(self, queue=None):
+        self.queue = queue

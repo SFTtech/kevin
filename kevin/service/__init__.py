@@ -35,7 +35,7 @@ class Service(metaclass=ServiceMeta):
     """
     Base class for all services for a project.
     A service is e.g. a IRC notification,
-    a job trigger via some webhook, etc.
+    a build trigger via some webhook, etc.
     """
 
     @classmethod
@@ -50,6 +50,9 @@ class Service(metaclass=ServiceMeta):
         pass
 
     def __init__(self, project):
+        from ..project import Project
+        if type(project) != Project:
+            raise TypeError("project has invalid type '%s'" % (type(project)))
         self.project = project
 
     def get_project(self):
@@ -60,7 +63,7 @@ class Service(metaclass=ServiceMeta):
 class Trigger(Service):
     """
     Base class for all project build triggers.
-    These can start a job by some means, either by external notification,
+    These can start a build by some means, either by external notification,
     or by active polling.
     """
 
@@ -69,11 +72,17 @@ class Trigger(Service):
     def name(cls):
         pass
 
+    def __init__(self, project):
+        super().__init__(project)
+
 
 class HookTrigger(Trigger):
     """
     Base class for a webhook trigger (e.g. the github thingy).
     """
+
+    def __init__(self, project):
+        super().__init__(project)
 
     @abstractmethod
     def get_handler(self):
@@ -85,14 +94,17 @@ class HookTrigger(Trigger):
 
 class Action(Service):
     """
-    When a job produces updates, children of this class are used to perform
+    When a build produces updates, children of this class are used to perform
     some actions, e.g. sending mail, setting status, etc.
     """
 
+    def __init__(self, project):
+        super().__init__(project)
+
     @abstractmethod
-    def get_watcher(self, job):
+    def get_watcher(self, build):
         """
-        Return a watcher to register for job updates.
+        Return a watcher object which is then registered for build updates.
         """
         pass
 

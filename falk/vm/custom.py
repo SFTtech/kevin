@@ -50,18 +50,13 @@ class Custom(Container):
 
         self.process.stdin.close()
 
-    def status(self):
+    def is_running(self):
         if self.process:
             running = self.process.poll() is None
         else:
             running = False
 
-        return dict(
-            running=running,
-            ssh_user=self.ssh_user,
-            ssh_host=self.ssh_host,
-            ssh_port=self.ssh_port,
-        )
+        return running
 
     def terminate(self):
         if self.process:

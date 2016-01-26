@@ -3,6 +3,7 @@ Code for interfacing with Falk instances to aquire VMs.
 """
 
 import socket
+from abc import ABC, abstractmethod
 
 from .process import Process
 
@@ -12,11 +13,25 @@ from falk.messages import (Message, ProtoType, Mode, Version, List,
 from falk.protocol import FalkProto, VERSION
 from falk.vm import ContainerConfig
 
-# TODO: contact all known falks to fetch their provided machines
-# TODO: cache the provided machines per falk.
+
+class FalkManager:
+    """
+    Keeps an overview about the reachable falks and their VMs.
+    TODO: contact all known falks to fetch their provided machines
+    TODO: cache the provided machines per falk.
+    """
+
+    def __init__(self):
+        self.falks = set()
+
+    def add_falk(self, falk):
+        self.falks.add(falk)
+
+    def remove_falk(self, falk):
+        self.falks.remove(falk)
 
 
-class Falk:
+class Falk(ABC):
     """
     VM provider instance.
     Provides a communication interface to request a VM.
@@ -34,7 +49,7 @@ class Falk:
         if not isinstance(welcomemsg, Welcome):
             raise Exception("falk did not welcome us: %s" % welcomemsg)
 
-        print("Falk '%s' says: %s" % (welcomemsg.name, welcomemsg.msg))
+        print("[falk] provider '%s' says: %s" % (welcomemsg.name, welcomemsg.msg))
 
         # set to json mode.
         jsonset = self.query(Mode("json"))
@@ -53,18 +68,19 @@ class Falk:
         # TODO: use/update cache
         return self.query(List()).machines
 
+    @abstractmethod
     def get_vm_host(self):
         """ Return the VM host by using the falk connection information """
         raise NotImplementedError()
 
-    def create_vm(self, name):
+    def create_vm(self, machine_id):
         """ Retrieve the machine list from falk and select one. """
 
-        if name not in self.get_vms():
+        if machine_id not in self.get_vms():
             raise Exception("requested VM not found.")
 
         # create vm handle in the remote falk.
-        run_id = self.query(Select(name)).run_id
+        run_id = self.query(Select(machine_id)).run_id
 
         # fetch status and ssh config for created vm handle.
         cfg = self.query(Status(run_id)).dump()
@@ -74,7 +90,10 @@ class Falk:
         if cfg["ssh_host"] == "localhost":
             cfg["ssh_host"] = self.get_vm_host()
 
-        config = ContainerConfig(name, cfg)
+        # create the machine config
+        config = ContainerConfig(machine_id, cfg, None)
+
+        # create machine from the config
         return VM(config, run_id, self)
 
     def query(self, msg=None):
@@ -90,6 +109,7 @@ class Falk:
             print("\x1b[31mignored leftover answer: %s\x1b[m" % (answer))
         return ret
 
+    @abstractmethod
     def send(self, msg=None, mode=ProtoType.json):
         """ Send a message to falk, yield the answer messages """
         raise NotImplementedError()
@@ -126,6 +146,7 @@ class FalkSSH(Falk):
         self.ssh_user = ssh_user
 
         # connect to the actual falk host
+        # TODO: make use of the ssh knownhost generator?
         self.connection = Process([
             "ssh",
             "-p", str(self.ssh_port),

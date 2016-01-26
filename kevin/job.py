@@ -2,8 +2,8 @@
 Job processing code
 """
 
+from abc import abstractmethod
 import json
-from pathlib import Path
 import shutil
 from threading import Lock
 import traceback
@@ -11,118 +11,63 @@ import traceback
 from .chantal import Chantal
 from .config import CFG
 from .falk import FalkSSH, FalkSocket
-from .jobupdate import (JobSource, JobUpdate, BuildState,
-                        StepState, StdOut, OutputItem)
 from .process import ProcTimeoutError
 from .project import Project
+from .update import (BuildSource, Update, JobState, JobAbort, StepState,
+                     StdOut, OutputItem, Enqueued, JobCreated,
+                     GeneratedUpdate)
 from .util import coroutine
-from .watcher import Watcher
+from .watcher import Watcher, Watchable
+from .service import Action
 
 from falk.control import VMError
 
 
-def new_job(project, commit_sha, clone_url, repo_url=None, user=None,
-            branch=None, status_update_url=None, comment=None):
+class JobAction(Action):
     """
-    Create a job by its commit hash.
-    If the job is known (by its commit hash), it's fetched from the cache.
-
-    returns (job, was_unknown_hash)
+    This action attaches a new job to a build.
     """
 
-    # brand_new says whether the job has not prevoiusly existed
-    # and should be enqueued.
-    from . import jobs
-    job, brand_new = jobs.get(commit_sha, project, create_new=True)
+    @classmethod
+    def name(cls):
+        return "job"
 
-    if status_update_url:
-        # store the status update url for the build status updater
-        job.add_info("status_update_url", status_update_url)
+    def __init__(self, cfg, project):
+        super().__init__(project)
+        self.job_name = cfg["name"]
+        self.descripton = cfg.get("description")
+        self.vm_name = cfg["machine"]
 
-    # TODO: may have multiple sources (e.g. branch, pullreq, ...)
-    #       each webhook adds this source again!
-    #       -> check if it's already in there.
-    job.update(JobSource(
-        clone_url=clone_url,
-        repo_url=repo_url,
-        author=user,
-        branch=branch,
-        comment=comment,
-    ))
-
-    # attach all project actions
-    project.attach_actions(job)
-
-    if not brand_new:
-        print("got known job: \x1b[2m[%s]\x1b[m @ %s" % (
-            job.job_id, job.clone_url))
-    else:
-        print("enqueueing job: \x1b[2m[%s]\x1b[m @ %s" % (
-            job.job_id, job.clone_url))
-        print("\x1b[1mcurl -N %s?job=%s\x1b[m" % (
-            CFG.dyn_url, job.job_id))
-
-    return job, brand_new
+    def get_watcher(self, build):
+        return Job(build, self.project, self.job_name)
 
 
-class Job:
+class Job(Watcher, Watchable):
     """
-    Holds all info for one build job, identified by its commit SHA id.
+    Holds all info for one job, which runs a commit SHA of a project
+    in a falk machine.
 
-    The constructor takes the commit id as an argument.
-    It checks the current state of the job, and acts accordingly:
-     - If the job has been marked as 'completed' in the file system,
-       its contents are loaded.
-     - If it hasn't, any files for this job are purged from the file system.
-
-    No two job objects with the same job id may exist.
-    The JOBS, COMPLETED_JOB_CACHE, and JOB_LOCK objects are to be
-    used to ensure that this constraint is met.
+    TODO: when "restarting" the job, the reconstruction from fs must
+          not happen. for that, a "reset" must be implemented.
     """
-    def __init__(self, job_id, project):
-        if not (job_id.isalnum() or len(job_id) == 40):
-            raise ValueError("bad commit SHA: " + repr(job_id))
-        self.job_id = job_id
+    def __init__(self, build, project, name):
+        super().__init__()
 
-        if not isinstance(project, Project):
-            raise ValueError("invalid project type: %s" % type(project))
+        # the project and build this job is invoked by
+        self.build = build
         self.project = project
+
+        # name of this job within a build.
+        self.name = name
 
         # No more tasks to perform for this job?
         self.completed = False
 
-        # Special information storage, for example the status update url,
-        # or other custom used by triggers and actions.
-        self.info = dict()
-
-        # callbacks that are to be invoked for each job update during the
-        # 'building' phase.
-        self.watchers = set()
-
-        # gathered sources of this job.
-        self.sources = set()
-
         # the tasks required to run for this job.
         self.tasks = set()
 
-        # URL where the repo containing this commit can be cloned from
-        # during the 'building' phase.
-        self.clone_url = None
-
         # List of job status update JSON objects.
         self.updates = list()
-        self.update_lock = Lock()
-
-        # storage path for the job output
-        # TODO: /project/jobs/hash[:2]/hash/$task/
-        self.path = CFG.web_folder.joinpath(
-            self.project.name,
-            "jobs",
-            self.job_id[:2],
-            self.job_id,
-            "task",        # TODO: name of the task
-        )
-        self.target_url = CFG.web_url + "?job=" + self.job_id
 
         # Internal cache, used when erroring all remaining pending states.
         self.pending_steps = set()
@@ -146,42 +91,59 @@ class Job:
         self.raw_file = None
         self.raw_remaining = 0
 
-        # only reconstruct if we wanna use the local storage
+        # storage folder for this job.
+        self.path = build.path.joinpath(self.name)
+
+        # tell the our watchers that we enqueued ourselves
+        self.send_update(JobCreated(self.build.commit_hash, self.name))
+
+        # try to reconstruct from the persistent storage.
+        self.load_from_fs()
+
+        # create the output directory structure
         if not CFG.args.volatile:
-            # Check the current status of the job.
-            self.completed = self.path.joinpath("_completed").is_file()
-            if self.completed:
-                # load update list from file
-                with self.path.joinpath("_updates").open() as updates_file:
-                    for json_line in updates_file:
-                        self.update(JobUpdate.construct(json_line), True)
-            else:
-                # make sure that there are no remains
-                # of previous aborted jobs.
-                try:
-                    shutil.rmtree(str(self.path))
-                except FileNotFoundError:
-                    pass
+            if not self.path.is_dir():
+                self.path.mkdir(parents=True)
 
-    def add_info(self, key, value):
-        """
-        A webhook may provide special information like the url where to send
-        status updates to.
+        # tell the build that we're a assigned job.
+        self.build.register_job(self)
 
-        Things like that can be stored with this function so they're
-        assigned to this job.
-        """
-        self.info[key] = value
+        # we are already attached to receive updates from a build
+        # now, we subscribe the build to us so it gets our updates.
+        self.watch(self.build)
 
-    def get_info(self, key):
+    def load_from_fs(self):
         """
-        Fetch special information that was set previously with `add_info`.
+        reconstruct the job from the filesystem.
+        TODO: currently, the old job attempt is deleted if not finished.
+        maybe we wanna keep it.
         """
-        return self.info.get(key)
+
+        # only reconstruct if we wanna use the local storage
+        if CFG.args.volatile:
+            return
+
+        # Check the current status of the job.
+        self.completed = self.path.joinpath("_completed").is_file()
+        if self.completed:
+            # load update list from file
+            with self.path.joinpath("_updates").open() as updates_file:
+                for json_line in updates_file:
+                    self.send_update(Update.construct(json_line),
+                                     save=True, fs_store=False,
+                                     forbid_completed=False)
+
+        else:
+            # make sure that there are no remains
+            # of previous aborted jobs.
+            try:
+                shutil.rmtree(str(self.path))
+            except FileNotFoundError:
+                pass
 
     def get_falk(self, name):
         """
-        return a suitable falk instance.
+        return a suitable falk instance for this job.
 
         currently this just filters by name.
         """
@@ -205,129 +167,128 @@ class Job:
                 raise Exception("unknown falk connection type: %s -> %s" % (
                     falkname, falkcfg["connection"]))
 
-    def get_vm(self, falk):
+    def on_send_update(self, update, save=True, fs_store=True,
+                       forbid_completed=True):
         """
-        Return a machine id that will be acquired for the build.
-        """
-        # TODO: select the vm the given falk can provide and suits this job.
-        return "debian0"
-
-    def watch(self, watcher):
-        """
-        Registers a watcher object.
-        The watcher's new_update() member method will be called for every
-        update that ever was and ever will be.
-
-        The JSON-serializable update dict is passed.
-        Once the end of updates has come, there will be one last, fatal call,
-        passing StopIteration.
+        When an update is to be sent to all watchers
         """
 
-        if not isinstance(watcher, Watcher):
-            raise Exception("invalid watcher type: %s" % type(watcher))
+        if update == StopIteration:
+            return
 
-        with self.update_lock:
-            self.watchers.add(watcher)
-            # send all previous updates to the watcher
+        if forbid_completed and self.completed:
+            raise Exception("job sending update after being completed.")
 
-            for update in self.updates:
-                watcher.new_update(update)
+        # debug debug debug baby.
+        # print("\x1b[33mjob.send_update\x1b[m: %r" % (update))
 
-            if self.completed:
-                watcher.new_update(StopIteration)
+        # when it's a StepUpdate, this manages the pending_steps set.
+        update.apply_to(self)
 
-    def unwatch(self, watcher):
-        """ Un-subscribes a previouly-registered watcher. """
-        with self.update_lock:
-            self.watchers.remove(watcher)
+        if isinstance(update, GeneratedUpdate):
+            save = False
 
-    def update(self, update, reconstructing=False):
+        if save:
+            self.updates.append(update)
+
+        if not save or not fs_store or CFG.args.volatile:
+            # don't write the update to the job storage
+            return
+
+        # append this update to the build updates file
+        with self.path.joinpath("_updates").open("a") as ufile:
+            ufile.write(update.json() + "\n")
+
+    def on_update(self, update):
         """
-        Applies an update to self, broadcasts it, appends it to self.updates.
-
-        The argument shall be a JobUpdate object.
+        When this job receives updates from any of its watched
+        watchables, the update is processed here.
         """
-        with self.update_lock:
-            store_update = True
 
-            if update == StopIteration:
-                store_update = False
-            else:
-                print("\x1b[33mjob.update\x1b[m: " + repr(update))
+        if isinstance(update, Enqueued):
+            if not self.completed:
+                # add the job to the processing queue
+                update.queue.add_job(self)
 
-            if isinstance(update, JobUpdate):
-                if update in self.sources:
-                    store_update = False
-                else:
-                    self.sources.add(update)
+        elif isinstance(update, JobAbort):
+            if update.job_name == self.name:
+                self.abort()
 
-            if store_update:
-                # this automatically manages the pending_steps set.
-                update.apply_to(self)
-                self.updates.append(update)
+    def step_update(self, update):
+        """ apply a step update to this job. """
 
-            for watcher in self.watchers:
-                watcher.new_update(update)
+        if not isinstance(update, StepState):
+            raise Exception("tried to use non-StepState to step_update")
 
-            if not reconstructing and not CFG.args.volatile:
-                if self.completed and update != StopIteration:
-                    # append this update to the updates file
-                    with self.path.joinpath("_updates").open("a") as ufile:
-                        ufile.write(update.json() + "\n")
+        if update.state == "pending":
+            self.pending_steps.add(update.step_name)
+        else:
+            try:
+                self.pending_steps.remove(update.step_name)
+            except KeyError:
+                pass
 
-    def build(self):
-        """
-        Attempts to build the job.
-        """
+        if update.step_number is None:
+            if update.step_name not in self.step_numbers:
+                self.step_numbers[update.step_name] = len(self.step_numbers)
+            update.step_number = self.step_numbers[update.step_name]
+
+    def set_state(self, state, text, time=None):
+        """ set the job state information """
+        self.send_update(JobState(self.name, state, text, time))
+
+
+    def set_step_state(self, step_name, state, text, time=None):
+        """ send a StepState update. """
+        self.send_update(StepState(self.name, step_name, state, text,
+                                   time=None))
+
+    def on_watch(self, watcher):
+        # send all previous job updates to the watcher
+        for update in self.updates:
+            watcher.on_update(update)
+
+        # and send stop if this job is finished
+        if self.completed:
+            watcher.on_update(StopIteration)
+
+
+    def run(self):
+        """ Attempts to build the job. """
 
         try:
-            # create the output directory structure
-            if not CFG.args.volatile:
-                self.path.mkdir(parents=True, exist_ok=False)
+            print("\x1b[1mcurl -N %s?project=%s&hash=%s&job=%s\x1b[m" % (
+                CFG.dyn_url, self.build.project.name,
+                self.build.commit_hash, self.name))
 
             # TODO: allow falk bypass by launching VM locally!
 
             # falk contact
-            self.update(BuildState("pending", "requesting VM"))
+            self.set_state("pending", "requesting VM")
 
-            # TODO: falk selection
+            # TODO: falk and VM selection
             falk = self.get_falk("falk0")
-            vm = falk.create_vm(self.get_vm(falk))
-
-            # TODO: run job on multiple VMs.
-            # insert for loop for all VMs that should be run for
-            # that job. the ones to use are defined in the project
-            # associated with the job.
+            vm = falk.create_vm("debian0")
 
             # vm was acquired, now boot it.
-            self.update(BuildState("pending", "booting VM"))
+            self.set_state("pending", "booting VM")
 
             with Chantal(vm) as chantal:
-                # TODO: support contacting chantal through
-                #       plain socket and not only ssh
-                #       and allow preinstallations of chantal
-                chantal.wait_for_ssh_port(timeout=30)
-                print("installing chantal via scp")
+                chantal.wait_for_connection()
 
-                # TODO: allow to skip chantal installation
-                kevindir = Path(__file__)
-                chantal.upload(kevindir.parent.parent / "chantal")
+                print("[job] installing chantal...")
+                chantal.install()
 
-                print("running chantal via ssh")
-                chantal_output = chantal.run_command(
-                    "python3", "-u", "-m",
-                    "chantal", self.clone_url, self.job_id,
-                    self.project.cfg.job_desc_file,
-                    timeout=self.project.cfg.job_timeout,
-                    silence_timeout=self.project.cfg.job_silence_timeout,
-                )
+                print("[job] running chantal...")
+                chantal_output = chantal.run(self)
+
                 control_handler = self.control_handler()
                 for stream_id, data in chantal_output:
                     if stream_id == 1:
                         # stdout message
-                        self.update(
-                            StdOut(data.decode("utf-8", errors="replace"))
-                        )
+                        self.send_update(
+                            StdOut(data.decode("utf-8", errors="replace")))
+
                     elif stream_id == 2:
                         # control message stream chunk
                         control_handler.send(data)
@@ -345,8 +306,8 @@ class Job:
                       ))
 
                 if self.current_step:
-                    self.update(StepState(self.current_step,
-                                          "error", "Timeout!"))
+                    self.set_step_state(self.current_step, "error",
+                                        "Timeout!")
 
                 self.error("Job took > %.02fs." % (job_timeout))
 
@@ -357,9 +318,9 @@ class Job:
 
                 # a specific step is responsible:
                 if self.current_step:
-                    self.update(StepState(self.current_step, "error",
-                                          "Silence for > %.02fs." % (
-                                              silence_timeout)))
+                    self.set_step_state(self.current_step, "error",
+                                        "Silence for > %.02fs." % (
+                                            silence_timeout))
                     self.error("Silence Timeout!")
                 else:
                     # bad step is unknown:
@@ -367,48 +328,51 @@ class Job:
 
         except VMError as exc:
             print("\x1b[31;1mMachine action failed\x1b[m", end=" ")
-            print("[\x1b[33m" + self.job_id + "\x1b[m]")
+            print("%s.%s [\x1b[33m%s\x1b[m]" % (self.build.project.name,
+                                                self.name,
+                                                self.build.commit_hash))
+            traceback.print_exc()
             self.error("VM Error: " + str(exc))
 
         except BaseException as exc:
-            print("\x1b[31;1mexception in Job.build()\x1b[m", end=" ")
-            print("[\x1b[33m" + self.job_id + "\x1b[m]")
+            print("\x1b[31;1mexception in Job.run()\x1b[m", end=" ")
+            print("%s.%s [\x1b[33m%s\x1b[m]" % (self.build.project.name,
+                                                self.name,
+                                                self.build.commit_hash))
+
             traceback.print_exc()
             try:
-                self.error("Job.build(): " + repr(exc))
+                self.error("Job.run(): " + repr(exc))
             except BaseException as exc:
                 print("\x1b[31;1mfailed to notify service about error\x1b[m")
                 traceback.print_exc()
 
         finally:
+
+            # error the leftover steps
             for step in self.pending_steps:
-                self.update(
-                    StepState(step, 'error', 'step result was not reported')
-                )
+                self.set_step_state(step, 'error',
+                                    'step result was not reported')
 
-            if not CFG.args.volatile:
-                # dump all job updates to the filesystem
-                with self.path.joinpath("_updates").open("w") as updates_file:
-                    with self.update_lock:
-                        for update in self.updates:
-                            updates_file.write(update.json() + "\n")
-                # the job is now officially completed
-                self.path.joinpath("_completed").touch()
-
+            # the job is completed!
             with self.update_lock:
                 self.completed = True
 
-            self.update(StopIteration)
+            if not CFG.args.volatile:
+                # the job is now officially completed
+                self.path.joinpath("_completed").touch()
+
+            self.send_update(StopIteration)
 
     def error(self, text):
         """
-        Produces an 'error' BuildState and an 'error' StepState for all
+        Produces an 'error' JobState and an 'error' StepState for all
         steps that are currently pending.
         """
-        self.update(BuildState("error", text))
+        self.set_state("error", text)
         while self.pending_steps:
             step = self.pending_steps.pop()
-            self.update(StepState(step, "error", "build has errored"))
+            self.set_step_state(step, "error", "build has errored")
 
     @coroutine
     def control_handler(self):
@@ -456,21 +420,16 @@ class Job:
         control message parser, chantal sends state through this channel.
         """
 
-        print("control: " + msg)
         msg = json.loads(msg)
 
         cmd = msg["cmd"]
 
-        if cmd == 'build-state':
-            self.update(BuildState(msg["state"], msg["text"]))
+        if cmd == 'job-state':
+            self.set_state(msg["state"], msg["text"])
 
         elif cmd == 'step-state':
             self.current_step = msg["step"]
-            self.update(StepState(
-                msg["step"],
-                msg["state"],
-                msg["text"]
-            ))
+            self.set_step_state(msg["step"], msg["state"], msg["text"])
 
         elif cmd == 'output-item':
             name = msg["name"]
@@ -483,7 +442,7 @@ class Job:
                     "expected: " + self.current_output_item.name
                 )
 
-            self.update(self.current_output_item)
+            self.send_update(self.current_output_item)
             self.current_output_item = None
 
         elif cmd in {'output-dir', 'output-file'}:
@@ -527,3 +486,7 @@ class Job:
 
         else:
             raise ValueError("unknown build control command: %r" % (cmd))
+
+    def abort(self):
+        """ Abort the execution of this job """
+        raise NotImplementedError()

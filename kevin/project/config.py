@@ -25,6 +25,7 @@ class Config:
 
         # trigger the class instanciation for all services
         from ..service.github import GitHubHook
+        from ..job import Job
 
         # parse the project config file
         raw = ConfigParser()
@@ -62,6 +63,7 @@ class Config:
                     modulename = hassuffix.group(1)
 
                 # fetch the service class by the section name
+                # this is a child class of "Service".
                 modulecls = SERVICES.get(modulename)
                 if not modulecls:
                     raise ValueError("%s is not a valid module, "
