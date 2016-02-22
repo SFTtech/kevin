@@ -73,10 +73,33 @@ class Falk(ABC):
         """ Return the VM host by using the falk connection information """
         raise NotImplementedError()
 
-    def create_vm(self, machine_id):
-        """ Retrieve the machine list from falk and select one. """
+    def create_vm(self, machine_name, explicit=False):
+        """
+        Retrieve the machine list from falk and select one.
 
-        if machine_id not in self.get_vms():
+        If explicit is True, machine_name will be used as machine_id,
+        which is the unique VM identifier for this falk.
+        """
+
+        falk_vms = self.get_vms()
+
+        machine_id = None
+
+        # match by name, not by id:
+        if not explicit:
+            # try to find the machine in the list:
+            for vm_id, (_, name) in falk_vms.items():
+
+                # here, do the name match:
+                if machine_name == name:
+                    machine_id = vm_id
+
+            if machine_id is None:
+                return None
+        else:
+            machine_id = machine_name
+
+        if machine_id not in falk_vms.keys():
             raise Exception("requested VM not found.")
 
         # create vm handle in the remote falk.

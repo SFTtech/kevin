@@ -39,7 +39,7 @@ class JobAction(Action):
         self.vm_name = cfg["machine"]
 
     def get_watcher(self, build):
-        return Job(build, self.project, self.job_name)
+        return Job(build, self.project, self.job_name, self.vm_name)
 
 
 class Job(Watcher, Watchable):
@@ -50,7 +50,7 @@ class Job(Watcher, Watchable):
     TODO: when "restarting" the job, the reconstruction from fs must
           not happen. for that, a "reset" must be implemented.
     """
-    def __init__(self, build, project, name):
+    def __init__(self, build, project, name, vm_name):
         super().__init__()
 
         # the project and build this job is invoked by
@@ -59,6 +59,9 @@ class Job(Watcher, Watchable):
 
         # name of this job within a build.
         self.name = name
+
+        # name of the vm where the job shall run.
+        self.vm_name = vm_name
 
         # No more tasks to perform for this job?
         self.completed = False
@@ -141,31 +144,40 @@ class Job(Watcher, Watchable):
             except FileNotFoundError:
                 pass
 
-    def get_falk(self, name):
+    def get_falk_vm(self, vm_name):
         """
-        return a suitable falk instance for this job.
-
-        currently this just filters by name.
+        return a suitable vm instance for this job from a falk.
         """
 
+        vm = None
+
+        # try each falk to find the machine
         for falkname, falkcfg in CFG.falks.items():
 
-            # TODO: selection if this falk is suitable, e.g. has machine
-            #       for this job. either via cache or direct query.
+            # TODO: better selection if this falk is suitable, e.g. has
+            #       machine for this job. either via cache or direct query.
 
-            if falkname != name:
-                continue
-
+            falk = None
             if falkcfg["connection"] == "ssh":
                 host, port = falkcfg["location"]
-                return FalkSSH(self, host, port, falkcfg["user"])
+                falk = FalkSSH(self, host, port, falkcfg["user"])
 
             elif falkcfg["connection"] == "unix":
-                return FalkSocket(self, falkcfg["location"], falkcfg["user"])
+                falk = FalkSocket(self, falkcfg["location"], falkcfg["user"])
 
             else:
                 raise Exception("unknown falk connection type: %s -> %s" % (
                     falkname, falkcfg["connection"]))
+
+            vm = falk.create_vm(vm_name)
+
+            if vm is not None:
+                # we found the machine
+                return vm
+
+        if vm is None:
+            raise Exception("VM '%s' could not be provided by any falk" % (
+                vm_id))
 
     def on_send_update(self, update, save=True, fs_store=True,
                        forbid_completed=True):
@@ -261,14 +273,11 @@ class Job(Watcher, Watchable):
                 CFG.dyn_url, self.build.project.name,
                 self.build.commit_hash, self.name))
 
-            # TODO: allow falk bypass by launching VM locally!
-
             # falk contact
             self.set_state("pending", "requesting VM")
 
-            # TODO: falk and VM selection
-            falk = self.get_falk("falk0")
-            vm = falk.create_vm("debian0")
+            # TODO: allow falk bypass by launching VM locally without falk!
+            vm = self.get_falk_vm(self.vm_name)
 
             # vm was acquired, now boot it.
             self.set_state("pending", "booting VM")

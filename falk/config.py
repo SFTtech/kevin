@@ -6,7 +6,7 @@ from configparser import ConfigParser
 from pathlib import Path
 import re
 
-from .vm import CONTAINERS
+from .vm import CONTAINERS, ContainerConfig
 
 class Config:
     def __init__(self):
@@ -80,9 +80,15 @@ class Config:
 
             # each machine type requests different config options,
             # these are parsed here.
+            # this should be a a ContainerConfig object.
             machineconfig = machineclass.config(machineid,
                                                 machinecfg,
                                                 cfgpath)
+
+            if not isinstance(machineconfig, ContainerConfig):
+                raise Exception("'%s' did not return ContainerConfig" % (
+                    machineclassname))
+
             self.machines[machineid] = (machineconfig, machineclass)
 
     def verify(self):

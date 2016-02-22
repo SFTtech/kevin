@@ -226,9 +226,11 @@ class FalkProto(asyncio.Protocol):
             # TODO: actual permission checking
             # user: {vmname, vmname, ...} access and management
             if isinstance(msg, messages.List):
+
+                # the config stores machineid -> (config, class)
                 answer = messages.MachineList(
-                    [(name, cls.__name__)
-                     for name, (_, cls) in CFG.machines.items()]
+                    [(vm_id, (cls.__name__, cfg.name))
+                     for vm_id, (cfg, cls) in CFG.machines.items()]
                 )
 
             elif isinstance(msg, messages.Select):
