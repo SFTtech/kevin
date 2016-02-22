@@ -1,16 +1,34 @@
+# project config.
+# place many of those in a folder.
+
 [project]
 # general project configuration
 name = murrica-freedom-simulator-9001
-job_max_output = 500MiB
 job_timeout = 10m
 job_silence_timeout = 5min
 job_desc_file = .kevin
 
-
 [github_webhook]
+# github delivers an authenticated captain hook to kevin
 hooksecret = roflsharedsecret
 repos = yourmom/repo, yourdad/somerepo
 
 [github_status]
+# used to display the progress status on github
+# create that access token for a github account
 user = yourmom
 token = tokentokentokenbaby
+
+[job.0]
+# invokes a container launch
+name = GNU-debian-hurd
+description = launch the vm and give me freedom
+machine = name-which-the-job-requests-from-falk
+# use a different file for this job. default: use project setting.
+#job_desc_file = .kevin-hurd
+
+[job.1]
+# another job, triggered by the same webhook.
+name = whitespaceOS
+description = brainfuck based emulator running haiku
+machine = haiku

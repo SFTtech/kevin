@@ -7,9 +7,11 @@ control_socket_permissions = 770
 #control_socket_group = kevin
 ssh_port = [7777,8000]
 
-[debian0]
+[myvm0]
+name = name-which-the-job-requests
 type = qemu
 ssh_user = chantal
-base_image = /path/to/IMAGENAME/diskimage.qcow2
-overlay_image = /tmp/temporary-runimage.img
+ssh_key = ssh-ed25519 MY /etc/ssh/ssh_host_ed25519_key.pub CONTENT
+base_image = /path/to/permanent/IMAGENAME/diskimage.qcow2
+overlay_image = /tmp/kevin-vm-tmp.img
 command = qemu-system-x86_64 -machine type=q35,accel=kvm -drive file=IMAGENAME,if=virtio,format=qcow2 -m 2G -smp 2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:SSHPORT-:22

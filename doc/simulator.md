@@ -8,17 +8,17 @@ we provide a simulator that mimics the api of that service.
 These are located in `kevin/simulator`.
 
 
-Example for letting `some-repo` been built by the kevin currently running with
+Example for building `some-repo` with a kevin currently running with
 the given config file:
 
 ```
-python -m kevin.simulator github http://github.com/SFTtech/openage /some/kevin.conf
+python -m kevin.simulator http://github.com/SFTtech/openage projectname /some/kevin.conf github
 ```
 
 Alternatively, for a local repo on your machine:
 
 ```
-python -m kevin.simulator --local-repo github ~/devel/some-repo/.git /some/kevin.conf
+python -m kevin.simulator --local-repo ~/devel/some-repo/.git projectname /some/kevin.conf github
 ```
 
 
