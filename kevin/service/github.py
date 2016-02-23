@@ -132,8 +132,25 @@ class GitHubHookHandler(HookHandler):
             # dispatch by event type
             if event == "pull_request":
                 self.handle_pull_request(project, json_data)
+
             elif event == "push":
                 self.handle_push(project, json_data)
+
+            elif event == "fork":
+                user = json_data["sender"]["login"]
+                forklocation = json_data["forkee"]["full_name"]
+                forkurl = json_data["forkee"]["html_url"]
+                print("[github] %s forked %s to %s at %s" % (
+                    user, project_name, forklocation, forkurl
+                ))
+
+            elif event == "watch":
+                action = json_data["action"]
+                user = json_data["sender"]["login"]
+                watchlocation = json_data["repository"]["full_name"]
+                print("[github] %s %s watching %s" % (
+                    user, action, project_name
+                ))
             else:
                 raise ValueError("unhandled hook event '%s'" % event)
 
