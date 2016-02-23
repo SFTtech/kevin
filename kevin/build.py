@@ -12,7 +12,7 @@ from threading import Lock
 from .config import CFG
 from .project import Project
 from .update import (Update, BuildState, BuildSource, Enqueued, JobState,
-                     GeneratedUpdate, JobCreated, JobUpdate)
+                     GeneratedUpdate, JobCreated, JobUpdate, ActionsAttached)
 from .watcher import Watchable, Watcher
 
 
@@ -149,6 +149,11 @@ class Build(Watchable, Watcher):
             self.project.attach_actions(self)
             self.actions_attached = True
 
+            # notify all watchers that all actions (which are watchers)
+            # are now attached.
+            # this e.g. triggers that jobs register at the build.
+            self.send_update(ActionsAttached())
+
     def load_from_fs(self):
         """
         set up this build from the filesystem.
@@ -202,7 +207,8 @@ class Build(Watchable, Watcher):
 
         if self.completed:
             # no more processing needed.
-            self.queue.remove_build(self)
+            if self.queue:
+                self.queue.remove_build(self)
 
         else:
             # create build state folder
@@ -223,9 +229,6 @@ class Build(Watchable, Watcher):
         """
         Registers a job that is run for this build.
         """
-        if self.finished:
-            raise Exception("registered job after being finished!")
-
         # some job was notified by this build and now
         # says "hey i'm created now."
         self.jobs[job.name] = job
@@ -273,8 +276,9 @@ class Build(Watchable, Watcher):
 
         elif isinstance(update, JobState):
             if update.job_name not in self.jobs:
-                raise Exception("unknown job '%s' in project '%s'" % (
-                    update.job_name, self.project.name))
+                raise Exception("unknown state update for job '%s' "
+                                "in project '%s'" % (update.job_name,
+                                                     self.project.name))
 
             # a job reports its status:
             job = self.jobs[update.job_name]
@@ -305,8 +309,10 @@ class Build(Watchable, Watcher):
             raise Exception("finish called again!")
 
         if self.queue:
-            # may not have been in the queue
             self.queue.remove_build(self)
+
+            # we're no longer enqueued.
+            self.queue = None
 
         # TODO: we may wanna have allowed-to-fail jobs.
         if self.jobs_succeeded == set(self.jobs.values()):

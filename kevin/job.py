@@ -15,7 +15,7 @@ from .process import ProcTimeoutError
 from .project import Project
 from .update import (BuildSource, Update, JobState, JobAbort, StepState,
                      StdOut, OutputItem, Enqueued, JobCreated,
-                     GeneratedUpdate)
+                     GeneratedUpdate, ActionsAttached)
 from .util import coroutine
 from .watcher import Watcher, Watchable
 from .service import Action
@@ -107,13 +107,6 @@ class Job(Watcher, Watchable):
         if not CFG.args.volatile:
             if not self.path.is_dir():
                 self.path.mkdir(parents=True)
-
-        # tell the build that we're a assigned job.
-        self.build.register_job(self)
-
-        # we are already attached to receive updates from a build
-        # now, we subscribe the build to us so it gets our updates.
-        self.watch(self.build)
 
     def load_from_fs(self):
         """
@@ -217,7 +210,17 @@ class Job(Watcher, Watchable):
         watchables, the update is processed here.
         """
 
-        if isinstance(update, Enqueued):
+        if isinstance(update, ActionsAttached):
+            # tell the build that we're a assigned job.
+            self.build.register_job(self)
+
+            # we are already attached to receive updates from a build
+            # now, we subscribe the build to us so it gets our updates.
+            # when we reconstructed the job from filesystem,
+            # this step feeds all the data into the build.
+            self.watch(self.build)
+
+        elif isinstance(update, Enqueued):
             if not self.completed:
                 # add the job to the processing queue
                 update.queue.add_job(self)
@@ -269,6 +272,9 @@ class Job(Watcher, Watchable):
         """ Attempts to build the job. """
 
         try:
+            if self.completed:
+                raise Exception("tried to run a completed job!")
+
             print("\x1b[1mcurl -N %s?project=%s&hash=%s&job=%s\x1b[m" % (
                 CFG.dyn_url, self.build.project.name,
                 self.build.commit_hash, self.name))
@@ -357,6 +363,8 @@ class Job(Watcher, Watchable):
                 traceback.print_exc()
 
         finally:
+
+            print("[job] execution done")
 
             # error the leftover steps
             for step in self.pending_steps:

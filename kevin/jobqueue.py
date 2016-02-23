@@ -40,7 +40,6 @@ class Queue:
         print("[queue] removing build: \x1b[2m[%s]\x1b[m @ %s" % (
             build.commit_hash, build.clone_url))
 
-        # or discard it?
         self.pending_builds.remove(build)
 
     def add_job(self, job):

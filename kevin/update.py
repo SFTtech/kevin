@@ -247,3 +247,10 @@ class Enqueued(GeneratedUpdate):
 
     def __init__(self, queue=None):
         self.queue = queue
+
+
+class ActionsAttached(GeneratedUpdate):
+    """ All actions of the project were attached to the build. """
+
+    def __init__(self):
+        pass
