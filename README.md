@@ -1,6 +1,6 @@
 # kevin CI
 
-A simple-stupid self-hosted continuous integration service.
+A simple-stupid self-hosted continuous incineration service.
 
 
 ### Dafuq?
