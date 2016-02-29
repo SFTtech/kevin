@@ -60,7 +60,11 @@ class Update(metaclass=UpdateMeta):
         data = json.loads(jsonmsg)
         classname = data['class']
         del data['class']
-        return UPDATE_CLASSES[classname](**data)
+        try:
+            return UPDATE_CLASSES[classname](**data)
+        except (TypeError, KeyError) as err:
+            raise Exception("Failed reconstructing %s: %r" % (
+                classname, err)) from None
 
 
 class GeneratedUpdate(Update):
@@ -86,13 +90,6 @@ class JobUpdate(Update):
         Raise to report errors.
         """
         pass
-
-
-class BuildUpdate(Update):
-    """
-    An update that is assigned to a build.
-    """
-    pass
 
 
 class JobCreated(GeneratedUpdate, JobUpdate):
@@ -130,7 +127,7 @@ class BuildSource(Update):
 
 class State(Update):
     """ Overall state change """
-    def __init__(self, state, text, time=None):
+    def __init__(self, project_name, build_id, state, text, time=None):
         if state not in ALLOWED_BUILD_STATES:
             raise ValueError("Illegal state: " + repr(state))
         if not text.isprintable():
@@ -145,6 +142,9 @@ class State(Update):
         self.state = state
         self.text = text
         self.time = time
+
+        self.project_name = project_name
+        self.build_id = build_id
 
     def is_succeeded(self):
         """ return if the build succeeded """
@@ -162,26 +162,31 @@ class State(Update):
 class BuildState(GeneratedUpdate, State):
     """ Build specific state changes """
 
-    def __init__(self, state, text, time=None):
-        State.__init__(self, state, text, time)
+    def __init__(self, project_name, build_id, state, text, time=None):
+        State.__init__(self, project_name, build_id, state, text, time)
 
 
 class JobState(JobUpdate, State):
     """ Job specific state changes """
 
-    def __init__(self, job_name, state, text, time=None):
-        State.__init__(self, state, text, time)
+    def __init__(self, project_name, build_id, job_name,
+                 state, text, time=None):
+        State.__init__(self, project_name, build_id, state, text, time)
         self.job_name = job_name
 
 
-class StepState(JobUpdate):
+class StepState(JobUpdate, State):
     """ Step build state change """
 
     # don't dump these
     BLACKLIST = {"step_number"}
 
-    def __init__(self, job_name, step_name, state, text, time=None,
+    def __init__(self, project, build_id, job_name,
+                 step_name, state, text, time=None,
                  step_number=None):
+
+        State.__init__(self, project, build_id, state, text, time)
+
         if not step_name.isidentifier():
             raise ValueError("StepState.step_name invalid: %r" % (step_name))
         if time is None:
@@ -190,9 +195,6 @@ class StepState(JobUpdate):
         self.job_name = job_name
         self.step_name = step_name
         self.step_number = step_number
-        self.state = state
-        self.text = text
-        self.time = time
 
     def apply_to(self, job):
         job.step_update(self)
@@ -233,20 +235,23 @@ class OutputItem(JobUpdate):
 
 class StdOut(JobUpdate):
     """ Process has produced output on the TTY """
-    def __init__(self, data):
+    def __init__(self, project, build_id, job_name, data):
         if not isinstance(data, str):
             raise TypeError("StdOut.data not str: %r" % (data,))
 
+        self.project = project
+        self.build_id = build_id
+        self.job_name = job_name
         self.data = data
 
 
 class Enqueued(GeneratedUpdate):
     """ The build was enqueued and jobs can be run. """
 
-    BLACKLIST = {"queue"}
-
-    def __init__(self, queue=None):
+    def __init__(self, build_id, queue, project):
+        self.build_id = build_id
         self.queue = queue
+        self.project = project
 
 
 class ActionsAttached(GeneratedUpdate):

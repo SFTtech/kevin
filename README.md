@@ -35,6 +35,19 @@ and [tornado](http://www.tornadoweb.org/).
 * Self-hostable.
 
 
+### Features
+
+* GitHub pull requests
+ * A build is triggered for each new and updated pull request
+ * When you push to a currently-in-build branch,
+   the previous build is canceled
+
+* File output
+ * Let your project generate files and folders
+ * They're saved to the static web folder
+ * Use it to generate documentation, releases, ...
+
+
 ### [Supported containers](/falk/vm/)
 
 * [qemu](http://qemu-project.org) (kvm)

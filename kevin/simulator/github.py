@@ -123,9 +123,12 @@ class GitHub(service.Service):
         reponame = trigger.repos[0]
         hooksecret = trigger.hooksecret
 
+        pull_id = 1337
+
         pull_req = {
             "action": "synchronize",
             "sender": {"login": "rolf"},
+            "number": pull_id,
             "pull_request": {
                 "head": {
                     "repo": {

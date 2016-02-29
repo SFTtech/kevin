@@ -22,6 +22,10 @@ class Project:
         # these will receive or distribute build updates
         self.actions = list()
 
+        # additional watchers to be attached
+        self.watchers = list()
+
+        # sort the services from the config in the appropriate list
         for service in self.cfg.services:
             if isinstance(service, Trigger):
                 self.triggers.append(service)
@@ -35,6 +39,10 @@ class Project:
         """ return the unique project name """
         return self.cfg.project_name
 
+    def add_watchers(self, watchers):
+        """ Add actions manually as they may be created by e.g. triggers. """
+        self.watchers.extend(watchers)
+
     def attach_actions(self, watchable):
         """
         Register all requested actions to the update provider to receive
@@ -42,4 +50,8 @@ class Project:
         """
         for action in self.actions:
             watcher = action.get_watcher(watchable)
+            watchable.watch(watcher)
+
+        # attach additional watchers which were created by some trigger.
+        for watcher in self.watchers:
             watchable.watch(watcher)

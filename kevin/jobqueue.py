@@ -14,6 +14,7 @@ class Queue:
 
     def __init__(self):
         self.pending_builds = set()
+        self.build_ids = dict()
         self.job_queue = queue.Queue(maxsize=CFG.max_jobs_queued)
 
     def add_build(self, build):
@@ -31,6 +32,7 @@ class Queue:
             build.commit_hash, build.clone_url))
 
         self.pending_builds.add(build)
+        self.build_ids[build.commit_hash] = build
 
         # send signal to build so it can notify its jobs to add themselves!
         build.on_enqueue(self)
@@ -40,7 +42,18 @@ class Queue:
         print("[queue] removing build: \x1b[2m[%s]\x1b[m @ %s" % (
             build.commit_hash, build.clone_url))
 
+        del self.build_ids[build.commit_hash]
         self.pending_builds.remove(build)
+
+    def abort_build(self, build_id):
+        """ Abort a running build by aborting all pending jobs """
+        raise NotImplementedError()
+
+    def is_pending(self, commit_hash):
+        """ Test if a commit hash is currently being built """
+        # TODO: what if a second project wants the same hash?
+        #       we can't reuse the build then!
+        return commit_hash in self.build_ids.keys()
 
     def add_job(self, job):
         """ Add a job to the queue """

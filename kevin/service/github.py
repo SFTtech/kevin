@@ -8,14 +8,16 @@ import  json
 import hmac
 import traceback
 from hashlib import sha1
+from threading import Lock
 
 import requests
 
-from . import (HookHandler, HookTrigger, Action)
+from . import Action
 from ..build import new_build
 from ..config import CFG
+from ..httpd import HookHandler, HookTrigger
 from ..update import (Update, BuildState, JobState,
-                      StepState, GeneratedUpdate)
+                      StepState, GeneratedUpdate, Enqueued)
 from ..watcher import Watcher
 
 
@@ -24,6 +26,103 @@ class GitHubStatusURL(GeneratedUpdate):
 
     def __init__(self, destination):
         self.destination = destination
+
+
+class GitHubPullRequest(GeneratedUpdate):
+    """ Sent when a github pull request was created or updated """
+
+    def __init__(self, project_name, repo, pull_id, commit_hash):
+        self.project_name = project_name
+        self.repo = repo
+        self.pull_id = pull_id
+        self.commit_hash = commit_hash
+
+
+class GitHubPullManager(Watcher):
+    """
+    Tracks running pull requests and aborts a running build
+    if the same pull request gets an update.
+
+    Subscribes to all builds.
+    """
+
+    def __init__(self, repos):
+        # secures the pending pull requests
+        self.pull_lock = Lock()
+
+        # repos this pullmanager is responsible for
+        self.repos = repos
+
+        # all the pulls that we triggered
+        # (project, repo, pull_id) -> (build_id, queue)
+        self.running_pull_builds = dict()
+
+    def on_update(self, update):
+        if isinstance(update, GitHubPullRequest):
+            # new pull request information that may cause an abort.
+            key = (update.project_name, update.repo, update.pull_id)
+
+            if update.repo not in self.repos:
+                # repo is not handled by this pull manager,
+                # don't do anything.
+                return
+
+            with self.pull_lock:
+                # get the running build id for this pull request
+                entry = self.running_pull_builds.get(key)
+
+                if entry is not None:
+                    build_id, queue = entry
+
+                else:
+                    # that pull is not running currently, so
+                    # store that it's running.
+                    # the queue is unknown, set it to None.
+                    self.running_pull_builds[key] = (update.commit_hash,
+                                                     None)
+                    return
+
+                if build_id == update.commit_hash:
+                    # the same build is running currently, just ignore it
+                    pass
+
+                else:
+                    # the pull request is running already,
+                    # now abort the previous build for it.
+
+                    if not queue:
+                        # we didn't get the "Enqueued" update for the build
+                        print("[github] got build request for unknown queue")
+
+                    else:
+                        # abort it
+                        queue.abort_build(build_id)
+
+                    # and store the new build id for that pull request
+                    self.running_pull_builds[key] = (update.commit_hash,
+                                                     None)
+
+        elif isinstance(update, Enqueued):
+            # catch the queue of the build
+            # only if we track that build, we store the queue
+
+            with self.pull_lock:
+                # select the tracked build and store the learned queue
+                for key, (build_id, _) in self.running_pull_builds.items():
+                    if update.build_id == build_id:
+                        self.running_pull_builds[key] = (build_id,
+                                                         update.queue)
+
+        elif isinstance(update, BuildState):
+            # build state to remove a running pull request
+            if update.is_finished():
+                with self.pull_lock:
+                    for key, (build_id, queue) in self.running_pull_builds.items():
+                        if update.build_id == build_id:
+
+                            # remove the build from the run list
+                            del self.running_pull_builds[key]
+                            return
 
 
 class GitHubHook(HookTrigger):
@@ -40,7 +139,7 @@ class GitHubHook(HookTrigger):
         return "github_webhook"
 
     def __init__(self, cfg, project):
-        super().__init__(project)
+        super().__init__(cfg, project)
 
         # shared secret
         self.hooksecret = cfg["hooksecret"].encode()
@@ -49,6 +148,13 @@ class GitHubHook(HookTrigger):
         self.repos = list()
         for repo in cfg["repos"].split(","):
             self.repos.append(repo.strip())
+
+        # pull request manager to detect
+        # build aborts
+        self.pull_manager = GitHubPullManager(self.repos)
+
+    def get_watchers(self):
+        return [ self.pull_manager ]
 
     def get_handler(self):
         return ("/hook-github", GitHubHookHandler)
@@ -91,7 +197,7 @@ class GitHubHookHandler(HookHandler):
             json_data = json.loads(blob.decode())
 
             # select the repo the update came from
-            project_name = json_data["repository"]["full_name"]
+            repo_name = json_data["repository"]["full_name"]
 
             # verify the shared secret.
             # at least one of the triggers must have it.
@@ -99,8 +205,9 @@ class GitHubHookHandler(HookHandler):
             project = None
             tried_repos = set()
 
+            # find the trigger responsible for the pull request.
             for trigger in self.triggers:
-                if project_name in trigger.repos:
+                if repo_name in trigger.repos:
 
                     if self.verify_secret(blob, headers, trigger.hooksecret):
                         project = trigger.get_project()
@@ -115,18 +222,18 @@ class GitHubHookHandler(HookHandler):
                 tried_repos |= set(trigger.repos)
 
             if project is None:
-                if project_name in tried_repos:
+                if repo_name in tried_repos:
                     # we found the project but the signature was invalid
                     print("[github] \x1b[31minvalid signature\x1b[m "
                           "for %s hook, sure you use the same keys?" % (
-                        project_name))
+                        repo_name))
                     raise ValueError("invalid message signature")
 
                 else:
                     # the project could not be found by repo name
                     print("[github] \x1b[31mcould not find project\x1b[m "
                           "for hook from '%s'. I tried: %s" % (
-                        project_name, tried_repos))
+                        repo_name, tried_repos))
                     raise ValueError("invalid project source")
 
             # dispatch by event type
@@ -141,16 +248,17 @@ class GitHubHookHandler(HookHandler):
                 forklocation = json_data["forkee"]["full_name"]
                 forkurl = json_data["forkee"]["html_url"]
                 print("[github] %s forked %s to %s at %s" % (
-                    user, project_name, forklocation, forkurl
+                    user, repo_name, forklocation, forkurl
                 ))
 
             elif event == "watch":
+                # the "watch" event actually means "star"
                 action = json_data["action"]
                 user = json_data["sender"]["login"]
-                watchlocation = json_data["repository"]["full_name"]
-                print("[github] %s %s watching %s" % (
-                    user, action, project_name
+                print("[github] %s %s starring %s" % (
+                    user, action, repo_name
                 ))
+
             else:
                 raise ValueError("unhandled hook event '%s'" % event)
 
@@ -192,7 +300,7 @@ class GitHubHookHandler(HookHandler):
         github push webhook parser.
         """
 
-        commit_sha = json_data["head"]
+        commit_sha = json_data["after"]
         clone_url = json_data["repository"]["clone_url"]
         repo_url = json_data["repository"]["html_url"]
         user = json_data["pusher"]["name"]
@@ -221,18 +329,26 @@ class GitHubHookHandler(HookHandler):
         # select all kinds of metadata.
         user = json_data["sender"]["login"]
 
+        pull_id = int(json_data["number"])
+        repo_name = json_data["repository"]["full_name"]
+
         pull = json_data["pull_request"]
         clone_url = pull["head"]["repo"]["clone_url"]
         repo_url = pull["head"]["repo"]["html_url"]
         commit_sha = pull["head"]["sha"]
         branch = pull["head"]["label"]
+
         status_update_url = pull["statuses_url"]
 
+        updates = [
+            GitHubPullRequest(project.name, repo_name, pull_id, commit_sha),
+        ]
+
         self.new_build(project, commit_sha, clone_url, repo_url, user,
-                       branch, status_update_url)
+                       branch, status_update_url, updates)
 
     def new_build(self, project, commit_sha, clone_url, repo_url, user,
-                  branch, status_url=None):
+                  branch, status_url=None, initial_updates=None):
         """
         Create a new build for this commit hash.
         This commit may already exist, so a existing Build is retrieved.
@@ -244,6 +360,10 @@ class GitHubHookHandler(HookHandler):
 
         # the github push is a source for the build
         build.add_source(clone_url, repo_url, user, branch)
+
+        if initial_updates:
+            for update in initial_updates:
+                build.send_update(update)
 
         if status_url:
             # notify actions that this status url would like to have updates.
@@ -263,7 +383,7 @@ class GitHubStatus(Action):
         return "github_status"
 
     def __init__(self, cfg, project):
-        super().__init__(project)
+        super().__init__(cfg, project)
         self.authtoken = (cfg["user"], cfg["token"])
 
     def get_watcher(self, build):

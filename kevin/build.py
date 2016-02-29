@@ -69,6 +69,7 @@ class Build(Watchable, Watcher):
 
         if not (commit_hash.isalnum() and len(commit_hash) == 40):
             raise ValueError("bad commit SHA: " + repr(commit_hash))
+
         self.commit_hash = commit_hash
 
         if not isinstance(project, Project):
@@ -124,7 +125,7 @@ class Build(Watchable, Watcher):
         )
 
         # storage path for the job output
-        self.path = CFG.web_folder / self.relpath
+        self.path = CFG.output_folder / self.relpath
 
         # info url of this build, on the dyn server for now.
         # later, reference to mandy at web_url.
@@ -177,7 +178,8 @@ class Build(Watchable, Watcher):
 
     def set_state(self, state, text, time=None):
         """ set this build state """
-        self.send_update(BuildState(state, text, time))
+        self.send_update(BuildState(self.project.name, self.commit_hash,
+                                    state, text, time))
 
     def add_source(self, clone_url, repo_url=None, user=None, branch=None,
                    comment=None):
@@ -222,7 +224,8 @@ class Build(Watchable, Watcher):
                 self.set_state("pending", "enqueued")
 
             # notify all watchers (e.g. jobs) that the job now is enqueued
-            self.send_update(Enqueued(queue))
+            self.send_update(Enqueued(self.commit_hash, queue,
+                                      self.project.name))
             self.actions_notified = True
 
     def register_job(self, job):
@@ -251,7 +254,7 @@ class Build(Watchable, Watcher):
         for update in self.updates:
             watcher.on_update(update)
 
-    def on_send_update(self, update, save=True):
+    def on_send_update(self, update):
         """ When an update is to be sent to all watchers """
 
         if update == StopIteration:
@@ -267,7 +270,7 @@ class Build(Watchable, Watcher):
                 raise Exception("job created after build was finished!")
 
         if isinstance(update, JobUpdate):
-            self.send_update(update, save=False)
+            self.send_update(update)
 
         if isinstance(update, BuildSource):
             # TODO: actually detect duplicate sources
@@ -299,14 +302,14 @@ class Build(Watchable, Watcher):
                 pass
 
             if len(self.jobs_pending) == 0:
-                if not self.finished:
-                    self.finish()
+                self.finish()
 
     def finish(self):
         """ no more jobs are pending  """
 
         if self.finished:
-            raise Exception("finish called again!")
+            # finish message already sent.
+            return
 
         if self.queue:
             self.queue.remove_build(self)
@@ -316,31 +319,27 @@ class Build(Watchable, Watcher):
 
         # TODO: we may wanna have allowed-to-fail jobs.
         if self.jobs_succeeded == set(self.jobs.values()):
-            self.send_update(BuildState(
-                "success",
-                "all %d jobs succeeded" % len(self.jobs)),
-                             save=False)
+            count = len(self.jobs)
+            self.set_state("success", "%d job%s succeeded" % (
+                count, "s" if count > 1 else ""))
 
         else:
             # we had some unsucessful jobs:
-            # TODO: send more messages!
 
             if len(self.jobs_errored) > 0:
                 # one or more jobs errored.
-                self.send_update(BuildState(
-                    "error", "%d jobs errored" % (
-                        len(self.jobs_errored))),
-                                 save=False)
+                count = len(self.jobs_errored)
+                self.set_state("error", "%d job%s errored" % (
+                    count, "s" if count > 1 else ""))
 
             else:
                 # one or more jobs failed.
-                self.send_update(BuildState(
-                    "failure", "%d jobs failed" % (
-                        len(self.jobs) - len(self.jobs_succeeded))),
-                                 save=False)
-
-        self.finished = True
+                count = len(self.jobs)
+                self.set_state("failure", "%d/%d job%s failed" % (
+                    len(self.jobs) - len(self.jobs_succeeded),
+                    "s" if count > 1 else "", count))
 
         # build is completed now!
         self.path.joinpath("_completed").touch()
         self.completed = True
+        self.finished = True

@@ -195,7 +195,7 @@ class FalkSSH(Falk):
                 print("falk: %s" % message)
                 yield message
             else:
-                print("falk error: %s" % line)
+                print("falk stderr: %s" % line)
 
     def get_vm_host(self):
         return self.ssh_host

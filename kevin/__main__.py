@@ -3,6 +3,7 @@ Program entry point
 """
 
 import argparse
+import time
 import traceback
 
 from .config import CFG
@@ -42,10 +43,13 @@ def main():
 
     try:
         while True:
-            print("\x1b[32mWaiting for job...\x1b[m")
+            print("[%s] \x1b[32mWaiting for job...\x1b[m" % (
+                time.strftime("%Y-%m-%d %T")))
             current_job = queue.get_job()
 
-            # TODO: for job parallelism, fork off here:
+            print("[%s] \x1b[32mProcessing job...\x1b[m" % (
+                time.strftime("%Y-%m-%d %T")))
+            # TODO: for job parallelism, create the async task here:
             current_job.run()
 
     except (KeyboardInterrupt, SystemExit):

@@ -33,7 +33,7 @@ class JobAction(Action):
         return "job"
 
     def __init__(self, cfg, project):
-        super().__init__(project)
+        super().__init__(cfg, project)
         self.job_name = cfg["name"]
         self.descripton = cfg.get("description")
         self.vm_name = cfg["machine"]
@@ -170,7 +170,7 @@ class Job(Watcher, Watchable):
 
         if vm is None:
             raise Exception("VM '%s' could not be provided by any falk" % (
-                vm_id))
+                vm_name))
 
     def on_send_update(self, update, save=True, fs_store=True,
                        forbid_completed=True):
@@ -250,12 +250,14 @@ class Job(Watcher, Watchable):
 
     def set_state(self, state, text, time=None):
         """ set the job state information """
-        self.send_update(JobState(self.name, state, text, time))
+        self.send_update(JobState(self.project.name, self.build.commit_hash,
+                                  self.name, state, text, time))
 
 
     def set_step_state(self, step_name, state, text, time=None):
         """ send a StepState update. """
-        self.send_update(StepState(self.name, step_name, state, text,
+        self.send_update(StepState(self.project.name, self.build.commit_hash,
+                                   self.name, step_name, state, text,
                                    time=None))
 
     def on_watch(self, watcher):
@@ -302,7 +304,9 @@ class Job(Watcher, Watchable):
                     if stream_id == 1:
                         # stdout message
                         self.send_update(
-                            StdOut(data.decode("utf-8", errors="replace")))
+                            StdOut(self.project.name, self.build.commit_hash,
+                                   self.name,
+                                   data.decode("utf-8", errors="replace")))
 
                     elif stream_id == 2:
                         # control message stream chunk

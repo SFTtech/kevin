@@ -4,7 +4,6 @@ Supported service base definitions.
 
 
 from abc import ABCMeta, abstractmethod
-from tornado import web
 
 # service name => service class mapping
 # the name equals the key in your [triggers] and [actions]
@@ -49,7 +48,7 @@ class Service(metaclass=ServiceMeta):
         """
         pass
 
-    def __init__(self, project):
+    def __init__(self, cfg, project):
         from ..project import Project
         if type(project) != Project:
             raise TypeError("project has invalid type '%s'" % (type(project)))
@@ -72,22 +71,24 @@ class Trigger(Service):
     def name(cls):
         pass
 
-    def __init__(self, project):
-        super().__init__(project)
+    def __init__(self, cfg, project):
+        super().__init__(cfg, project)
 
-
-class HookTrigger(Trigger):
-    """
-    Base class for a webhook trigger (e.g. the github thingy).
-    """
-
-    def __init__(self, project):
-        super().__init__(project)
-
-    @abstractmethod
-    def get_handler(self):
+    def get_watchers(self):
         """
-        Return the (url, HookHandler class) to register at tornado for webhooks
+        Return a list of watcher objects. Those will be attached additionally
+        to the other watchers returned by some action.  That way, e.g. a
+        github trigger can attach a pull request watcher.
+        """
+        return []
+
+    def merge_cfg(self):
+        """
+        Perform merge operations so that this trigger only functions as
+        a config for another class that is instanciated later.
+        E.g. the config for all the webhooks is defined multiple times
+        as a trigger, but the server waiting for it is only created once.
+        This function prepares this merging.
         """
         pass
 
@@ -98,8 +99,8 @@ class Action(Service):
     some actions, e.g. sending mail, setting status, etc.
     """
 
-    def __init__(self, project):
-        super().__init__(project)
+    def __init__(self, cfg, project):
+        super().__init__(cfg, project)
 
     @abstractmethod
     def get_watcher(self, build):
@@ -107,20 +108,3 @@ class Action(Service):
         Return a watcher object which is then registered for build updates.
         """
         pass
-
-
-class HookHandler(web.RequestHandler):
-    """
-    Base class for web hook handlers.
-    A web hook is a http request made by e.g. github, gitlab, ...
-    and notify kevin that there's a job to do.
-    """
-
-    def initialize(self, triggers):
-        raise NotImplementedError()
-
-    def get(self):
-        raise NotImplementedError()
-
-    def post(self):
-        raise NotImplementedError()

@@ -23,6 +23,14 @@ class ProcTimeoutError(subprocess.TimeoutExpired):
         self.was_global = was_global
 
 
+class LineReadError(subprocess.SubprocessError):
+    """
+    We could not read the requested amount of lines!
+    """
+    def __init__(self, msg):
+        super().__init__(msg)
+
+
 class Process:
     """
     subprocess wrapper.
@@ -276,8 +284,8 @@ class Process:
 
         elif linecount < INF:
             # we read less lines than required.
-            raise subprocess.SubprocessError(
-                "could not read required number of lines")
+            raise LineReadError("could only read %d of %d line%s" % (
+                lines_emitted, linecount, "s" if linecount > 1 else ""))
 
         # all pipes have reached EOF
         if not pipes:

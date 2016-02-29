@@ -74,7 +74,7 @@ class Config:
                 #       to use [modulename] of some other file stated
 
                 # create the service with the config section
-                # e.g. GitHubHook(config)
+                # e.g. GitHubHook(config, project)
                 module = modulecls(config, project)
 
                 self.services.append(module)
