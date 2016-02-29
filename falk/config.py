@@ -19,6 +19,12 @@ class Config:
 
     def load(self, filename, shell=False):
         cfg = ConfigParser()
+
+        if not Path(filename).exists():
+            print("\x1b[31mConfig file '%s' does not exist.\x1b[m" % (
+                filename))
+            exit(1)
+
         cfg.read(filename)
 
         try:

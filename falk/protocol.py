@@ -4,6 +4,7 @@ Falk communication protocol.
 
 import asyncio
 import copy
+import time
 import traceback
 
 from . import messages
@@ -48,7 +49,9 @@ class FalkProto(asyncio.Protocol):
         self.conn_id = CONN_COUNT
         CONN_COUNT += 1
 
-        self.log("new client connected")
+        self.log("[%s] new client connected" % (
+            time.strftime("%Y-%m-%d %T")))
+
         self.transport = transport
 
         self.mode = self.DEFAULT_MODE
