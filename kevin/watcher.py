@@ -3,8 +3,6 @@ Job watching.
 You can receive job updates with a Watcher.
 """
 
-from threading import RLock
-
 
 class Watchable:
     """
@@ -12,7 +10,6 @@ class Watchable:
     """
 
     def __init__(self):
-        self.update_lock = RLock()
         self.watchers = set()
 
     def watch(self, watcher):
@@ -24,9 +21,8 @@ class Watchable:
         if not isinstance(watcher, Watcher):
             raise Exception("invalid watcher type: %s" % type(watcher))
 
-        with self.update_lock:
-            self.watchers.add(watcher)
-            self.on_watch(watcher)
+        self.watchers.add(watcher)
+        self.on_watch(watcher)
 
     def on_watch(self, watcher):
         """
@@ -36,8 +32,7 @@ class Watchable:
 
     def unwatch(self, watcher):
         """ Un-subscribe a watcher from the notification list """
-        with self.update_lock:
-            self.watchers.remove(watcher)
+        self.watchers.remove(watcher)
 
     def on_unwatch(self, watcher):
         """ Custom actions when a watcher unsubscribes """
@@ -45,12 +40,10 @@ class Watchable:
 
     def send_update(self, update, **kwargs):
         """ Send an update to all registered watchers """
+        self.on_send_update(update, **kwargs)
 
-        with self.update_lock:
-            self.on_send_update(update, **kwargs)
-
-            for watcher in self.watchers:
-                watcher.on_update(update)
+        for watcher in self.watchers:
+            watcher.on_update(update)
 
     def on_send_update(self, update, **kwargs):
         """ Called when an update is about to be sent """

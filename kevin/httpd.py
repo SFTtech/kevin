@@ -4,9 +4,9 @@ and provide them in a job queue.
 """
 
 from abc import ABCMeta, abstractmethod
-from threading import Thread
 
 from tornado import websocket, web, ioloop, gen
+from tornado.platform.asyncio import AsyncIOMainLoop
 from tornado.queues import Queue
 
 from .build import get_build
@@ -39,14 +39,14 @@ class HookTrigger(Trigger):
         """
         return kwargdict
 
-    def merge_cfg(self, kevin_cfg):
+    def merge_cfg(self, urlhandlers):
         # when e.g. GitHubHookHandler is instanciated,
         # the list of all Triggers that use it
         # will be passed as configuration.
 
         # create an entry in the defaultdict for this
         # hook handler class, e.g. GitHubHookHandler.
-        handlerkwargs = kevin_cfg.urlhandlers[self.get_handler()]
+        handlerkwargs = urlhandlers[self.get_handler()]
 
         # and add the config which requested it to the list
         # this step creates the mandatory "triggers" constructor
@@ -54,7 +54,7 @@ class HookTrigger(Trigger):
         handlerkwargs["triggers"].append(self)
 
         # additional custom keyword arguments for this
-        self.add_args(handlerkwargs)
+        urlhandlers[self.get_handler()] = self.add_args(handlerkwargs)
 
 
 class HookHandler(web.RequestHandler):
@@ -78,16 +78,18 @@ class HookHandler(web.RequestHandler):
         raise NotImplementedError()
 
 
-class HTTPD(Thread):
+class HTTPD:
     """
-    This thread contains a server that listens for WebHook
+    This class contains a server that listens for WebHook
     notifications to spawn triggered actions, e.g. new Builds.
     It also provides the websocket API and plain log streams for curl.
 
     handlers: (url, handlercls) -> [cfg, cfg, ...]
+    queue: the jobqueue.Queue where new builds/jobs are put in
     """
     def __init__(self, handlers, queue):
-        super().__init__()
+        # use the main asyncio loop to run tornado
+        AsyncIOMainLoop().install()
 
         urlhandlers = dict()
         urlhandlers[("/", PlainStreamHandler)] = None
@@ -106,20 +108,10 @@ class HTTPD(Thread):
 
         self.app = web.Application(handlers)
 
-        # TODO: sanitize... dirty hack because tornado sucks.
-        #       that way, a request handler can add jobs to the queue
         self.app.queue = queue
 
         # bind to tcp port
-        self.app.listen(CFG.dyn_port)
-
-    def run(self):
-        ioloop.IOLoop.instance().start()
-
-    def stop(self):
-        """ Cleanly stops the server, and joins the server thread. """
-        ioloop.IOLoop.instance().stop()
-        self.join()
+        self.app.listen(CFG.dyn_port, address=str(CFG.dyn_address))
 
 
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):

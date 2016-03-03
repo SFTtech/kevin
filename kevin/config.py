@@ -6,6 +6,7 @@ from collections import defaultdict
 from configparser import ConfigParser
 from pathlib import Path
 import os
+import ipaddress
 
 from .project import Project
 
@@ -18,6 +19,7 @@ class Config:
 
         self.web_url = None
         self.dyn_port = None
+        self.dyn_address = ipaddress.ip_address("0.0.0.0")
         self.dyn_url = None
 
         self.project_folder = None
@@ -170,7 +172,7 @@ class Config:
                 project.add_watchers(trigger.get_watchers())
 
                 # perform config merging operations
-                trigger.merge_cfg(self)
+                trigger.merge_cfg(self.urlhandlers)
 
 
 # global config instance for the running kevin.

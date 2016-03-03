@@ -5,7 +5,6 @@ Job processing code
 from abc import abstractmethod
 import json
 import shutil
-from threading import Lock
 import traceback
 
 from .chantal import Chantal
@@ -137,7 +136,7 @@ class Job(Watcher, Watchable):
             except FileNotFoundError:
                 pass
 
-    def get_falk_vm(self, vm_name):
+    async def get_falk_vm(self, vm_name):
         """
         return a suitable vm instance for this job from a falk.
         """
@@ -270,7 +269,7 @@ class Job(Watcher, Watchable):
             watcher.on_update(StopIteration)
 
 
-    def run(self):
+    async def run(self):
         """ Attempts to build the job. """
 
         try:
@@ -285,18 +284,15 @@ class Job(Watcher, Watchable):
             self.set_state("pending", "requesting VM")
 
             # TODO: allow falk bypass by launching VM locally without falk!
-            vm = self.get_falk_vm(self.vm_name)
+            vm = await self.get_falk_vm(self.vm_name)
 
             # vm was acquired, now boot it.
             self.set_state("pending", "booting VM")
 
             with Chantal(vm) as chantal:
-                chantal.wait_for_connection()
+                await chantal.wait_for_connection()
 
-                print("[job] installing chantal...")
-                chantal.install()
-
-                print("[job] running chantal...")
+                await chantal.install()
                 chantal_output = chantal.run(self)
 
                 control_handler = self.control_handler()
@@ -367,17 +363,13 @@ class Job(Watcher, Watchable):
                 traceback.print_exc()
 
         finally:
-
-            print("[job] execution done")
-
             # error the leftover steps
             for step in self.pending_steps:
                 self.set_step_state(step, 'error',
                                     'step result was not reported')
 
             # the job is completed!
-            with self.update_lock:
-                self.completed = True
+            self.completed = True
 
             if not CFG.args.volatile:
                 # the job is now officially completed
@@ -510,4 +502,7 @@ class Job(Watcher, Watchable):
 
     def abort(self):
         """ Abort the execution of this job """
-        raise NotImplementedError()
+
+        # TODO: abort the asyncio task
+        print("[job] received abort request, "
+              "\x1b[31mNOT IMPLEMENTED\x1b[m!")

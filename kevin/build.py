@@ -7,7 +7,6 @@ A build is a repo state that was triggered to be run in multiple jobs.
 import datetime
 import shutil
 from pathlib import Path
-from threading import Lock
 
 from .config import CFG
 from .project import Project
@@ -19,30 +18,26 @@ from .watcher import Watchable, Watcher
 # stores known builds by (project, hash) -> build
 BUILD_CACHE = dict()
 
-# safeguards access to BUILD_CACHE
-BUILD_LOCK = Lock()
-
 
 def new_build(project, commit_hash, create_new=True):
     """ create a new build or return it from the cache """
     cache_key = (project, commit_hash)
 
-    with BUILD_LOCK:
-        if cache_key in BUILD_CACHE:
-            # already known build.
-            return BUILD_CACHE[cache_key]
+    if cache_key in BUILD_CACHE:
+        # already known build.
+        return BUILD_CACHE[cache_key]
 
+    else:
+        # this tries loading from filesystem
+        newbuild = Build(project, commit_hash)
+
+        # store it as known build?
+        if newbuild.completed or create_new:
+            BUILD_CACHE[cache_key] = newbuild
         else:
-            # this tries loading from filesystem
-            newbuild = Build(project, commit_hash)
+            newbuild = None
 
-            # store it as known build?
-            if newbuild.completed or create_new:
-                BUILD_CACHE[cache_key] = newbuild
-            else:
-                newbuild = None
-
-            return newbuild
+        return newbuild
 
 
 def get_build(project, commit_hash):
@@ -108,6 +103,8 @@ class Build(Watchable, Watcher):
         # jobs required for this build to succeeed.
         # job_name -> Job
         self.jobs = dict()
+
+        # job status collections
         self.jobs_pending = set()
         self.jobs_succeeded = set()
         self.jobs_errored = set()
@@ -273,7 +270,7 @@ class Build(Watchable, Watcher):
             self.send_update(update)
 
         if isinstance(update, BuildSource):
-            # TODO: actually detect duplicate sources
+            # TODO: detect duplicate sources? conflicts?
             self.sources.add(update)
             self.clone_url = update.clone_url
 
@@ -336,10 +333,21 @@ class Build(Watchable, Watcher):
                 # one or more jobs failed.
                 count = len(self.jobs)
                 self.set_state("failure", "%d/%d job%s failed" % (
-                    len(self.jobs) - len(self.jobs_succeeded),
-                    "s" if count > 1 else "", count))
+                    count - len(self.jobs_succeeded),
+                    count, "s" if count > 1 else ""))
 
         # build is completed now!
         self.path.joinpath("_completed").touch()
         self.completed = True
         self.finished = True
+
+    def abort(self):
+        """ Abort this build """
+
+        if self.finished:
+            return
+
+        for job in self.jobs.values():
+            job.abort()
+
+        self.finish()

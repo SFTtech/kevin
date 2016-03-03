@@ -32,11 +32,15 @@ class GitHub(service.Service):
         self.status_handler = "/%s" % args.statuspath
         self.repo_handler = "/repo"
 
+        self.pull_id = args.pull_id
+
     @classmethod
     def argparser(cls, subparsers):
         cli = subparsers.add_parser("github", help="simulate github")
         cli.add_argument("--statuspath", default="statusupdate",
                          help="url component where status updates are sent")
+        cli.add_argument("--pull-id", type=int, default=1337,
+                         help="the pull request id number, e.g. 1337")
         cli.set_defaults(service=cls)
 
     def run(self):
@@ -86,11 +90,11 @@ class GitHub(service.Service):
         if not webhook.done():
             webhook.cancel()
 
-        asyncio.wait(webhook, timeout=10)
+        self.loop.stop()
+        self.loop.run_forever()
         self.loop.close()
 
-    @asyncio.coroutine
-    def submit_web_hook(self):
+    async def submit_web_hook(self):
         """
         create the webhook to kevin to trigger it.
         """
@@ -101,10 +105,10 @@ class GitHub(service.Service):
             ip = str(self.listen)
 
         status_url = "http://%s:%d%s" % (ip, self.port, self.status_handler)
-        head_commit = yield from util.get_hash(self.repo)
+        head_commit = await util.get_hash(self.repo)
 
         if self.repo_vm:
-            yield from util.update_server_info(self.repo)
+            await util.update_server_info(self.repo)
 
         repo = self.repo_vm or self.repo
         project = self.cfg.projects[self.project]
@@ -123,12 +127,10 @@ class GitHub(service.Service):
         reponame = trigger.repos[0]
         hooksecret = trigger.hooksecret
 
-        pull_id = 1337
-
         pull_req = {
             "action": "synchronize",
             "sender": {"login": "rolf"},
-            "number": pull_id,
+            "number": self.pull_id,
             "pull_request": {
                 "head": {
                     "repo": {
@@ -166,7 +168,7 @@ class GitHub(service.Service):
                 return "failed."
 
         post = self.loop.run_in_executor(None, submit_post)
-        hook_answer = yield from post
+        hook_answer = await post
 
         print("hook delivery: %s" % hook_answer)
 

@@ -2,7 +2,8 @@
 Job queuing for Kevin.
 """
 
-import queue
+import asyncio
+import time
 
 from .config import CFG
 
@@ -13,9 +14,14 @@ class Queue:
     """
 
     def __init__(self):
+        # all builds that are pending
         self.pending_builds = set()
+
+        # build_id -> build
         self.build_ids = dict()
-        self.job_queue = queue.Queue(maxsize=CFG.max_jobs_queued)
+
+        # jobs that should be run
+        self.job_queue = asyncio.Queue(maxsize=CFG.max_jobs_queued)
 
     def add_build(self, build):
         """
@@ -23,13 +29,11 @@ class Queue:
         Called from where a new build was created and should now be run.
         """
 
-        if build in self.pending_builds:
-            print("[queue] known build: \x1b[2m[%s]\x1b[m @ %s" % (
+        print("[queue] added build: [\x1b[33m%s\x1b[m] @ %s" % (
                 build.commit_hash, build.clone_url))
-            return
 
-        print("[queue] enqueueing build: \x1b[2m[%s]\x1b[m @ %s" % (
-            build.commit_hash, build.clone_url))
+        if build in self.pending_builds:
+            return
 
         self.pending_builds.add(build)
         self.build_ids[build.commit_hash] = build
@@ -39,15 +43,17 @@ class Queue:
 
     def remove_build(self, build):
         """ Remove a finished build """
-        print("[queue] removing build: \x1b[2m[%s]\x1b[m @ %s" % (
-            build.commit_hash, build.clone_url))
-
         del self.build_ids[build.commit_hash]
         self.pending_builds.remove(build)
 
     def abort_build(self, build_id):
         """ Abort a running build by aborting all pending jobs """
-        raise NotImplementedError()
+
+        build = self.build_ids.get(build_id)
+
+        if build:
+            if not build.completed:
+                build.abort()
 
     def is_pending(self, commit_hash):
         """ Test if a commit hash is currently being built """
@@ -64,11 +70,30 @@ class Queue:
 
         try:
             # place the job into the pending list.
-            self.job_queue.put(job, timeout=0)
+            self.job_queue.put_nowait(job)
 
-        except queue.Full:
+        except asyncio.QueueFull:
             job.error("overloaded; job was dropped.")
 
-    def get_job(self):
+    async def get_job(self):
         """ Return the next job to be processed """
-        return self.job_queue.get()
+        return await self.job_queue.get()
+
+
+async def process_jobs(queue):
+    """ process jobs from the queue forever """
+
+    while True:
+        print("[%s] \x1b[32mWaiting for job...\x1b[m" % (
+            time.strftime("%Y-%m-%d %T")))
+
+        # fetch new job from the queue
+        current_job = await queue.get_job()
+
+        print("[%s] \x1b[32mProcessing job...\x1b[m" % (
+            time.strftime("%Y-%m-%d %T")))
+
+        # TODO: for job parallelism, create the async task here:
+        await current_job.run()
+
+    new_job = await queue.get_job()

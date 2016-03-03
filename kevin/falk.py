@@ -171,7 +171,7 @@ class FalkSSH(Falk):
         # connect to the actual falk host
         # TODO: make use of the ssh knownhost generator?
         self.connection = Process([
-            "ssh",
+            "ssh", "-q",
             "-p", str(self.ssh_port),
             self.ssh_user + "@" + self.ssh_host,
         ])
@@ -192,7 +192,6 @@ class FalkSSH(Falk):
         for stream, line in answers:
             if stream == 1 and line:
                 message = Message.construct(line, self.proto_mode)
-                print("falk: %s" % message)
                 yield message
             else:
                 print("falk stderr: %s" % line)

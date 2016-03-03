@@ -8,7 +8,6 @@ import  json
 import hmac
 import traceback
 from hashlib import sha1
-from threading import Lock
 
 import requests
 
@@ -47,9 +46,6 @@ class GitHubPullManager(Watcher):
     """
 
     def __init__(self, repos):
-        # secures the pending pull requests
-        self.pull_lock = Lock()
-
         # repos this pullmanager is responsible for
         self.repos = repos
 
@@ -67,62 +63,55 @@ class GitHubPullManager(Watcher):
                 # don't do anything.
                 return
 
-            with self.pull_lock:
-                # get the running build id for this pull request
-                entry = self.running_pull_builds.get(key)
+            # get the running build id for this pull request
+            entry = self.running_pull_builds.get(key)
 
-                if entry is not None:
-                    build_id, queue = entry
+            if entry is not None:
+                build_id, queue = entry
+
+            else:
+                # that pull is not running currently, so
+                # store that it's running.
+                # the queue is unknown, set it to None.
+                self.running_pull_builds[key] = (update.commit_hash, None)
+                return
+
+            if build_id == update.commit_hash:
+                # the same build is running currently, just ignore it
+                pass
+
+            else:
+                # the pull request is running already,
+                # now abort the previous build for it.
+
+                if not queue:
+                    # we didn't get the "Enqueued" update for the build
+                    print("[github] wanted to abort build in unknown queue")
 
                 else:
-                    # that pull is not running currently, so
-                    # store that it's running.
-                    # the queue is unknown, set it to None.
-                    self.running_pull_builds[key] = (update.commit_hash,
-                                                     None)
-                    return
+                    # abort it
+                    queue.abort_build(build_id)
 
-                if build_id == update.commit_hash:
-                    # the same build is running currently, just ignore it
-                    pass
-
-                else:
-                    # the pull request is running already,
-                    # now abort the previous build for it.
-
-                    if not queue:
-                        # we didn't get the "Enqueued" update for the build
-                        print("[github] got build request for unknown queue")
-
-                    else:
-                        # abort it
-                        queue.abort_build(build_id)
-
-                    # and store the new build id for that pull request
-                    self.running_pull_builds[key] = (update.commit_hash,
-                                                     None)
+                # and store the new build id for that pull request
+                self.running_pull_builds[key] = (update.commit_hash, None)
 
         elif isinstance(update, Enqueued):
             # catch the queue of the build
             # only if we track that build, we store the queue
 
-            with self.pull_lock:
-                # select the tracked build and store the learned queue
-                for key, (build_id, _) in self.running_pull_builds.items():
-                    if update.build_id == build_id:
-                        self.running_pull_builds[key] = (build_id,
-                                                         update.queue)
+            # select the tracked build and store the learned queue
+            for key, (build_id, _) in self.running_pull_builds.items():
+                if update.build_id == build_id:
+                    self.running_pull_builds[key] = (build_id, update.queue)
 
         elif isinstance(update, BuildState):
             # build state to remove a running pull request
             if update.is_finished():
-                with self.pull_lock:
-                    for key, (build_id, queue) in self.running_pull_builds.items():
-                        if update.build_id == build_id:
-
-                            # remove the build from the run list
-                            del self.running_pull_builds[key]
-                            return
+                for key, (build_id, queue) in self.running_pull_builds.items():
+                    if update.build_id == build_id:
+                        # remove the build from the run list
+                        del self.running_pull_builds[key]
+                        return
 
 
 class GitHubHook(HookTrigger):
@@ -361,6 +350,8 @@ class GitHubHookHandler(HookHandler):
         # the github push is a source for the build
         build.add_source(clone_url, repo_url, user, branch)
 
+        # TODO: this is called after the build reconstruction.
+        # -> the pull request update is sent after the finish notification
         if initial_updates:
             for update in initial_updates:
                 build.send_update(update)
@@ -495,7 +486,7 @@ class GitHubBuildStatusUpdater(Watcher):
         """ send a single github status update """
 
         try:
-            # TODO: perform this post asynchronously!
+            # TODO: make async!
             # TODO: select authtoken based on url!
             reply = requests.post(url, data, auth=self.cfg.authtoken)
 

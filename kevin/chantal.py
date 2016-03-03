@@ -2,6 +2,7 @@
 Code for creating and interfacing with Chantal instances.
 """
 
+import asyncio
 from pathlib import Path
 import socket
 import subprocess
@@ -24,7 +25,7 @@ class Chantal:
         self.vm.prepare()
         self.vm.launch()
 
-    def wait_for_ssh_port(self, timeout=30, retry_interval=0.2):
+    async def wait_for_ssh_port(self, timeout=30, retry_interval=0.2):
         """
         Loops until the SSH port is open.
         raises RuntimeError on timeout.
@@ -32,13 +33,14 @@ class Chantal:
         raw_acquired = False
         endtime = time.time() + timeout
         while True:
-            time.sleep(retry_interval)
+            await asyncio.sleep(retry_interval)
 
             if not raw_acquired:
                 print("testing for ssh port... ", end="")
                 sys.stdout.flush()
                 sock = socket.socket()
 
+                # TODO: make async!
                 if sock.connect_ex((self.vm.ssh_host,
                                     self.vm.ssh_port)) == 0:
                     sock.close()
@@ -64,7 +66,10 @@ class Chantal:
                         "true",
                     ]
 
-                    if subprocess.call(command) == 0:
+                    proc = await asyncio.create_subprocess_exec(command)
+                    ret = await proc.wait()
+
+                    if ret == 0:
                         print("\x1b[32;5;1msuccess\x1b[m!")
                         break
                     else:
@@ -80,7 +85,7 @@ class Chantal:
 
                 raise RuntimeError("timeout while waiting for SSH port")
 
-    def upload(self, local_path, remote_folder="."):
+    async def upload(self, local_path, remote_folder="."):
         """
         Uploads the file or directory from local_path to
         remote_folder (default: ~).
@@ -100,10 +105,14 @@ class Chantal:
                 self.vm.ssh_host + ":" +
                 str(remote_folder),
             ]
-            if subprocess.call(command) != 0:
-                raise RuntimeError("SCP failed")
 
-    def download(self, remote_path, local_folder):
+            proc = await asyncio.create_subprocess_exec(command)
+            ret = await proc.wait()
+
+            if ret != 0:
+                raise RuntimeError("scp failed")
+
+    async def download(self, remote_path, local_folder):
         """
         Downloads the file or directory from remote_path to local_folder.
         Warning: Contains no safeguards regarding filesize.
@@ -123,8 +132,11 @@ class Chantal:
                 local_folder,
             ]
 
-            if subprocess.call(command) != 0:
-                raise RuntimeError("SCP failed")
+            proc = await asyncio.create_subprocess_exec(command)
+            ret = await proc.wait()
+
+            if ret != 0:
+                raise RuntimeError("scp failed")
 
     def run_command(self, *remote_command, timeout=INF, silence_timeout=INF):
         """
@@ -184,7 +196,7 @@ class Chantal:
         except Exception as new_exc:
             raise new_exc from exc
 
-    def wait_for_connection(self, timeout=30, retry_delay=0.5):
+    async def wait_for_connection(self, timeout=30, retry_delay=0.5):
         """
         wait until chantal can be reached.
         """
@@ -192,16 +204,16 @@ class Chantal:
         # TODO: support contacting chantal through
         #       plain socket and not only ssh
         #       and allow preinstallations of chantal
-        self.wait_for_ssh_port(timeout=30)
+        await self.wait_for_ssh_port(timeout=30)
 
-    def install(self):
+    async def install(self):
         """
         Install chantal on the VM
         """
 
         # TODO: allow to skip chantal installation
         kevindir = Path(__file__)
-        self.upload(kevindir.parent.parent / "chantal")
+        await self.upload(kevindir.parent.parent / "chantal")
 
     def run(self, job):
         """
