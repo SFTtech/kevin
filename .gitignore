@@ -7,3 +7,6 @@ __pycache__
 .#*
 kevin.conf
 falk.conf
+
+MANIFEST
+dist/
