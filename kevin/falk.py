@@ -2,15 +2,18 @@
 Code for interfacing with Falk instances to aquire VMs.
 """
 
-import socket
+import asyncio
+import logging
 from abc import ABC, abstractmethod
 
-from .process import Process
+from .falkvm import FalkVM, VMError
+from .process import SSHProcess
+from .util import asynciter, AsyncChain
 
-from falk.control import VM, VMError
 from falk.messages import (Message, ProtoType, Mode, Version, List,
-                           Select, Status, OK, Login, Welcome, Error)
-from falk.protocol import FalkProto, VERSION
+                           Select, Status, OK, Login, Welcome, Error,
+                           Exit)
+from falk.protocol import FalkProto
 from falk.vm import ContainerConfig
 
 
@@ -36,52 +39,60 @@ class Falk(ABC):
     VM provider instance.
     Provides a communication interface to request a VM.
     """
-    def __init__(self, job):
-        # a job selected this falk server, now connect to it.
-
-        self.job = job
+    def __init__(self):
         self.proto_mode = FalkProto.DEFAULT_MODE
 
-    def init(self):
+    @abstractmethod
+    async def create(self):
+        """ create the falk connection """
+        raise NotImplementedError()
+
+    async def init(self):
         """ Initialize the contacted falk and check if it is functional """
 
-        welcomemsg = self.query()
+        welcomemsg = await self.query()
         if not isinstance(welcomemsg, Welcome):
-            raise Exception("falk did not welcome us: %s" % welcomemsg)
+            if welcomemsg is None:
+                raise VMError("no reply from falk!")
+            else:
+                raise VMError("falk did not welcome us: %s" % welcomemsg)
 
-        print("[falk] provider '%s' says: %s" % (welcomemsg.name, welcomemsg.msg))
+        logging.info("[falk] '%s' says: %s" % (welcomemsg.name,
+                                               welcomemsg.msg))
 
         # set to json mode.
-        jsonset = self.query(Mode("json"))
+        jsonset = await self.query(Mode("json"))
         if isinstance(jsonset, OK):
             self.proto_mode = ProtoType.json
         else:
-            raise Exception("failed setting json mode: %s" % jsonset)
+            raise VMError("failed setting json mode: %s" % jsonset)
 
         # do a version check
-        vercheck = self.query(Version(VERSION))
+        vercheck = await self.query(Version(FalkProto.VERSION))
         if not isinstance(vercheck, OK):
-            raise Exception("incompatible falk contacted: %s" % vercheck)
+            raise VMError("incompatible falk contacted: %s" % vercheck)
 
-    def get_vms(self):
+    async def get_vms(self):
         """ return {name: type} """
         # TODO: use/update cache
-        return self.query(List()).machines
+        return (await self.query(List())).machines
 
     @abstractmethod
     def get_vm_host(self):
         """ Return the VM host by using the falk connection information """
         raise NotImplementedError()
 
-    def create_vm(self, machine_name, explicit=False):
+    async def create_vm(self, machine_name, explicit=False):
         """
         Retrieve the machine list from falk and select one.
 
-        If explicit is True, machine_name will be used as machine_id,
-        which is the unique VM identifier for this falk.
+        explicit: True -> machine_name will be used as machine_id,
+                          which is the unique VM identifier for this falk.
+                  False -> machine_name is tried to be matched against
+                           all available machines.
         """
 
-        falk_vms = self.get_vms()
+        falk_vms = await self.get_vms()
 
         machine_id = None
 
@@ -103,10 +114,10 @@ class Falk(ABC):
             raise Exception("requested VM not found.")
 
         # create vm handle in the remote falk.
-        run_id = self.query(Select(machine_id)).run_id
+        run_id = (await self.query(Select(machine_id))).run_id
 
         # fetch status and ssh config for created vm handle.
-        cfg = self.query(Status(run_id)).dump()
+        cfg = (await self.query(Status(run_id))).dump()
 
         # falk says VM is running on his "localhost",
         # so we replace that with falks address.
@@ -117,25 +128,37 @@ class Falk(ABC):
         config = ContainerConfig(machine_id, cfg, None)
 
         # create machine from the config
-        return VM(config, run_id, self)
+        return FalkVM(config, run_id, self)
 
-    def query(self, msg=None):
+    async def query(self, msg=None):
         """ Send some message to falk and retrieve the answer message."""
-        answers = self.send(msg, self.proto_mode)
         ret = None
-        for answer in answers:
+        async for answer in self.send(msg, self.proto_mode):
             if isinstance(answer, Error):
-                raise RuntimeError("error: %s" % answer)
+                raise VMError("falk query failed: got %s" % answer)
+
             if not ret:
                 ret = answer
                 continue
-            print("\x1b[31mignored leftover answer: %s\x1b[m" % (answer))
+
+            raise Exception("more than one answer message!")
         return ret
 
     @abstractmethod
     def send(self, msg=None, mode=ProtoType.json):
-        """ Send a message to falk, yield the answer messages """
+        """
+        Send a message to falk,
+        return an async iterator for the answer messages
+        """
         raise NotImplementedError()
+
+    async def __aenter__(self):
+        await self.create()
+        return self
+
+    async def __aexit__(self, exc, value, tb):
+        answer = await self.query(Exit())
+        pass
 
 
 class FalkVirtual(Falk):
@@ -146,8 +169,11 @@ class FalkVirtual(Falk):
 
     TODO: implement :)
     """
-    def __init__(self, job):
-        super().__init__(job)
+    def __init__(self):
+        super().__init__()
+
+    async def create(self):
+        raise NotImplementedError()
 
     def send(self, msg=None, mode=ProtoType.json):
         raise NotImplementedError()
@@ -161,22 +187,26 @@ class FalkSSH(Falk):
     Falk connection via ssh.
     we're then in a falk-shell to control the falk instance.
     """
-    def __init__(self, job, ssh_host, ssh_port, ssh_user):
-        super().__init__(job)
+    def __init__(self, ssh_host, ssh_port, ssh_user, ssh_key):
+        super().__init__()
 
         self.ssh_host = ssh_host
         self.ssh_port = ssh_port
         self.ssh_user = ssh_user
+        self.ssh_key = ssh_key
 
-        # connect to the actual falk host
-        # TODO: make use of the ssh knownhost generator?
-        self.connection = Process([
-            "ssh", "-q",
-            "-p", str(self.ssh_port),
-            self.ssh_user + "@" + self.ssh_host,
-        ])
+        # connect to the falk host via ssh
+        self.connection = SSHProcess([], self.ssh_user, self.ssh_host,
+                                     self.ssh_port, self.ssh_key,
+                                     chop_lines=True)
 
-        self.init()
+    async def create(self):
+        await self.connection.create()
+        # we don't need to send a login message as the falk.shell
+        # already announced us.
+
+        # perform falk setup
+        await self.init()
 
     def send(self, msg=None, mode=ProtoType.json):
         if msg:
@@ -189,33 +219,65 @@ class FalkSSH(Falk):
             linecount=1,
         )
 
-        for stream, line in answers:
+        # hack to work around the impossibility to
+        # loop through `async for` and then yield values
+        def construct(inp):
+            stream, line = inp
             if stream == 1 and line:
                 message = Message.construct(line, self.proto_mode)
-                yield message
+                return message
             else:
-                print("falk stderr: %s" % line)
+                logging.debug("\x1b[31mfalk ssh stderr\x1b[m: %s" % line)
+                return None
+
+        return AsyncChain(answers, construct)
 
     def get_vm_host(self):
         return self.ssh_host
+
+    def __str__(self):
+        return "Falk ssh <%s@%s:%s>" % (
+            self.ssh_user,
+            self.ssh_host,
+            self.ssh_port,
+        )
 
 
 class FalkSocket(Falk):
     """
     Falk connection via unix socket.
     """
-    def __init__(self, job, path, user):
-        super().__init__(job)
+    def __init__(self, path, user):
+        super().__init__()
 
         self.path = path
         self.user = user
-        self.linebuf = bytearray()
 
-        # connect to falk unix socket.
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.transport = None
+        self.protocol = None
+
+        self.reader = None
+        self.writer = None
+
+    async def create(self):
+
+        established = asyncio.Future()
+
+        def connection_made(reader, writer):
+            """ called when the connection was made """
+            self.reader = reader
+            self.writer = writer
+            established.set_result(True)
+
+        loop = asyncio.get_event_loop()
 
         try:
-            self.sock.connect(self.path)
+            self.transport, self.protocol = await loop.create_unix_connection(
+                lambda: asyncio.StreamReaderProtocol(
+                    asyncio.StreamReader(),
+                    connection_made
+                ), self.path)
+
         except FileNotFoundError:
             raise FileNotFoundError(
                 "falk socket not found: "
@@ -224,33 +286,29 @@ class FalkSocket(Falk):
             raise VMError("falk socket doesn't accept connections "
                           "at '%s'" % (self.path)) from None
 
-        # send login message
+        await established
+
+        # send login message, for FalkSSH it was not necessary
+        # because the falk.shell automatically provides the login.
         msg = Login(self.user, self.path)
-        self.sock.sendall(msg.pack(self.proto_mode))
+        self.writer.write(msg.pack(self.proto_mode))
+        await self.writer.drain()
 
-        self.init()
+        # perform falk setup
+        await self.init()
 
+    @asynciter
     def send(self, msg=None, mode=ProtoType.json):
         if msg:
-            self.sock.sendall(msg.pack(mode))
+            self.writer.write(msg.pack(mode))
+            yield from self.writer.drain()
 
-        while True:
-            npos = self.linebuf.rfind(b"\n")
-
-            if npos < 0:
-                data = self.sock.recv(8196)
-                if not data:
-                    raise Exception("connection closed!")
-                self.linebuf.extend(data)
-
-            else:
-                for line in self.linebuf[:npos].split(b"\n"):
-                    if line:
-                        recv = Message.construct(line, self.proto_mode)
-                        yield recv
-
-                del self.linebuf[:(npos+1)]
-                break
+        line = yield from self.reader.readline()
+        message = Message.construct(line, self.proto_mode)
+        yield message
 
     def get_vm_host(self):
         return "localhost"
+
+    def __str__(self):
+        return "Falk socket <%s@%s>" % (self.user, self.path)

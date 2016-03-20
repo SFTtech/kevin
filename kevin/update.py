@@ -101,14 +101,6 @@ class JobCreated(GeneratedUpdate, JobUpdate):
         self.job_name = job_name
 
 
-class JobAbort(JobUpdate):
-    """
-    Update that notifies a job it should abort now.
-    """
-    def __init__(self, job_name):
-        self.job_name = job_name
-
-
 class BuildSource(Update):
     """
     A new source for the build.

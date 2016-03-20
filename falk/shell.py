@@ -22,6 +22,10 @@ from .messages import Error, Login, ProtoType
 
 
 def main():
+    """
+    Spawns a shell that relays the messages to the falk unix socket.
+    """
+
     cmd = argparse.ArgumentParser()
     cmd.add_argument("user", help="the user that connected to falk")
     cmd.add_argument("-c", "--config", default="/etc/kevin/falk.conf",
@@ -128,6 +132,7 @@ def main():
     add_writer(write_pipes[Buf.inbuf], inbuf, Buf.inbuf)
 
     # process events
+    # TODO: use asyncio, but it's rather complicated for this use case.
     while len(sel.get_map().keys()) > 0:
         events = sel.select()
         for event, mask in events:

@@ -218,7 +218,7 @@ class UpdateHandler(web.RequestHandler):
             self.write(repr(exc).encode())
             self.set_status(400, "Bad request")
 
-        except (BaseException) as exc:
+        except Exception as exc:
             print("\x1b[31;1mexception in post hook\x1b[m")
             traceback.print_exc()
 

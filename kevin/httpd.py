@@ -248,5 +248,6 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
         self.on_update(StopIteration)
 
     def on_finish(self):
+        # TODO: only do this if we got a GET request.
         if self.job is not None:
             self.job.unwatch(self)

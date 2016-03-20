@@ -3,23 +3,35 @@ Job processing code
 """
 
 from abc import abstractmethod
+import asyncio
 import json
+import logging
 import shutil
 import traceback
 
 from .chantal import Chantal
 from .config import CFG
 from .falk import FalkSSH, FalkSocket
-from .process import ProcTimeoutError
+from .falkvm import VMError
+from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
+                      ProcessError)
 from .project import Project
-from .update import (BuildSource, Update, JobState, JobAbort, StepState,
+from .update import (BuildSource, Update, JobState, StepState,
                      StdOut, OutputItem, Enqueued, JobCreated,
                      GeneratedUpdate, ActionsAttached)
-from .util import coroutine
+from .util import recvcoroutine
 from .watcher import Watcher, Watchable
 from .service import Action
 
-from falk.control import VMError
+
+
+class JobTimeoutError(Exception):
+    """
+    Indicates a job execution timeout.
+    """
+    def __init__(self, timeout, was_global):
+        super().__init__(cmd, timeout)
+        self.was_global = was_global
 
 
 class JobAction(Action):
@@ -136,6 +148,12 @@ class Job(Watcher, Watchable):
             except FileNotFoundError:
                 pass
 
+    def __str__(self):
+        return "%s.%s [\x1b[33m%s\x1b[m]" % (
+            self.build.project.name,
+            self.name,
+            self.build.commit_hash)
+
     async def get_falk_vm(self, vm_name):
         """
         return a suitable vm instance for this job from a falk.
@@ -148,27 +166,47 @@ class Job(Watcher, Watchable):
 
             # TODO: better selection if this falk is suitable, e.g. has
             #       machine for this job. either via cache or direct query.
+            #
+            # TODO: allow falk bypass by launching VM locally without a
+            #       falk daemon!
 
             falk = None
             if falkcfg["connection"] == "ssh":
                 host, port = falkcfg["location"]
-                falk = FalkSSH(self, host, port, falkcfg["user"])
+                falk = FalkSSH(host, port, falkcfg["user"],
+                               falkcfg["key"])
 
             elif falkcfg["connection"] == "unix":
-                falk = FalkSocket(self, falkcfg["location"], falkcfg["user"])
+                falk = FalkSocket(falkcfg["location"], falkcfg["user"])
 
             else:
                 raise Exception("unknown falk connection type: %s -> %s" % (
                     falkname, falkcfg["connection"]))
 
-            vm = falk.create_vm(vm_name)
+            try:
+                # connect
+                await falk.create()
+
+                # create container
+                vm = await falk.create_vm(vm_name)
+
+            except (LineReadError, ProcessError) as exc:
+                # TODO: connection rejections, auth problems, ...
+                logging.warn("failed communicating "
+                             "with falk '%s'" % falkname)
+                logging.warn("\x1b[31merror\x1b[m: $ %s" % (
+                    " ".join(exc.cmd)))
+                logging.warn("       -> %s" % (exc))
+                logging.warn("  are you sure %s = '%s' "
+                             "is a valid falk entry?" % (
+                                 falkname, falk))
 
             if vm is not None:
                 # we found the machine
                 return vm
 
         if vm is None:
-            raise Exception("VM '%s' could not be provided by any falk" % (
+            raise VMError("VM '%s' could not be provided by any falk" % (
                 vm_name))
 
     def on_send_update(self, update, save=True, fs_store=True,
@@ -182,9 +220,6 @@ class Job(Watcher, Watchable):
 
         if forbid_completed and self.completed:
             raise Exception("job sending update after being completed.")
-
-        # debug debug debug baby.
-        # print("\x1b[33mjob.send_update\x1b[m: %r" % (update))
 
         # when it's a StepUpdate, this manages the pending_steps set.
         update.apply_to(self)
@@ -223,10 +258,6 @@ class Job(Watcher, Watchable):
             if not self.completed:
                 # add the job to the processing queue
                 update.queue.add_job(self)
-
-        elif isinstance(update, JobAbort):
-            if update.job_name == self.name:
-                self.abort()
 
     def step_update(self, update):
         """ apply a step update to this job. """
@@ -276,90 +307,151 @@ class Job(Watcher, Watchable):
             if self.completed:
                 raise Exception("tried to run a completed job!")
 
-            print("\x1b[1mcurl -N %s?project=%s&hash=%s&job=%s\x1b[m" % (
-                CFG.dyn_url, self.build.project.name,
-                self.build.commit_hash, self.name))
+            logging.info(
+                "running: "
+                "\x1b[1mcurl -N %s?project=%s&hash=%s&job=%s\x1b[m" % (
+                    CFG.dyn_url, self.build.project.name,
+                    self.build.commit_hash, self.name))
 
             # falk contact
             self.set_state("pending", "requesting VM")
 
-            # TODO: allow falk bypass by launching VM locally without falk!
-            vm = await self.get_falk_vm(self.vm_name)
+            vm = await asyncio.wait_for(self.get_falk_vm(self.vm_name),
+                                        timeout=10)
 
             # vm was acquired, now boot it.
             self.set_state("pending", "booting VM")
 
-            with Chantal(vm) as chantal:
-                await chantal.wait_for_connection()
+            async with Chantal(vm) as chantal:
 
-                await chantal.install()
-                chantal_output = chantal.run(self)
+                # wait for the VM and install chantal
+                # TODO: allow already existing chantal installation?
+                await chantal.wait_for_connection(timeout=60, try_timeout=20)
+                await chantal.install(timeout=20)
 
                 control_handler = self.control_handler()
-                for stream_id, data in chantal_output:
-                    if stream_id == 1:
-                        # stdout message
-                        self.send_update(
-                            StdOut(self.project.name, self.build.commit_hash,
-                                   self.name,
-                                   data.decode("utf-8", errors="replace")))
 
-                    elif stream_id == 2:
-                        # control message stream chunk
-                        control_handler.send(data)
+                try:
+                    # run chantal process in the vm
+                    async with chantal.run(self) as run:
+
+                        # and fetch all the output
+                        async for stream_id, data in run.output():
+                            # stdout message:
+                            if stream_id == 1:
+                                self.send_update(
+                                    StdOut(self.project.name,
+                                           self.build.commit_hash,
+                                           self.name,
+                                           data.decode("utf-8",
+                                                       errors="replace")))
+
+                            # control message stream chunk:
+                            elif stream_id == 2:
+                                control_handler.send(data)
+
+                        # wait for chantal termination
+                        await run.wait()
+
+                except ProcTimeoutError as exc:
+                    raise JobTimeoutError(exc.timeout, exc.was_global)
+
+        except asyncio.CancelledError as exc:
+            logging.info("\x1b[31;1mJob aborted:\x1b[m %s" % (self))
+            self.error("Job cancelled")
+            raise
+
+        except (ProcessFailed, asyncio.TimeoutError) as exc:
+            if isinstance(exc, ProcessFailed):
+                error = ": %s" % exc.cmd[0]
+                what = "failed"
+            else:
+                error = ""
+                what = "timed out"
+
+            logging.error("[job] \x1b[31;1mProcess %s:\x1b[m %s:\n%s" % (
+                what, self, exc))
+
+            self.error("Process failed%s" % error)
+
+        except (LineReadError, ProcessError) as exc:
+            logging.error("[job] \x1b[31;1mCommunication failure:"
+                          "\x1b[m %s" % self)
+
+            logging.error(" $ %s: %s" % (" ".join(exc.cmd), exc))
+
+            self.error("Process communication error: %s" % (exc.cmd[0]))
 
         except ProcTimeoutError as exc:
-            job_timeout = self.project.cfg.job_timeout
-            silence_timeout = self.project.cfg.job_silence_timeout
+            if exc.was_global:
+                silence = "Took"
+            else:
+                silence = "Silence time"
+
+            logging.error("[job] \x1b[31;1mTimeout:\x1b[m %s" % self)
+            logging.error(" $ %s", " ".join(exc.cmd))
+            logging.error("\x1b[31;1m%s longer than limit "
+                          "of %.2fs.\x1b[m" % (
+                              silence , exc.timeout))
+            traceback.print_exc()
+
+            self.error("Process %s took > %.02fs." % (exc.cmd[0],
+                                                      exc.timeout))
+
+        except JobTimeoutError as exc:
 
             # did it take too long to finish?
             if exc.was_global:
-                print("\x1b[31;1mJob timeout! Took %.03fs, "
-                      "over global limit of %.2fs.\x1b[m" % (
-                          exc.timeout,
-                          job_timeout,
-                      ))
+                logging.error("[job] \x1b[31;1mTimeout:\x1b[m %s" % (
+                    self))
+                logging.error("\x1b[31;1mTook longer than limit "
+                              "of %.2fs.\x1b[m" % (
+                                  exc.timeout))
 
                 if self.current_step:
                     self.set_step_state(self.current_step, "error",
                                         "Timeout!")
 
-                self.error("Job took > %.02fs." % (job_timeout))
+                self.error("Job took > %.02fs." % (exc.timeout))
 
             # or too long to provide a message?
             else:
-                print("\x1b[31;1mJob silence timeout! Quiet for %.03fs > "
-                      "%.2fs.\x1b[m" % (exc.timeout, silence_timeout))
+                logging.error("[job] \x1b[31;1mSilence timeout!\x1b[m "
+                              "%s\n\x1b[31mQuiet for > %.2fs.\x1b[m" % (
+                                  self, exc.timeout))
 
                 # a specific step is responsible:
                 if self.current_step:
                     self.set_step_state(self.current_step, "error",
                                         "Silence for > %.02fs." % (
-                                            silence_timeout))
+                                            exc.timeout))
                     self.error("Silence Timeout!")
                 else:
                     # bad step is unknown:
-                    self.error("Silence for > %.2fs!" % (silence_timeout))
+                    self.error("Silence for > %.2fs!" % (exc.timeout))
 
         except VMError as exc:
-            print("\x1b[31;1mMachine action failed\x1b[m", end=" ")
-            print("%s.%s [\x1b[33m%s\x1b[m]" % (self.build.project.name,
-                                                self.name,
-                                                self.build.commit_hash))
+            logging.error("\x1b[31;1mMachine action failed\x1b[m "
+                          "%s.%s [\x1b[33m%s\x1b[m]" % (
+                              self.build.project.name,
+                              self.name, self.build.commit_hash))
             traceback.print_exc()
-            self.error("VM Error: " + str(exc))
 
-        except BaseException as exc:
-            print("\x1b[31;1mexception in Job.run()\x1b[m", end=" ")
-            print("%s.%s [\x1b[33m%s\x1b[m]" % (self.build.project.name,
-                                                self.name,
-                                                self.build.commit_hash))
+            self.error("VM Error: %s" % (exc))
 
+        except Exception as exc:
+            logging.error("\x1b[31;1mexception in Job.run()\x1b[m "
+                          "%s.%s [\x1b[33m%s\x1b[m]" % (
+                              self.build.project.name,
+                              self.name,
+                              self.build.commit_hash))
             traceback.print_exc()
+
             try:
-                self.error("Job.run(): " + repr(exc))
-            except BaseException as exc:
-                print("\x1b[31;1mfailed to notify service about error\x1b[m")
+                self.error("Job.run(): %r" % (exc))
+            except Exception as exc:
+                logging.error("\x1b[31;1mfailed to notify service "
+                              "about error\x1b[m")
                 traceback.print_exc()
 
         finally:
@@ -387,7 +479,7 @@ class Job(Watcher, Watchable):
             step = self.pending_steps.pop()
             self.set_step_state(step, "error", "build has errored")
 
-    @coroutine
+    @recvcoroutine
     def control_handler(self):
         """
         Coroutine that receives control data chunks via yield, and
@@ -490,7 +582,8 @@ class Job(Watcher, Watchable):
                 raise ValueError("duplicate output path: " + path)
 
             if CFG.args.volatile:
-                print("'%s' ignored because of volatile mode active." % cmd)
+                logging.warn("'%s' ignored because of "
+                             "volatile mode active." % cmd)
             elif cmd == 'output-file':
                 self.raw_file = pathobj.open('wb')
                 self.raw_remaining = size
@@ -499,10 +592,3 @@ class Job(Watcher, Watchable):
 
         else:
             raise ValueError("unknown build control command: %r" % (cmd))
-
-    def abort(self):
-        """ Abort the execution of this job """
-
-        # TODO: abort the asyncio task
-        print("[job] received abort request, "
-              "\x1b[31mNOT IMPLEMENTED\x1b[m!")

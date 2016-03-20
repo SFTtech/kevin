@@ -3,8 +3,9 @@ VM management functionality
 """
 
 from abc import ABCMeta, abstractmethod
-from pathlib import Path
+import logging
 import re
+from pathlib import Path
 
 
 # container class name -> class mapping
@@ -76,8 +77,10 @@ class ContainerConfig:
                 self.ssh_port = None
 
             elif key == "ssh_key":
-                print("[vm] warning: '%s' doesn't have ssh-key configured, "
-                      "making key check impossible!" % (self.machine_id))
+                logging.warn("[vm] \x1b[33mwarning\x1b[m: "
+                             "'%s' doesn't have ssh-key configured, "
+                             "making key check impossible!" % (
+                                 self.machine_id))
                 self.ssh_key = None
 
             elif key == "name":
@@ -135,7 +138,7 @@ class Container(metaclass=ContainerMeta):
         raise NotImplementedError()
 
     @abstractmethod
-    def prepare(self, manage=False):
+    async def prepare(self, manage=False):
         """
         Prepares the launch of the container,
         e.g. by creating a temporary runimage.
@@ -143,15 +146,15 @@ class Container(metaclass=ContainerMeta):
         pass
 
     @abstractmethod
-    def launch(self):
+    async def launch(self):
         """ Launch the virtual machine container """
         pass
 
-    def status(self):
+    async def status(self):
         """ Return runtime information for the container """
 
         return {
-            "running": self.is_running(),
+            "running": await self.is_running(),
             "ssh_user": self.ssh_user,
             "ssh_host": self.ssh_host,
             "ssh_port": self.ssh_port,
@@ -159,19 +162,19 @@ class Container(metaclass=ContainerMeta):
         }
 
     @abstractmethod
-    def is_running(self):
+    async def is_running(self):
         """
         Return if the container is still running.
         """
         pass
 
     @abstractmethod
-    def terminate(self):
+    async def terminate(self):
         """ Terminate the container if it doesn't shutdown on its own """
         pass
 
     @abstractmethod
-    def cleanup(self):
+    async def cleanup(self):
         """ Cleanup the container, e.g. remove tmpfiles. """
         pass
 

@@ -136,7 +136,7 @@ class Message(metaclass=MessageMeta):
             try:
                 data = json.loads(msg)
             except ValueError:
-                raise ValueError("failed json parsing of '%s'" % msg) from None
+                raise ValueError("failed json parsing of '%s'" % msg)
 
             classname = data['class']
             cls = MESSAGE_TYPES.get(classname)

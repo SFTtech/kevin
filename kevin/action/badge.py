@@ -5,6 +5,7 @@ Status badge generation
 
 from string import Template
 
+"""
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{{=it.widths[0]+it.widths[1]}}" height="20">
   <linearGradient id="smooth" x2="0" y2="100%">
     <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
@@ -31,4 +32,4 @@ from string import Template
     <text x="{{=it.widths[0]+it.widths[1]/2-1}}" y="14">{{=it.escapeXml(it.text[1])}}</text>
   </g>
 </svg>
-
+"""

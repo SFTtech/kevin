@@ -37,6 +37,10 @@ and [tornado](http://www.tornadoweb.org/).
 
 ### Features
 
+* Makefile-like [control file `.kevin`](etc/controlfile.example)
+ * Directly specify command dependencies of your build
+ * Report the step results and timing back to github
+
 * GitHub pull requests
  * A build is triggered for each new and updated pull request
  * When you push to a currently-in-build branch,
@@ -46,6 +50,10 @@ and [tornado](http://www.tornadoweb.org/).
  * Let your project generate files and folders
  * They're saved to the static web folder
  * Use it to generate documentation, releases, ...
+
+* Container management
+ * Jobs are built in temporary throwaway VMs
+ * Easily change and update the base images
 
 
 ### [Supported containers](/falk/vm/)
@@ -64,14 +72,13 @@ and [tornado](http://www.tornadoweb.org/).
 
 You have to set up 3 things: **Kevin**, **Falk** and **Chantal**.
 
-How? Lurk into [our setup guide](doc/setup.md).
+**How?** [Lurk into our setup guide](doc/setup.md).
 
 
 ### TODO
 
 * `mandy` webinterface in [EmberJS](http://emberjs.com/)
 * `rolf` command line client
-* Parallel build/job processing with `asyncio`
 * More actions: Email, IRC, ...
 * More hosting services:
   [GitLab](https://gitlab.com/),
@@ -80,6 +87,7 @@ How? Lurk into [our setup guide](doc/setup.md).
   [BitBucket](https://bitbucket.org/),
   ...
 * Support for more containers
+* Kevinception: Test kevin with kevin
 
 
 ### Contact

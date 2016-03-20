@@ -63,9 +63,9 @@ Look inside [`falk/vm/`](/falk/vm) to add more containers.
   - `requests`
  - Create user `kevin` (you can, of course, change that)
   - Add `kevin` to group `kvm`
-  - Create `/etc/kevin/kevin.conf` from [`kevin.conf.example`](/dist/kevin.conf.example)
+  - Create `/etc/kevin/kevin.conf` from [`kevin.conf.example`](/etc/kevin.conf.example)
   - Create a password-less SSH key with `ssh-keygen -t rsa -b 4096` for the user `kevin`
- - Install the `kevin` Python module (ideally, as a [systemd unit](/dist/kevin.service) or whatever)
+ - Install the `kevin` Python module (ideally, as a [systemd unit](/etc/kevin.service) or whatever)
 
 
 ##### VM provider (Falk)
@@ -74,7 +74,7 @@ Look inside [`falk/vm/`](/falk/vm) to add more containers.
   - `python >=3.4`
   - your container system of choice: `qemu`, ...
 
- - Create `/etc/kevin/falk.conf` from [`falk.conf.example`](/dist/falk.conf.example)
+ - Create `/etc/kevin/falk.conf` from [`falk.conf.example`](/etc/falk.conf.example)
 
  - Register this `falk` by adding it to the `kevin.conf` `[falk]` section.
   - If this `falk` is on the same machine as `kevin`:
@@ -120,14 +120,13 @@ Look inside [`falk/vm/`](/falk/vm) to add more containers.
    create a folder where project configurations reside in
   - `/etc/kevin/projects/` may be a good location
   - In there, create `lolmyproject.conf` from the
-    [`dist/project.conf.example`](/dist/project.conf.example) file
+    [`etc/project.conf.example`](/etc/project.conf.example) file
 
  - For the project you want to test,
-   create [control file](/dist/controlfile.example) `.kevin`
+   create [control file](/etc/controlfile.example) `.kevin`
    in the project repo root (e.g. `~/dev/openage/.kevin`)
 
- - [Create GitHub webhook](https://developer.github.com/webhooks/creating/
-):
+ - [Create GitHub webhook](https://developer.github.com/webhooks/creating/):
   - Settings > Webhooks and Services > Add Webhook
   - content type: JSON, URL: `http://your-kevin-host:webhook_port/hook-github`
   - Create a secret with e.g. `pwgen 1 30` and save it in the github webhook
@@ -140,6 +139,7 @@ Look inside [`falk/vm/`](/falk/vm) to add more containers.
 * Persistent storage for `kevin` is done in the `[web]` `folder`
 * Run `kevin` with `python3 -m kevin`
 * Run `falk` with `python3 -m falk`
+* [Manage a container](falk.md#managing-vms) with `python3 -m falk.manage`
 
 * Test without `github`: Try using the [kevin simulator](simulator.md)
 * Test with `github`: Just make a pull request!

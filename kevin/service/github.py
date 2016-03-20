@@ -6,6 +6,7 @@ All github interaction originates from this module.
 
 import  json
 import hmac
+import logging
 import traceback
 from hashlib import sha1
 
@@ -18,6 +19,10 @@ from ..httpd import HookHandler, HookTrigger
 from ..update import (Update, BuildState, JobState,
                       StepState, GeneratedUpdate, Enqueued)
 from ..watcher import Watcher
+
+# silence the library log messages
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 class GitHubStatusURL(GeneratedUpdate):
@@ -86,7 +91,8 @@ class GitHubPullManager(Watcher):
 
                 if not queue:
                     # we didn't get the "Enqueued" update for the build
-                    print("[github] wanted to abort build in unknown queue")
+                    logging.warn("[github] wanted to abort build "
+                                 "in unknown queue")
 
                 else:
                     # abort it
@@ -171,7 +177,7 @@ class GitHubHookHandler(HookHandler):
         self.finish()
 
     def post(self):
-        print("[github] \x1b[34mGot webhook from %s\x1b[m" % (
+        logging.info("[github] \x1b[34mGot webhook from %s\x1b[m" % (
             self.request.remote_ip))
         blob = self.request.body
 
@@ -213,16 +219,18 @@ class GitHubHookHandler(HookHandler):
             if project is None:
                 if repo_name in tried_repos:
                     # we found the project but the signature was invalid
-                    print("[github] \x1b[31minvalid signature\x1b[m "
-                          "for %s hook, sure you use the same keys?" % (
-                        repo_name))
+                    logging.error(
+                        "[github] \x1b[31minvalid signature\x1b[m "
+                        "for %s hook, sure you use the same keys?" % (
+                            repo_name))
                     raise ValueError("invalid message signature")
 
                 else:
                     # the project could not be found by repo name
-                    print("[github] \x1b[31mcould not find project\x1b[m "
-                          "for hook from '%s'. I tried: %s" % (
-                        repo_name, tried_repos))
+                    logging.error(
+                        "[github] \x1b[31mcould not find project\x1b[m "
+                        "for hook from '%s'. I tried: %s" % (
+                            repo_name, tried_repos))
                     raise ValueError("invalid project source")
 
             # dispatch by event type
@@ -236,7 +244,7 @@ class GitHubHookHandler(HookHandler):
                 user = json_data["sender"]["login"]
                 forklocation = json_data["forkee"]["full_name"]
                 forkurl = json_data["forkee"]["html_url"]
-                print("[github] %s forked %s to %s at %s" % (
+                logging.info("[github] %s forked %s to %s at %s" % (
                     user, repo_name, forklocation, forkurl
                 ))
 
@@ -244,7 +252,7 @@ class GitHubHookHandler(HookHandler):
                 # the "watch" event actually means "star"
                 action = json_data["action"]
                 user = json_data["sender"]["login"]
-                print("[github] %s %s starring %s" % (
+                logging.info("[github] %s %s starring %s" % (
                     user, action, repo_name
                 ))
 
@@ -252,14 +260,14 @@ class GitHubHookHandler(HookHandler):
                 raise ValueError("unhandled hook event '%s'" % event)
 
         except (ValueError, KeyError) as exc:
-            print("[github] bad request: " + repr(exc))
+            logging.error("[github] bad request: " + repr(exc))
             traceback.print_exc()
 
             self.write(repr(exc).encode())
             self.set_status(400, "Bad request")
 
-        except (BaseException) as exc:
-            print("[github] \x1b[31;1mexception in post hook\x1b[m")
+        except Exception as exc:
+            logging.error("[github] \x1b[31;1mexception in post hook\x1b[m")
             traceback.print_exc()
 
             self.set_status(500, "Internal error")
@@ -466,7 +474,7 @@ class GitHubBuildStatusUpdater(Watcher):
             return
 
         if len(description) > 140:
-            print("[github] description too long, truncating")
+            logging.warn("[github] description too long, truncating")
             description = description[:140]
 
         data = json.dumps({
@@ -486,8 +494,12 @@ class GitHubBuildStatusUpdater(Watcher):
         """ send a single github status update """
 
         try:
-            # TODO: make async!
             # TODO: select authtoken based on url!
+
+            # TODO: make async!
+            # req = lambda: requests.post(url, data, auth=self.cfg.authtoken)
+            # reply = await loop.run_in_executor(None, req)
+
             reply = requests.post(url, data, auth=self.cfg.authtoken)
 
         except requests.exceptions.ConnectionError as exc:
@@ -498,7 +510,7 @@ class GitHubBuildStatusUpdater(Watcher):
         if not reply.ok:
             if "status" in reply.headers:
                 replytext = reply.headers["status"] + '\n' + reply.text
-                print("[github] status update request rejected "
-                      "by github: %s" % (replytext))
+                logging.warn("[github] status update request rejected "
+                             "by github: %s" % (replytext))
             else:
-                print("[github] reply status: no data given.")
+                logging.warn("[github] reply status: no data given.")

@@ -2,6 +2,7 @@
 qemu virtual machines.
 """
 
+import logging
 import os
 from pathlib import Path
 import shlex
@@ -34,11 +35,11 @@ class QEMU(Container):
         cfg.command = cfgdata["command"]
 
         if not cfg.base_image.is_file():
-            raise FileNotFoundError("base image: " + str(cfg.base_image))
+            raise FileNotFoundError("base image: %s" % cfg.base_image)
 
         return cfg
 
-    def prepare(self, manage=False):
+    async def prepare(self, manage=False):
         self.manage = manage
 
         if not self.manage:
@@ -62,10 +63,16 @@ class QEMU(Container):
             if subprocess.call(command) != 0:
                 raise RuntimeError("could not create overlay image")
         else:
+            logging.warning("VM launching in management mode!")
             # to manage, use the base image to run
             self.running_image = str(self.cfg.base_image)
 
-    def launch(self):
+    async def launch(self):
+        if self.running_image is None:
+            raise RuntimeError("runimage was not prepared!")
+
+        logging.debug("VM will listen on port %d" % self.ssh_port)
+
         command = []
         for part in shlex.split(self.cfg.command):
             part = part.replace("IMAGENAME", str(self.running_image))
@@ -75,7 +82,7 @@ class QEMU(Container):
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE)
         self.process.stdin.close()
 
-    def is_running(self):
+    async def is_running(self):
         if self.process:
             running = self.process.poll() is None
         else:
@@ -83,12 +90,12 @@ class QEMU(Container):
 
         return running
 
-    def terminate(self):
+    async def terminate(self):
         if self.process:
             self.process.kill()
             self.process.wait()
 
-    def cleanup(self):
+    async def cleanup(self):
         if not (self.manage or self.running_image is None):
             try:
                 os.unlink(str(self.running_image))

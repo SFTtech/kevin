@@ -4,7 +4,7 @@ Falk communication protocol.
 
 import asyncio
 import copy
-import time
+import logging
 import traceback
 
 from . import messages
@@ -13,27 +13,28 @@ from .messages import ProtoType
 from .vm import CONTAINERS
 
 
-# number of connections, is tracked for logging purposes
-CONN_COUNT = 0
-
-# message protocol version
-VERSION = 0
-
-
 class FalkProto(asyncio.Protocol):
     """
     Communication protocol for falks control socket.
+    This is created for each connection on the socket.
+
+    If the connection dies, all associated containers will be killed.
     """
 
     # default: user-friendly text mode.
     DEFAULT_MODE = ProtoType.text
 
+    # message protocol version
+    VERSION = 0
+
     def __init__(self, falk):
         self.falk = falk
 
+        # line buffer
         self.buf = bytearray()
         self.maxbuf = (8 * 1024 * 1024)  # 8 MiB max buffer
 
+        # falk user identification
         self.user = None
         self.ip = None
 
@@ -44,17 +45,25 @@ class FalkProto(asyncio.Protocol):
         # set by the Select message
         self.current_machine = None
 
-    def connection_made(self, transport):
-        global CONN_COUNT
-        self.conn_id = CONN_COUNT
-        CONN_COUNT += 1
+        # current transmission protocol mode
+        self.mode = self.DEFAULT_MODE
 
-        self.log("[%s] new client connected" % (
-            time.strftime("%Y-%m-%d %T")))
+        # internal connection handle id
+        self.conn_id = None
+
+        # command queue. gets filled from the control socket.
+        self.queue = asyncio.Queue()
+
+        # is the connection still alive?
+        self.disconnected = asyncio.Future()
+
+    def connection_made(self, transport):
+        self.connected = True
+        self.conn_id = self.falk.get_handle_id()
+
+        self.log("new client connected")
 
         self.transport = transport
-
-        self.mode = self.DEFAULT_MODE
 
     def data_received(self, data):
         if not data.strip():
@@ -76,30 +85,26 @@ class FalkProto(asyncio.Protocol):
         self.buf = self.buf[newline + 1:]
 
         for line in msgs.split(b"\n"):
+            # each line is a command
             try:
                 if line.strip():
-                    self.control_message(
-                        messages.Message.construct(line, self.mode)
-                    )
+                    msg = messages.Message.construct(line, self.mode)
+                    self.queue.put_nowait(msg)
 
-            except BaseException as exc:
-                self.log("\x1b[31;1merror processing request:\x1b[m")
+            except Exception as exc:
+                self.log("\x1b[31;1mfailed constructing message:\x1b[m",
+                         logging.ERROR)
                 traceback.print_exc()
                 self.send(messages.Error(repr(exc)))
 
     def connection_lost(self, exc):
         self.log("lost connection")
-
-        # before this protocol dies, kill all associated machines.
-        for handle_id, name in self.running.items():
-            container = self.get_machine(handle_id)
-
-            self.log("killing container %s..." % name)
-            container.terminate()
-            container.cleanup()
-
         if exc:
-            self.log("connection loss reason: %s" % repr(exc))
+            self.log("reason: %s" % repr(exc))
+            self.disconnected.set_exception(exc)
+
+        else:
+            self.disconnected.set_result(StopIteration)
 
     def send(self, msg, force_mode=None):
         """
@@ -117,21 +122,21 @@ class FalkProto(asyncio.Protocol):
         self.log("terminating connection..")
         self.transport.close()
 
-    def log(self, msg):
+    def log(self, msg, level=logging.INFO):
         """
         logs something for this connection
         """
 
-        print("[%3d] %s" % (self.conn_id, msg))
+        logging.log(level, "[\x1b[1m%3d\x1b[m] %s" % (self.conn_id, msg))
 
     def check_version(self, msg):
         """
         Checks if the given version is compatible with our one.
         """
 
-        if not msg.version == VERSION:
+        if not msg.version == self.VERSION:
             return "unmatching versions: you=%d != us=%d" % (msg.version,
-                                                             VERSION)
+                                                             self.VERSION)
 
         return None
 
@@ -148,7 +153,6 @@ class FalkProto(asyncio.Protocol):
             else:
                 return "unknown mode"
         return None
-
 
     def get_machine_id(self, run_id=None):
         """
@@ -170,11 +174,97 @@ class FalkProto(asyncio.Protocol):
         """
         return self.falk.get_machine(self.get_machine_id(run_id))
 
-    def control_message(self, msg):
+    async def kill_containers(self):
+        """
+        Make sure all containers spawned by this control connection are dead.
+        """
+
+        for handle_id, name in self.running.items():
+            container = self.get_machine(handle_id)
+
+            self.log("killing container %s..." % name)
+            await container.terminate()
+            await container.cleanup()
+
+            # remove the handle
+            self.falk.delete_handle(handle_id)
+
+    async def process_messages(self):
+        """
+        Fetch messages from the queue and react to their request.
+
+        We can't simply create a new task for every message in the
+        data_received function, because we always need to cancel
+        a running task.
+        """
+
+        while not self.disconnected.done():
+
+            queue_task = asyncio.get_event_loop().create_task(
+                self.queue.get())
+
+            try:
+                # either the connection was lost or
+                # we got a command in the queue
+                done, pending = await asyncio.wait(
+                    [queue_task, self.disconnected],
+                    return_when=asyncio.FIRST_COMPLETED)
+
+            except asyncio.CancelledError:
+                # ensure cancellation... wtf whyyy
+                # asyncio pls...
+                #
+                # if the process_messages task is cancelled,
+                # the self.queue.get() might be pending and gets destroyed
+                # which results in an error.
+                # if you are an asyncio expert, please fix it if you can.
+
+                if not queue_task.done():
+                    queue_task.cancel()
+
+                raise
+
+            for future in done:
+                exc = future.exception()
+                if exc:
+                    for future_pending in pending:
+                        future_pending.cancel()
+
+                    await self.kill_containers()
+
+                    raise exc
+
+                message = future.result()
+                if message == StopIteration:
+                    if not self.disconnected.done():
+                        self.disconnected.set_result(message)
+
+                    for future_pending in pending:
+                        future_pending.cancel()
+
+                    await self.kill_containers()
+
+                    break
+
+                # regular message
+                try:
+                    answer, force_mode = await self.control_message(message)
+                    self.send(answer, force_mode)
+
+                except Exception as exc:
+                    self.log("\x1b[31;1merror processing request:\x1b[m",
+                             logging.ERROR)
+                    traceback.print_exc()
+                    self.send(messages.Error(repr(exc)))
+
+    async def control_message(self, msg):
         """
         Parse and handle falk control messages.
         This defines falks behavior!
+
         """
+
+        self.log("processing message: %s" % msg, level=logging.DEBUG)
 
         force_mode = None
         answer = messages.OK()
@@ -191,8 +281,6 @@ class FalkProto(asyncio.Protocol):
             if vercheck is not None:
                 answer = messages.Error("failed: %s" % vercheck)
                 self.log(err)
-            else:
-                answer = messages.OK()
 
         elif isinstance(msg, messages.Mode):
             # send the answer in current mode
@@ -204,14 +292,12 @@ class FalkProto(asyncio.Protocol):
                 answer = messages.Error("failed setting mode: %s" % modeset)
                 self.log(answer)
 
-            else:
-                answer = messages.OK()
-
         elif isinstance(msg, messages.Login):
             if not self.user:
                 self.user = msg.name
                 self.source = msg.source
-                self.log("logged in: %s from %s" % (self.user, self.source))
+                self.log("logged in: %s from %s" % (self.user, self.source),
+                         level=logging.DEBUG)
 
                 answer = messages.Welcome("hi %s!" % self.user, CFG.name)
 
@@ -221,14 +307,16 @@ class FalkProto(asyncio.Protocol):
 
         # login check
         if not self.user:
-            err = messages.Error("not logged in")
-            self.log(err)
+            answer = messages.Error("not logged in")
+            self.log(answer)
 
         else:
             # we have a login!
             # TODO: actual permission checking
             # user: {vmname, vmname, ...} access and management
             if isinstance(msg, messages.List):
+                self.log("providing machine list",
+                         level=logging.DEBUG)
 
                 # the config stores machineid -> (config, class)
                 answer = messages.MachineList(
@@ -237,6 +325,8 @@ class FalkProto(asyncio.Protocol):
                 )
 
             elif isinstance(msg, messages.Select):
+                self.log("selected machine \x1b[1m%s\x1b[m" % (msg.name),
+                         level=logging.DEBUG)
                 cfg, machinecls = CFG.machines[msg.name]
 
                 # important: make copy of the config
@@ -244,12 +334,13 @@ class FalkProto(asyncio.Protocol):
                 cfg = copy.copy(cfg)
 
                 # select a free ssh port
-                free_port = self.falk.get_free_port(cfg.ssh_host)
+                free_port = self.falk.register_free_port(cfg.ssh_host)
 
                 if free_port is not None:
                     cfg.ssh_port = free_port
                 else:
-                    raise RuntimeError("no free port found for %s" % msg.name)
+                    raise RuntimeError(
+                        "no free port found for %s" % msg.name)
 
                 # create new container and handle, then store it
                 handle_id = self.falk.create_handle(machinecls(cfg))
@@ -259,23 +350,27 @@ class FalkProto(asyncio.Protocol):
                 answer = messages.RunID(handle_id)
 
             elif isinstance(msg, messages.Status):
+                self.log("returning machine status..", level=logging.DEBUG)
                 machine = self.get_machine(msg.run_id)
-                status = machine.status()
+                status = await machine.status()
                 status["run_id"] = self.get_machine_id(msg.run_id)
                 answer = messages.VMStatus(**status)
 
             elif isinstance(msg, messages.Prepare):
-                self.get_machine(msg.run_id).prepare(msg.manage)
+                self.log("preparing machine..", level=logging.DEBUG)
+                await self.get_machine(msg.run_id).prepare(msg.manage)
 
             elif isinstance(msg, messages.Launch):
-                # the execution happens fork'd off
-                self.get_machine(msg.run_id).launch()
+                self.log("launching machine..", level=logging.DEBUG)
+                await self.get_machine(msg.run_id).launch()
 
             elif isinstance(msg, messages.Terminate):
-                self.get_machine(msg.run_id).terminate()
+                self.log("terminating machine..", level=logging.DEBUG)
+                await self.get_machine(msg.run_id).terminate()
 
             elif isinstance(msg, messages.Cleanup):
-                self.get_machine(msg.run_id).cleanup()
+                self.log("cleaning up machine..", level=logging.DEBUG)
+                await self.get_machine(msg.run_id).cleanup()
 
                 # and remove the handle.
                 handle_id = self.get_machine_id(msg.run_id)
@@ -286,5 +381,5 @@ class FalkProto(asyncio.Protocol):
             elif isinstance(msg, messages.Exit):
                 self.close()
 
-        if answer:
-            self.send(answer, force_mode)
+        self.log("answer: %s" % answer, level=logging.DEBUG)
+        return answer, force_mode

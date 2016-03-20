@@ -9,7 +9,7 @@ from .config import CFG
 
 class Falk:
     """
-    State storage for this falk daemon.
+    Global state storage for this falk daemon.
     """
 
     def __init__(self):
@@ -23,27 +23,39 @@ class Falk:
         # hostname -> used ports
         self.used_ports = defaultdict(lambda: set())
 
-    def get_free_port(self, hostname):
+    def get_handle_id(self):
+        """ return the next free handle id """
+        ret = self.handle_id
+        self.handle_id += 1
+        return ret
+
+    def register_free_port(self, hostname):
         """
         Return a free ssh port.
         `port` is (lower, upper), this function returns the next
         available port in that range.
 
         if no free port can be found, returns None
-
-        TODO: check if another process owns the port.
         """
 
         lower, upper = CFG.ssh_port_range
 
+        ret = None
+
         current = lower
         while True:
-            if current not in self.used_ports[hostname]:
-                return current
-            else:
+            if current in self.used_ports[hostname]:
                 current += 1
                 if current > upper:
-                    return None
+                    raise RuntimeError("no free port found")
+            else:
+                # TODO: test if the socket is in use by other process?
+                ret = current
+                break
+
+        self.used_ports[hostname].add(ret)
+
+        return ret
 
     def create_handle(self, new_machine):
         """
@@ -53,13 +65,6 @@ class Falk:
         self.handle_id += 1
 
         self.running[new_handle] = new_machine
-
-        # register used ssh port
-        if new_machine.ssh_port in self.used_ports[new_machine.ssh_host]:
-            raise RuntimeError("tried using occupied ssh port %d on '%s' " % (
-                new_machine.ssh_port, new_machine.ssh_host))
-
-        self.used_ports[new_machine.ssh_host].add(new_machine.ssh_port)
 
         return new_handle
 

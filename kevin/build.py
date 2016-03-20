@@ -337,7 +337,8 @@ class Build(Watchable, Watcher):
                     count, "s" if count > 1 else ""))
 
         # build is completed now!
-        self.path.joinpath("_completed").touch()
+        if not CFG.args.volatile:
+            self.path.joinpath("_completed").touch()
         self.completed = True
         self.finished = True
 
@@ -347,7 +348,8 @@ class Build(Watchable, Watcher):
         if self.finished:
             return
 
-        for job in self.jobs.values():
-            job.abort()
+        if self.queue:
+            for job in self.jobs_pending.copy():
+                self.queue.cancel_job(job)
 
         self.finish()

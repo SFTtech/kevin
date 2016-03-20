@@ -5,10 +5,12 @@ Code for loading and parsing config options.
 from collections import defaultdict
 from configparser import ConfigParser
 from pathlib import Path
-import os
 import ipaddress
+import logging
+import os
 
 from .project import Project
+from .util import parse_connection_entry
 
 
 class Config:
@@ -42,16 +44,17 @@ class Config:
         self.args = args
 
         if self.args.volatile:
-            print("\x1b[1;31mYou are running in volatile mode, "
-                  "nothing will be stored on disk!\x1b[m")
+            logging.warn("\x1b[1;31mYou are running in volatile mode, "
+                         "nothing will be stored on disk!\x1b[m")
 
     def load(self, filename):
         """ Loads the attributes from the config file """
         raw = ConfigParser()
 
         if not Path(filename).exists():
-            print("\x1b[31mConfig file '%s' does not exist.\x1b[m" % (
-                filename))
+            logging.error(
+                "\x1b[31mConfig file '%s' does not exist.\x1b[m" % (
+                    filename))
             exit(1)
 
         raw.read(filename)
@@ -63,6 +66,7 @@ class Config:
             kevin = raw["kevin"]
             self.ci_name = kevin["name"]
             self.max_jobs_queued = int(kevin["max_jobs_queued"])
+            self.max_jobs_running = int(kevin["max_jobs_running"])
 
             # project configurations.
             projects = raw["projects"]
@@ -85,8 +89,9 @@ class Config:
             #       instead of iterating through all present files.
             for projectfile in self.project_folder.iterdir():
                 if not str(projectfile).endswith(".conf"):
-                    print("[projects] ignoring non .conf file '%s'" % (
-                        projectfile))
+                    logging.warn(
+                        "[projects] ignoring non .conf file '%s'" % (
+                            projectfile))
                     continue
 
                 # create the project
@@ -95,7 +100,7 @@ class Config:
                     raise NameError("Project '%s' defined twice!" % (
                         newproj.name))
 
-                print("[projects] loaded %s" % newproj.name)
+                logging.info("[projects] loaded %s" % newproj.name)
 
                 self.projects[newproj.name] = newproj
 
@@ -114,29 +119,18 @@ class Config:
                 if name in self.falks:
                     raise ValueError("Falk double-defined: %s" % name)
 
-                try:
-                    user, target = url.split("@")
-                except ValueError:
-                    raise ValueError("%s=user@target malformed" % name)
-
-                if ":" in target:
-                    # ssh connection
-                    host, port = target.split(":")
-                    location = (host, port)
-                    connection = "ssh"
-                else:
-                    # unix socket
-                    location = target
-                    connection = "unix"
+                result = parse_connection_entry(name, url, cfglocation)
 
                 self.falks[name] = {
-                    "user": user,
-                    "connection": connection,
-                    "location": location,
+                    "user": result[0],
+                    "connection": result[1],
+                    "location": result[2],
+                    "key": result[3],
                 }
 
         except KeyError as exc:
-            print("\x1b[31mConfig file is missing entry: %s\x1b[m" % (exc))
+            logging.error(
+                "\x1b[31mConfig file is missing entry: %s\x1b[m" % (exc))
             exit(1)
 
         self.verify()

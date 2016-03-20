@@ -7,7 +7,7 @@ control_socket_permissions = 770
 #control_socket_group = kevin
 ssh_port = [7777,8000]
 
-[myvm0]
+[my-vm-id]
 name = name-which-the-job-requests
 type = qemu
 ssh_user = chantal

@@ -1,0 +1,28 @@
+# kevin ci main config file
+
+[kevin]
+name = kevin-ci
+max_jobs_queued = 50
+max_jobs_running = 2
+
+[projects]
+config_folder = /etc/kevin/projects
+output_folder = /your/writable/static/web/folder/served/below
+
+# the internet interaction:
+[web]
+url = http://your.kevin.host.serving/output_folder/statically
+dyn_port = 7777
+dyn_url = http://your.kevin.host:7777/
+
+# configure available falk instances:
+[falk]
+
+# when falk is running on the same physical machine:
+lol_unix_falk = unix://me@/run/kevin/falk
+
+# reuse your known hosts file
+lol_ssh_falk_keyfile = ssh://yourmom@your.falk.host:22 = ~/.ssh/known_hosts
+
+# specify key directly
+lol_ssh_falk_direct = ssh://yourdad@your.falk.host:22 = ssh-rsa ROFLOLKEY...

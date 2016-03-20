@@ -4,12 +4,14 @@ Program entry point
 
 import argparse
 import asyncio
-import traceback
+import logging
+import signal
 import sys
 
 from .config import CFG
 from .httpd import HTTPD
-from .jobqueue import Queue, process_jobs
+from .jobqueue import Queue
+from .util import log_setup
 
 
 def main():
@@ -30,10 +32,17 @@ def main():
                            "testing purposes"))
     cmd.add_argument("-d", "--debug", action="store_true",
                      help="enable asyncio debugging")
+    cmd.add_argument("-v", "--verbose", action="count", default=0,
+                     help="increase program verbosity")
+    cmd.add_argument("-q", "--quiet", action="count", default=0,
+                     help="decrease program verbosity")
 
     args = cmd.parse_args()
 
     print("\x1b[1;32mKevin CI initializing...\x1b[m")
+
+    # set up log level
+    log_setup(args.verbose - args.quiet)
 
     loop = asyncio.get_event_loop()
 
@@ -46,30 +55,45 @@ def main():
     # pass commandline args
     CFG.set_cmdargs(args)
 
-    print("\x1b[1;32mKevin CI starting...\x1b[m")
+    logging.error("\x1b[1;32mKevin CI starting...\x1b[m")
 
     # build job queue
-    queue = Queue()
+    queue = Queue(max_running=CFG.max_jobs_running)
 
     # start thread for receiving webhooks
     httpd = HTTPD(CFG.urlhandlers, queue)
 
-    try:
-        job_crunsher = loop.create_task(process_jobs(queue))
+    job_task = loop.create_task(queue.process_jobs())
 
-        loop.run_until_complete(job_crunsher)
+    try:
+        loop.run_until_complete(job_task)
 
     except (KeyboardInterrupt, SystemExit):
-        print("\nexiting...")
+        print("")
+        logging.info("exiting...")
 
-    except BaseException:
-        print("\x1b[31;1mfatal internal exception\x1b[m")
-        traceback.print_exc()
+        # teardown
+        if not job_task.done():
+            # cancel all running jobs
+            cancel_jobs_task = loop.create_task(queue.cancel())
+            cancels = loop.run_until_complete(cancel_jobs_task)
 
-    # teardown
-    if not job_crunsher.done():
-        job_crunsher.cancel()
+            # cancel the job processing
+            job_task.cancel()
+            try:
+                loop.run_until_complete(job_task)
+            except asyncio.CancelledError:
+                pass
 
+        else:
+            logging.warn("[main] job_task already done!")
+
+    except Exception:
+        logging.exception("\x1b[31;1mfatal internal exception\x1b[m")
+
+    logging.info("cleaning up...")
+
+    # run the loop one more time to process leftover tasks
     loop.stop()
     loop.run_forever()
     loop.close()

@@ -3,14 +3,12 @@ Code for creating and interfacing with Chantal instances.
 """
 
 import asyncio
+import logging
 from pathlib import Path
-import socket
 import subprocess
-import sys
-import time
 
 from .util import INF, SSHKnownHostFile
-from .process import Process
+from .process import Process, SSHProcess, ProcessFailed, ProcTimeoutError
 
 
 class Chantal:
@@ -22,70 +20,21 @@ class Chantal:
     """
     def __init__(self, vm):
         self.vm = vm
-        self.vm.prepare()
-        self.vm.launch()
+        self.ssh_worked = asyncio.Future()
 
-    async def wait_for_ssh_port(self, timeout=30, retry_interval=0.2):
-        """
-        Loops until the SSH port is open.
-        raises RuntimeError on timeout.
-        """
-        raw_acquired = False
-        endtime = time.time() + timeout
-        while True:
-            await asyncio.sleep(retry_interval)
+    def can_connect(self):
+        """ return if the vm ssh connection was successful once. """
+        if self.ssh_worked.done():
+            return self.ssh_worked.result()
+        else:
+            return False
 
-            if not raw_acquired:
-                print("testing for ssh port... ", end="")
-                sys.stdout.flush()
-                sock = socket.socket()
+    async def create(self):
+        """ create and prepare the machine """
+        await self.vm.prepare()
+        await self.vm.launch()
 
-                # TODO: make async!
-                if sock.connect_ex((self.vm.ssh_host,
-                                    self.vm.ssh_port)) == 0:
-                    sock.close()
-                    raw_acquired = True
-                    print("\x1b[32;5mopen\x1b[m!")
-                    continue
-                else:
-                    print("\x1b[31;5mclosed\x1b[m!")
-
-            else:
-                print("testing for ssh service on port... ", end="")
-                sys.stdout.flush()
-
-                with SSHKnownHostFile(self.vm.ssh_host,
-                                      self.vm.ssh_port,
-                                      self.vm.ssh_key) as hostfile:
-
-                    command = [
-                        "ssh",
-                    ] + hostfile.get_options() + [
-                        "-p", str(self.vm.ssh_port),
-                        self.vm.ssh_user + "@" + self.vm.ssh_host,
-                        "true",
-                    ]
-
-                    proc = await asyncio.create_subprocess_exec(command)
-                    ret = await proc.wait()
-
-                    if ret == 0:
-                        print("\x1b[32;5;1msuccess\x1b[m!")
-                        break
-                    else:
-                        print("\x1b[31;5;1mfailed\x1b[m!")
-
-            if time.time() > endtime:
-                print("\x1b[31mTIMEOUT\x1b[m")
-                if raw_acquired:
-                    print("TCP connection established, but no SSH.")
-                    if self.vm.ssh_key is not None:
-                        print(" Are you sure the ssh key is correct?")
-                        print(" -> %s" % (self.vm.ssh_key))
-
-                raise RuntimeError("timeout while waiting for SSH port")
-
-    async def upload(self, local_path, remote_folder="."):
+    async def upload(self, local_path, remote_folder=".", timeout=10):
         """
         Uploads the file or directory from local_path to
         remote_folder (default: ~).
@@ -106,13 +55,13 @@ class Chantal:
                 str(remote_folder),
             ]
 
-            proc = await asyncio.create_subprocess_exec(command)
-            ret = await proc.wait()
+            async with Process(command) as proc:
+                ret = await proc.wait_for(timeout)
 
-            if ret != 0:
-                raise RuntimeError("scp failed")
+                if ret != 0:
+                    raise ProcessFailed(ret, "scp upload failed")
 
-    async def download(self, remote_path, local_folder):
+    async def download(self, remote_path, local_folder, timeout=10):
         """
         Downloads the file or directory from remote_path to local_folder.
         Warning: Contains no safeguards regarding filesize.
@@ -132,101 +81,121 @@ class Chantal:
                 local_folder,
             ]
 
-            proc = await asyncio.create_subprocess_exec(command)
-            ret = await proc.wait()
+            async with Process(command) as proc:
+                ret = await proc.wait_for(timeout)
 
-            if ret != 0:
-                raise RuntimeError("scp failed")
+                if ret != 0:
+                    raise ProcessFailed(ret, "scp down failed")
 
-    def run_command(self, *remote_command, timeout=INF, silence_timeout=INF):
+    def exec_remote(self, remote_command,
+                    timeout=INF, silence_timeout=INF,
+                    must_succeed=True):
         """
-        Runs the command via ssh and yields tuples of (stream id, bytes).
+        Runs the command via ssh, returns an Process handle.
+        """
 
+        return SSHProcess(remote_command,
+                          self.vm.ssh_user, self.vm.ssh_host,
+                          self.vm.ssh_port, self.vm.ssh_key,
+                          timeout=timeout,
+                          silence_timeout=silence_timeout,
+                          must_succeed=must_succeed)
+
+    async def run_command(self, remote_command,
+                          timeout=INF, silence_timeout=INF,
+                          must_succeed=True):
+        """
         Raises subprocess.TimeoutExpired if the process has not terminated
         within 'timeout' seconds, or if it has not produced any output in
         'silence_timeout' seconds.
-
-        Raises CalledProcessError if the process has failed.
         """
 
-        with SSHKnownHostFile(self.vm.ssh_host,
-                              self.vm.ssh_port,
-                              self.vm.ssh_key) as hostfile:
+        async with self.exec_remote(remote_command,
+                                    timeout, silence_timeout,
+                                    must_succeed) as proc:
 
-            command = [
-                "ssh", "-q"
-            ] + hostfile.get_options() + [
-                "-p", str(self.vm.ssh_port),
-                self.vm.ssh_user + "@" + self.vm.ssh_host,
-                "--",
-            ]
+            # ignore output, but this handles the timeouts.
+            async for fd, data in proc.output():
+                pass
 
-            # the command to be executed on the host
-            command.extend(remote_command)
+            return await proc.wait()
 
-            # create the process
-            ssh_connection = Process(command)
-
-            # yields all the (stream, data)
-            yield from ssh_connection.communicate(
-                timeout=timeout,
-                individual_timeout=silence_timeout,
-            )
-
-    def cleanup(self):
+    async def cleanup(self):
         """
         Waits for the VM to finish and cleans up.
         """
         try:
-            self.run_command('sudo', 'poweroff', timeout=10)
+            if self.can_connect():
+                await self.run_command(('sudo', 'poweroff'), timeout=10,
+                                       must_succeed=False)
         except subprocess.TimeoutExpired:
-            raise RuntimeError("VM shutdown timeout") from None
+            raise RuntimeError("VM shutdown timeout")
         finally:
-            self.vm.terminate()
-            self.vm.cleanup()
+            try:
+                await self.vm.terminate()
+                await self.vm.cleanup()
+            except subprocess.SubprocessError:
+                logging.warn("[chantal] failed telling falk about VM "
+                             "teardown, but he'll do that on its own.")
 
     def __enter__(self):
+        raise Exception("use async with!")
+
+    def __exit__(self, exc, value, traceback):
+        raise Exception("use async with!")
+
+    async def __aenter__(self):
+        await self.create()
         return self
 
-    def __exit__(self, exc_type, exc, exc_tb):
-        del exc_type, exc_tb  # unused
-
+    async def __aexit__(self, exc, value, traceback):
         try:
-            self.cleanup()
+            await self.cleanup()
         except Exception as new_exc:
-            raise new_exc from exc
+            # the cleanup failed, throw the exception from the old one
+            raise new_exc from value
 
-    async def wait_for_connection(self, timeout=30, retry_delay=0.5):
+    async def wait_for_connection(self, timeout=60, retry_delay=0.5,
+                                  try_timeout=10):
         """
-        wait until chantal can be reached.
+        Wait until the vm can be controlled via ssh
         """
 
         # TODO: support contacting chantal through
         #       plain socket and not only ssh
         #       and allow preinstallations of chantal
-        await self.wait_for_ssh_port(timeout=30)
+        #       -> SSHChantal, ...
+        try:
+            await self.vm.wait_for_ssh_port(timeout,
+                                            retry_delay, try_timeout)
+        except ProcTimeoutError:
+            self.ssh_worked.set_result(False)
+            raise
 
-    async def install(self):
+        self.ssh_worked.set_result(True)
+
+    async def install(self, timeout=10):
         """
         Install chantal on the VM
         """
 
         # TODO: allow to skip chantal installation
         kevindir = Path(__file__)
-        await self.upload(kevindir.parent.parent / "chantal")
+        await self.upload(kevindir.parent.parent / "chantal",
+                          timeout=timeout)
 
     def run(self, job):
         """
         execute chantal in the VM.
-        yield all the output.
+        return a state object, use its .output() function to get
+        an async iterator.
         """
 
-        chantal_output = self.run_command(
-            "python3", "-u", "-m",
-            "chantal", job.build.clone_url,
-            job.build.commit_hash,
-            job.build.project.cfg.job_desc_file,
+        return self.exec_remote(
+            ("python3", "-u", "-m", "chantal",
+             job.build.clone_url,
+             job.build.commit_hash,
+             job.build.project.cfg.job_desc_file),
             timeout=job.build.project.cfg.job_timeout,
             silence_timeout=job.build.project.cfg.job_silence_timeout,
         )
-        yield from chantal_output
