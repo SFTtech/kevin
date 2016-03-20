@@ -4,7 +4,7 @@ export function initialize(/* application */) {
 
 export default {
   name: 'websockets',
-  initialize(container, app) {
+  initialize(app) {
     app.inject('controller', 'websockets', 'service:websockets');
     // TODO: remove, only keep in controller.
     app.inject('route', 'websockets', 'service:websockets');
