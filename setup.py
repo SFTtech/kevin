@@ -11,7 +11,7 @@ setup(
         "right on your own servers.\n"
         "Kevin interacts with the Internet, falk manages the virtual machines "
         "and containers, chantal executes your build jobs.\n\n"
-        "It's designed to interact with a code hosting platform like GitHub"
+        "It's designed to interact with a code hosting platform like GitHub "
         "but can easily be extended for others.\n"
         "Pull requests are build in temporary containers that are deleted"
         "after execution."
