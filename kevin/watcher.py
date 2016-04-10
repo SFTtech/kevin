@@ -34,7 +34,7 @@ class Watchable:
         """ Un-subscribe a watcher from the notification list """
         self.watchers.remove(watcher)
 
-    def on_unwatch(self, watcher):
+    def on_subscriber_unregister(self, watcher):
         """ Custom actions when a watcher unsubscribes """
         pass
 
