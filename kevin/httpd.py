@@ -125,15 +125,15 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         # TODO: activate nodelay mode just for realtime data?
         self.set_nodelay(True)
 
-        project = self.request.query_arguments["project"][0].decode()
-        build_id = self.request.query_arguments["hash"][0].decode()
-        self.build = get_build(project, build_id)
+        # project = self.request.query_arguments["project"][0].decode()
+        # build_id = self.request.query_arguments["hash"][0].decode()
+        # self.build = get_build(project, build_id)
 
-        if not self.build:
-            self.write_message("no such build")
-            return
-        else:
-            self.build.send_updates_to(self)
+        # if not self.build:
+        #     self.write_message("no such build")
+        #     return
+        # else:
+        #     self.build.send_updates_to(self)
 
     def on_close(self):
         if self.build is not None:
