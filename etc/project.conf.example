@@ -7,6 +7,7 @@ name = murrica-freedom-simulator-9001
 job_timeout = 10m
 job_silence_timeout = 5min
 job_desc_file = .kevin
+job_max_output = 256MiB
 
 [github_webhook]
 # github delivers an authenticated captain hook to kevin
