@@ -9,8 +9,7 @@ export default Ember.Route.extend({
     socket.on('open', () => {
       console.log("sending proj request");
       socket.send({
-        "method": "list",
-        "collection": "projects"
+        "class": "ListProjects"
       }, true);
     }, this);
 

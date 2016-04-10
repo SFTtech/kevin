@@ -8,6 +8,8 @@ from tornado import websocket
 from ..config import CFG
 from ..watcher import Watcher
 
+from .messages import Message, Request, ListProjects
+
 
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     """ Provides a job description stream via WebSocket """
@@ -74,47 +76,12 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         # TODO: actual websocket protocol
         # TODO: periodic self.ping(data)
         
-        try:
-            request = json.loads(msg)
-        except json.JSONDecodeError:
-            self.write_error("Cannot parse request " + msg)
-            return
-            
-        if not isinstance(request, dict):
-            self.write_error("Request is not an object")
-            return
+        message = Message.construct(msg)
         
-        if "method" not in request:
-            self.write_error("Request has no method")
-            return
-    
-        method = request["method"]
-        
-        if "collection" not in request:
-            self.write_error("Request has no collection")
-            return
-        
-        collection = request["collection"]
-        
-        # list projects
-        if (method == "list" and collection == "projects"):
+        if isinstance(message, ListProjects):
             self.write_projects()
-        
-        # subscribe to build
-        elif (method == "subscribe" and collection == "build"):
-            if "commit_hash" not in request:
-                self.write_error("Request has no commit_hash")
-                return
-            
-            commit_hash = request["commit_hash"]
-            
-            if "project" not in request:
-                self.write_error("Request has no project")
-                return
-            
-            project = request["project"]
-            
-            self.subscribe_to_build(project, commit_hash)
+        elif isinstance(message, SubscribeToBuild):
+            self.subscribe_to_build(message.project, message.commit_hash)
         else:
             self.write_error("Malformed request")
 

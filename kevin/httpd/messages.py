@@ -61,8 +61,6 @@ class Message(metaclass=MessageMeta):
         Constructs a Message object from json.
         """
 
-        msg = msg.decode("utf8")
-
         try:
             data = json.loads(msg)
         except ValueError:
@@ -93,3 +91,18 @@ class Request(Message):
     """
     def __init__(self):
         pass
+
+class ListProjects(Message):
+    """
+    List all projects.
+    """
+    def __init__(self):
+        pass
+
+class SubscribeToBuild(Message):
+    """
+    List all projects.
+    """
+    def __init__(self, project, commit_hash):
+        self.project = project
+        self.commit_hash = commit_hash

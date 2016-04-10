@@ -7,6 +7,7 @@ Subscribe to a Build
 Request
 ```json
 {
+	"class": "SubscribeToBuild",
 	"project": " ... ",
 	"commit_hash": " ... "
 }
@@ -25,8 +26,7 @@ List Projects
 Request
 ```json
 {
-	"method": "list",
-	"collection": "projects"
+	"class": "ListProjects"
 }
 ```
 
