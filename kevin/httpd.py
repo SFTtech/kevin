@@ -162,7 +162,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         print("websocket: subscribe to build")
         build = get_build(project, commit_hash)
 
-        if(build == None)
+        if(build == None):
             self.write_error("No such build")
             return
         
@@ -183,33 +183,47 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         
         try:
             request = json.loads(msg)
+        except json.JSONDecodeError:
+            self.write_error("Cannot parse request " + msg)
+            return
             
-            if !isinstance(request, dir):
-                self.write_error("Request is not an object")
+        if not isinstance(request, dict):
+            self.write_error("Request is not an object")
+            return
+        
+        if "method" not in request:
+            self.write_error("Request has no method")
+            return
+    
+        method = request["method"]
+        
+        if "collection" not in request:
+            self.write_error("Request has no collection")
+            return
+        
+        collection = request["collection"]
+        
+        # list projects
+        if (method == "list" and collection == "projects"):
+            self.write_projects()
+        
+        # subscribe to build
+        elif (method == "subscribe" and collection == "build"):
+            if "commit_hash" not in request:
+                self.write_error("Request has no commit_hash")
                 return
             
-            # read projects
-            if request.method == "list" and request.collection == "projects":
-                self.write_projects()
+            commit_hash = request["commit_hash"]
             
-            # subscribe to build
-            elif (request.method == "subscribe"
-                  and request.collection == "build"):
-                
-                if(request.commit_hash == None):
-                    self.write_error("Missing commit_hash")
-                    return
-                
-                if(request.project == None):
-                    self.write_error("Missing project")
-                    return
-                
-                self.subscribe_to_build(request.project, request.commit_hash)
-            else:
-                self.write_error("Malformed request")
+            if "project" not in request:
+                self.write_error("Request has no project")
+                return
             
-        except:
-            self.write_error("Cannot parse request")
+            project = request["project"]
+            
+            self.subscribe_to_build(project, commit_hash)
+        else:
+            self.write_error("Malformed request")
 
     def on_pong(self, data):
         print("websocket pong: %s" % data)
