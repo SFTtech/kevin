@@ -30,7 +30,7 @@ class Watchable:
         """
         pass
 
-    def unwatch(self, watcher):
+    def stop_sending_updates_to(self, watcher):
         """ Un-subscribe a watcher from the notification list """
         self.watchers.remove(watcher)
 

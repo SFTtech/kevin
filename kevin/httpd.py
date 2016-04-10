@@ -137,7 +137,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
     def on_close(self):
         if self.build is not None:
-            self.build.unwatch(self)
+            self.build.stop_sending_updates_to(self)
 
     def check_origin(self, origin):
         # TODO: check if came from correct site?
@@ -287,4 +287,4 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
     def on_finish(self):
         # TODO: only do this if we got a GET request.
         if self.job is not None:
-            self.job.unwatch(self)
+            self.job.stop_sending_updates_to(self)
