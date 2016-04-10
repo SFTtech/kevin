@@ -290,7 +290,7 @@ class Job(Watcher, Watchable):
                                    self.name, step_name, state, text,
                                    time=None))
 
-    def on_watch(self, watcher):
+    def on_subscriber_register(self, watcher):
         # send all previous job updates to the watcher
         for update in self.updates:
             watcher.on_update(update)

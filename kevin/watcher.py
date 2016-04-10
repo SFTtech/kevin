@@ -22,9 +22,9 @@ class Watchable:
             raise Exception("invalid watcher type: %s" % type(watcher))
 
         self.watchers.add(watcher)
-        self.on_watch(watcher)
+        self.on_subscriber_register(watcher)
 
-    def on_watch(self, watcher):
+    def on_subscriber_register(self, watcher):
         """
         Custom actions when a watcher subscribes for receiving new updates
         """

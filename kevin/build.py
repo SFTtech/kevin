@@ -238,7 +238,7 @@ class Build(Watchable, Watcher):
         # it into the right queue.
         self.jobs_pending.add(job)
 
-    def on_watch(self, watcher):
+    def on_subscriber_register(self, watcher):
         """
         Registers a watcher object to this build.
 
