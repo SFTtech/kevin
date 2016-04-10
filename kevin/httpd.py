@@ -189,7 +189,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
                 return
             
             # read projects
-            if request.method == "read" and request.collection == "projects":
+            if request.method == "list" and request.collection == "projects":
                 self.write_projects()
             
             # subscribe to build
