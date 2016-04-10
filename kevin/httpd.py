@@ -133,7 +133,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             self.write_message("no such build")
             return
         else:
-            self.build.watch(self)
+            self.build.send_updates_to(self)
 
     def on_close(self):
         if self.build is not None:
@@ -235,7 +235,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
             self.queue = Queue()
 
             # request the updates from the watched jobs
-            self.job.watch(self)
+            self.job.send_updates_to(self)
 
             # emit the updates and wait until no more are coming
             yield self.watch_job()

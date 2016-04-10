@@ -252,7 +252,7 @@ class Job(Watcher, Watchable):
             # now, we subscribe the build to us so it gets our updates.
             # when we reconstructed the job from filesystem,
             # this step feeds all the data into the build.
-            self.watch(self.build)
+            self.send_updates_to(self.build)
 
         elif isinstance(update, Enqueued):
             if not self.completed:

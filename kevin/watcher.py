@@ -12,7 +12,7 @@ class Watchable:
     def __init__(self):
         self.watchers = set()
 
-    def watch(self, watcher):
+    def send_updates_to(self, watcher):
         """
         Register a watcher object,
         which gets updates sent by send_update(update).
@@ -54,7 +54,7 @@ class Watcher:
     """
     Abstract event watcher. Gets notified by a Watchable.
 
-    When registered to SomeWatchable.watch(Watcher(...)),
+    When registered to SomeWatchable.send_updates_to(Watcher(...)),
     each update will be supplied to the watcher then.
     """
 

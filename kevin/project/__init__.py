@@ -50,8 +50,8 @@ class Project:
         """
         for action in self.actions:
             watcher = action.get_watcher(watchable)
-            watchable.watch(watcher)
+            watchable.send_updates_to(watcher)
 
         # attach additional watchers which were created by some trigger.
         for watcher in self.watchers:
-            watchable.watch(watcher)
+            watchable.send_updates_to(watcher)
