@@ -15,7 +15,7 @@ import requests
 from . import Action
 from ..build import new_build
 from ..config import CFG
-from ..httpd import HookHandler, HookTrigger
+from ..httpd.trigger import HookHandler, HookTrigger
 from ..update import (Update, BuildState, JobState,
                       StepState, GeneratedUpdate, Enqueued)
 from ..watcher import Watcher
