@@ -5,6 +5,8 @@ and provide them in a job queue.
 
 from abc import ABCMeta, abstractmethod
 
+import json
+
 from tornado import websocket, web, ioloop, gen
 from tornado.platform.asyncio import AsyncIOMainLoop
 from tornado.queues import Queue
@@ -125,16 +127,6 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         # TODO: activate nodelay mode just for realtime data?
         self.set_nodelay(True)
 
-        # project = self.request.query_arguments["project"][0].decode()
-        # build_id = self.request.query_arguments["hash"][0].decode()
-        # self.build = get_build(project, build_id)
-
-        # if not self.build:
-        #     self.write_message("no such build")
-        #     return
-        # else:
-        #     self.build.send_updates_to(self)
-
     def on_close(self):
         if self.build is not None:
             self.build.stop_sending_updates_to(self)
@@ -147,29 +139,77 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         # return any(parsed_origin.netloc.endswith() for ori in origins)
         return True
 
+    def write_projects(self):
+        """ used in on_message to answer with a project """
+        print("websocket: providing project list")
+        
+        projects = list()
+        for id, project in enumerate(CFG.projects.values()):
+            projects.append({
+                "type": "project",
+                "id": id,
+                "attributes": {
+                    "name": project.name,
+                    "state": "dunno",
+                },
+            })
+
+        self.write_message({
+            "data": projects,
+        })
+    
+    def subscribe_to_build(self, project, commit_hash):
+        print("websocket: subscribe to build")
+        build = get_build(project, commit_hash)
+
+        if(build == None)
+            self.write_error("No such build")
+            return
+        
+        build.send_updates_to(self)
+        self.write_message({
+            "success": True,
+        })
+    
+    def write_error(self, error_message):
+        """ utility function for sending back error messages """
+        self.write_message({
+            "error": error_message,
+        })
+        
     def on_message(self, msg):
         # TODO: actual websocket protocol
         # TODO: periodic self.ping(data)
-
-        if msg == "gimme projects":
-            print("websocket: providing project list")
-
-            entries = list()
-            for idx, project in enumerate(CFG.projects.values()):
-                entries.append({
-                    "type": "project",
-                    "id": idx,
-                    "attributes": {
-                        "name": project.name,
-                        "state": "dunno",
-                    },
-                })
-
-            self.write_message({
-                "data": entries,
-            })
-        else:
-            self.write_message("nope")
+        
+        try:
+            request = json.loads(msg)
+            
+            if !isinstance(request, dir):
+                self.write_error("Request is not an object")
+                return
+            
+            # read projects
+            if request.method == "read" and request.collection == "projects":
+                self.write_projects()
+            
+            # subscribe to build
+            elif (request.method == "subscribe"
+                  and request.collection == "build"):
+                
+                if(request.commit_hash == None):
+                    self.write_error("Missing commit_hash")
+                    return
+                
+                if(request.project == None):
+                    self.write_error("Missing project")
+                    return
+                
+                self.subscribe_to_build(request.project, request.commit_hash)
+            else:
+                self.write_error("Malformed request")
+            
+        except:
+            self.write_error("Cannot parse request")
 
     def on_pong(self, data):
         print("websocket pong: %s" % data)
