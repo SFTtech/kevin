@@ -16,18 +16,15 @@ class Falk:
         # next used handle_id to identify a running container
         self.handle_id = 0
 
+        # next free connection id to identify incoming control connections
+        self.connection_id = 0
+
         # handle_id -> Container instance
         self.running = dict()
 
         # contains all used ssh ports
         # hostname -> used ports
         self.used_ports = defaultdict(lambda: set())
-
-    def get_handle_id(self):
-        """ return the next free handle id """
-        ret = self.handle_id
-        self.handle_id += 1
-        return ret
 
     def register_free_port(self, hostname):
         """
@@ -57,13 +54,19 @@ class Falk:
 
         return ret
 
+    def get_connection_id(self):
+        """ return the next free connection id """
+        ret = self.connection_id
+        self.connection_id += 1
+        return ret
+
     def create_handle(self, new_machine):
         """
         create a new machine handle
         """
+
         new_handle = self.handle_id
         self.handle_id += 1
-
         self.running[new_handle] = new_machine
 
         return new_handle

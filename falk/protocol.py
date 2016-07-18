@@ -59,7 +59,7 @@ class FalkProto(asyncio.Protocol):
 
     def connection_made(self, transport):
         self.connected = True
-        self.conn_id = self.falk.get_handle_id()
+        self.conn_id = self.falk.get_connection_id()
 
         self.log("new client connected")
 
