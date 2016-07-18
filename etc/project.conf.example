@@ -6,7 +6,12 @@
 name = murrica-freedom-simulator-9001
 job_timeout = 10m
 job_silence_timeout = 5min
+job_max_output = 100MiB
 job_desc_file = .kevin
+
+# now follow a list of triggers/actions
+# to register the same trigger/action multiple times with different
+# configuration, suffix the name with .0, .1, etc.
 
 [github_webhook]
 # github delivers an authenticated captain hook to kevin
@@ -18,6 +23,10 @@ repos = yourmom/repo, yourdad/somerepo
 # create that access token for a github account
 user = yourmom
 token = tokentokentokenbaby
+
+
+# the "job" action is the most important one:
+# it actually performs a build.
 
 [job.0]
 # invokes a container launch
