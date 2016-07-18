@@ -173,11 +173,11 @@ class StepState(JobUpdate, State):
     # don't dump these
     BLACKLIST = {"step_number"}
 
-    def __init__(self, project, build_id, job_name,
+    def __init__(self, project_name, build_id, job_name,
                  step_name, state, text, time=None,
                  step_number=None):
 
-        State.__init__(self, project, build_id, state, text, time)
+        State.__init__(self, project_name, build_id, state, text, time)
 
         if not step_name.isidentifier():
             raise ValueError("StepState.step_name invalid: %r" % (step_name))
