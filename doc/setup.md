@@ -3,17 +3,30 @@ Kevin setup guide
 
 To set up kevin, you need 4 things:
 
-* The `kevin` main daemon
-* A `falk` vm daemon
+* `kevin`: main daemon
+* `falk`: container provider daemon (same repo)
 * Set up your project to be tested
 * And one or more containers/virtual machines
+
+
+tl;dr
+-----
+
+* Install `kevin` on a server
+* Create/edit `kevin.conf`, `falk.conf` and add a config for all your projects to be built
+* Set up a VM or container and add it to `falk.conf`
+* Allow `kevin` access to a github user
+* Add `kevin-ci` as github webhook
+* Run `kevin` and `falk`
+* Add `.kevin` control file to your project
+* Pull requests are built inside a container copy
 
 
 Data flow
 ---------
 
-* kevin` interacts with the outside world (your git hoster).
-  You need a server for it.
+* `kevin` interacts with the outside world (your git hoster).
+  It gets notified by pull requests. You need a server for it.
 
 * `kevin` contacts `falk` to start a VM. You need a server for `falk` again,
   but it can be the same machine where `kevin` is running on.
@@ -21,12 +34,12 @@ Data flow
 
 * `falk` launches a container/virtual machine provided by **you**. You
   create the machine template (just set up a debian...) or use docker, etc.
-  Your job is then built inside that container by `chantal`.
+  Your pull request is then built inside that container by `chantal`.
 
 * After the job was run, the machine is reverted back to the template.
 
 You are responsible for managing and updating the container :smile:.
-Which is the whole reason we built `kevin`.
+Which is one of the main reasons we created `kevin`.
 
 
 Security design
@@ -35,6 +48,9 @@ Security design
 `kevin` is designed in a way that arbitrary code can be executed in the
 container and will not harm your host system, apart from the usual virtual
 machine/container exit exploits that we can't prevent.
+
+Our code is of course 100% bugfree, we even have created a program
+to verify that kevin can never hang up. Hrr hrr...
 
 
 Project config
