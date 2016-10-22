@@ -68,7 +68,7 @@ Each project can spawn as many "jobs" as you like to have.
 #### Component setup
 
 At the moment, only a `qemu` VM is supported.
-Look inside [`falk/vm/`](/falk/vm) to add more containers.
+Look inside [`falk/vm/`](/falk/vm) to add more container types.
 
 
 ##### Host system (Kevin)
@@ -153,8 +153,14 @@ Look inside [`falk/vm/`](/falk/vm) to add more containers.
 #### Running
 
 * Persistent storage for `kevin` is done in the `[web]` `folder`
-* Run `kevin` with `python3 -m kevin`
-* Run `falk` with `python3 -m falk`
+* [systemd](https://www.freedesktop.org/wiki/Software/systemd/) setup
+  * copy or symlink `etc/kevin.service` to `/etc/systemd/system/kevin.service`
+  * copy or symlink `etc/falk.service` to `/etc/systemd/system/falk.service`
+  * enable the service with `systemctl enable $name.service`
+  * start them with `systemctl start $name.service`
+* Non-daemon launch
+  * Run `kevin` with `python3 -m kevin`
+  * Run `falk` with `python3 -m falk`
 * [Manage a container](falk.md#managing-vms) with `python3 -m falk.manage`
 
 * Test without `github`: Try using the [kevin simulator](simulator.md)
