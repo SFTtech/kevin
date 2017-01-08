@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 
 from .falkvm import FalkVM, VMError
 from .process import SSHProcess
-from .util import asynciter, AsyncChain
 
 from falk.messages import (Message, ProtoType, Mode, Version, List,
                            Select, Status, OK, Login, Welcome, Error,
