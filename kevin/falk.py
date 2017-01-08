@@ -297,13 +297,12 @@ class FalkSocket(Falk):
         # perform falk setup
         await self.init()
 
-    @asynciter
-    def send(self, msg=None, mode=ProtoType.json):
+    async def send(self, msg=None, mode=ProtoType.json):
         if msg:
             self.writer.write(msg.pack(mode))
-            yield from self.writer.drain()
+            await self.writer.drain()
 
-        line = yield from self.reader.readline()
+        line = await self.reader.readline()
         message = Message.construct(line, self.proto_mode)
         yield message
 
