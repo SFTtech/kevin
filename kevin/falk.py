@@ -2,13 +2,13 @@
 Code for interfacing with Falk instances to aquire VMs.
 """
 
+from abc import ABC, abstractmethod
 import asyncio
 import logging
-from abc import ABC, abstractmethod
+import sys
 
 from .falkvm import FalkVM, VMError
 from .process import SSHProcess
-from .util import asynciter, AsyncChain
 
 from falk.messages import (Message, ProtoType, Mode, Version, List,
                            Select, Status, OK, Login, Welcome, Error,
@@ -297,15 +297,28 @@ class FalkSocket(Falk):
         # perform falk setup
         await self.init()
 
-    @asynciter
-    def send(self, msg=None, mode=ProtoType.json):
-        if msg:
-            self.writer.write(msg.pack(mode))
-            yield from self.writer.drain()
+    # this hack implements send in a different way for older
+    # versions of Python, which did not support async generators.
+    if sys.version_info < (3, 6):
+        from .util import asynciter
+        @asynciter
+        def send(self, msg=None, mode=ProtoType.json):
+            if msg:
+                self.writer.write(msg.pack(mode))
+                yield from self.writer.drain()
 
-        line = yield from self.reader.readline()
-        message = Message.construct(line, self.proto_mode)
-        yield message
+            line = yield from self.reader.readline()
+            message = Message.construct(line, self.proto_mode)
+            yield message
+    else:
+        async def send(self, msg=None, mode=ProtoType.json):
+            if msg:
+                self.writer.write(msg.pack(mode))
+                await self.writer.drain()
+
+            line = await self.reader.readline()
+            message = Message.construct(line, self.proto_mode)
+            yield message
 
     def get_vm_host(self):
         return "localhost"

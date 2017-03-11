@@ -168,6 +168,8 @@ class yieldescape:
         self.value = value
 
 
+# AsyncIterator and asynciter are hacks for python < 3.6.
+# see falk.FalkSocket.send for usage and documentation.
 class AsyncIterator:
     """ Wrapper class to create a asynchronous iterator """
 
