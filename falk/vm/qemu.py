@@ -75,8 +75,8 @@ class QEMU(Container):
 
         command = []
         for part in shlex.split(self.cfg.command):
-            part = part.replace("IMAGENAME", str(self.running_image))
-            part = part.replace("SSHPORT", str(self.ssh_port))
+            part = part.replace("{IMAGENAME}", str(self.running_image))
+            part = part.replace("{SSHPORT}", str(self.ssh_port))
             command.append(part)
 
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE)

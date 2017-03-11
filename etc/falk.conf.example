@@ -7,14 +7,14 @@ control_socket_permissions = 770
 #control_socket_group = kevin
 
 # range of ports where VMs will listen for SSH
-ssh_port = [7777,8000]
+vm_ports = [7888,8000]
 
 
 # this is a VM provided by this falk:
 [some-random-vm-id]
 
 # VM name, which is requested by a job of some project.
-name = name-which-the-job-requests
+name = machine-which-the-job-requests
 
 # VM type, see falk/vm/ for supported backends
 type = qemu
@@ -29,7 +29,8 @@ ssh_key = ssh-ed25519 MY /etc/ssh/ssh_host_ed25519_key.pub CONTENT
 base_image = /path/to/permanent/diskimage.qcow2
 
 # image that will be stored for copy-on-write data
+# the path will be suffixed with .someid for each parallel VM run
 overlay_image = /tmp/kevin-vm-tmp.img
 
 # invocation
-command = qemu-system-x86_64 -machine type=q35,accel=kvm -drive file=$IMAGENAME,if=virtio,format=qcow2 -m 2G -smp 2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:$SSHPORT-:22
+command = qemu-system-x86_64 -machine type=q35,accel=kvm -drive file={IMAGENAME},if=virtio,format=qcow2 -m 2G -smp 2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:{SSHPORT}-:22
