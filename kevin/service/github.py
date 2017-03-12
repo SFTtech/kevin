@@ -474,7 +474,7 @@ class GitHubBuildStatusUpdater(Watcher):
             return
 
         if len(description) > 140:
-            logging.warn("[github] description too long, truncating")
+            logging.warn("[github] update description too long, truncating")
             description = description[:140]
 
         data = json.dumps({
