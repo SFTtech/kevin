@@ -5,8 +5,9 @@ A build is a repo state that was triggered to be run in multiple jobs.
 """
 
 import datetime
-import shutil
 from pathlib import Path
+import shutil
+import time
 
 from .config import CFG
 from .project import Project
@@ -32,7 +33,7 @@ def new_build(project, commit_hash, create_new=True):
         newbuild = Build(project, commit_hash)
 
         # store it as known build?
-        if newbuild.completed or create_new:
+        if newbuild.completed is not None or create_new:
             BUILD_CACHE[cache_key] = newbuild
         else:
             newbuild = None
@@ -71,8 +72,10 @@ class Build(Watchable, Watcher):
             raise ValueError("invalid project type: %s" % type(project))
         self.project = project
 
-        # No more jobs required to perform for this build
-        self.completed = False
+        # No more jobs required to perform for this build.
+        # If the build has been completed, stores the unix timestamp (float).
+        # else, it is None.
+        self.completed = None
 
         # Was the finish() function called?
         self.finished = False
@@ -82,9 +85,6 @@ class Build(Watchable, Watcher):
 
         # were the actions notified of the enqueuing?
         self.actions_notified = False
-
-        # Did this build exist before?
-        self.created = False
 
         # The Queue where this build was put in
         self.queue = None
@@ -162,10 +162,12 @@ class Build(Watchable, Watcher):
             return
 
         # Check the current status of the job.
-        self.created = self.path.joinpath("_created").is_file()
-        self.completed = self.path.joinpath("_completed").is_file()
+        try:
+            self.completed = self.path.joinpath("_completed").stat().st_mtime
+        except FileNotFoundError:
+            pass
 
-        if not self.completed:
+        if self.completed is None:
             # make sure that there are no remains
             # of previous aborted build.
             try:
@@ -194,7 +196,7 @@ class Build(Watchable, Watcher):
 
     def on_enqueue(self, queue):
         """
-        Run when the build was added to the processing queue.
+        Run when the build is added to the processing queue.
 
         Let this build run all the actions it should.
         Just trigger the enqueue action so the actions place
@@ -204,20 +206,8 @@ class Build(Watchable, Watcher):
         # memorize the queue
         self.queue = queue
 
-        if self.completed:
-            # no more processing needed.
-            if self.queue:
-                self.queue.remove_build(self)
-
-        else:
-            # create build state folder
-            if not CFG.args.volatile:
-                with self.path.joinpath("_created").open("w") as datefile:
-                    now = datetime.datetime.now()
-                    datefile.write(now.isoformat())
-
         if not self.actions_notified:
-            if not self.completed:
+            if self.completed is None:
                 self.set_state("pending", "enqueued")
 
             # notify all watchers (e.g. jobs) that the job now is enqueued
@@ -308,7 +298,7 @@ class Build(Watchable, Watcher):
             # finish message already sent.
             return
 
-        if self.queue:
+        if self.queue is not None:
             self.queue.remove_build(self)
 
             # we're no longer enqueued.
@@ -339,7 +329,7 @@ class Build(Watchable, Watcher):
         # build is completed now!
         if not CFG.args.volatile:
             self.path.joinpath("_completed").touch()
-        self.completed = True
+        self.completed = time.time()
         self.finished = True
 
     def abort(self):
@@ -348,7 +338,7 @@ class Build(Watchable, Watcher):
         if self.finished:
             return
 
-        if self.queue:
+        if self.queue is not None:
             for job in self.jobs_pending.copy():
                 self.queue.cancel_job(job)
 

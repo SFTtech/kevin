@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import shutil
+import time
 import traceback
 
 from .chantal import Chantal
@@ -75,7 +76,9 @@ class Job(Watcher, Watchable):
         self.vm_name = vm_name
 
         # No more tasks to perform for this job?
-        self.completed = False
+        # If the job is completed, stores the completion timestamp (float).
+        # else, stores None.
+        self.completed = None
 
         # the tasks required to run for this job.
         self.tasks = set()
@@ -131,8 +134,12 @@ class Job(Watcher, Watchable):
             return
 
         # Check the current status of the job.
-        self.completed = self.path.joinpath("_completed").is_file()
-        if self.completed:
+        try:
+            self.completed = self.path.joinpath("_completed").stat().st_mtime
+        except FileNotFoundError:
+            pass
+
+        if self.completed is not None:
             # load update list from file
             with self.path.joinpath("_updates").open() as updates_file:
                 for json_line in updates_file:
@@ -218,7 +225,7 @@ class Job(Watcher, Watchable):
         if update == StopIteration:
             return
 
-        if forbid_completed and self.completed:
+        if forbid_completed and self.completed is not None:
             raise Exception("job sending update after being completed.")
 
         # when it's a StepUpdate, this manages the pending_steps set.
@@ -255,7 +262,7 @@ class Job(Watcher, Watchable):
             self.watch(self.build)
 
         elif isinstance(update, Enqueued):
-            if not self.completed:
+            if self.completed is None:
                 # add the job to the processing queue
                 update.queue.add_job(self)
 
@@ -296,7 +303,7 @@ class Job(Watcher, Watchable):
             watcher.on_update(update)
 
         # and send stop if this job is finished
-        if self.completed:
+        if self.completed is not None:
             watcher.on_update(StopIteration)
 
 
@@ -304,7 +311,7 @@ class Job(Watcher, Watchable):
         """ Attempts to build the job. """
 
         try:
-            if self.completed:
+            if self.completed is not None:
                 raise Exception("tried to run a completed job!")
 
             logging.info(
@@ -461,7 +468,7 @@ class Job(Watcher, Watchable):
                                     'step result was not reported')
 
             # the job is completed!
-            self.completed = True
+            self.completed = time.time()
 
             if not CFG.args.volatile:
                 # the job is now officially completed
