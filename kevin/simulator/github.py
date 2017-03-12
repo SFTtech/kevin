@@ -60,6 +60,10 @@ class GitHub(service.Service):
 
         # add http server to serve a local repo to qemu
         if self.local_repo and pathlib.Path(self.repo).is_dir():
+            if not pathlib.Path(self.repo).joinpath("HEAD").is_file():
+                print("\x1b[33;1m%r doesn't look like a .git folder!\x1b[m" %
+                      self.repo)
+
             print("Serving '%s' on 'http://%s:%d%s/'" % (
                 self.repo,
                 self.listen,
