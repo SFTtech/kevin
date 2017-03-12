@@ -66,6 +66,15 @@ class QEMU(Container):
             if subprocess.call(command) != 0:
                 raise RuntimeError("could not create overlay image")
         else:
+            # TODO: even in management mode, create a cow image,
+            #       but in the end merge it back into a new image and
+            #       perform an atomic rename(2) in order to atomically
+            #       replace the VM.
+            #       currently, builds that were triggered while the VM
+            #       is being managed may use a corrupted image.
+
+            # TODO: disallow multiple management connections at once.
+
             logging.warning("VM launching in management mode!")
             # to manage, use the base image to run
             self.running_image = str(self.cfg.base_image)
