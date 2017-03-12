@@ -316,7 +316,7 @@ class Job(Watcher, Watchable):
 
             logging.info(
                 "running: "
-                "\x1b[1mcurl -N %s?project=%s&hash=%s&job=%s\x1b[m" % (
+                "\x1b[1mcurl -N '%s?project=%s&hash=%s&job=%s'\x1b[m" % (
                     CFG.dyn_url, self.build.project.name,
                     self.build.commit_hash, self.name))
 
