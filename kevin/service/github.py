@@ -503,11 +503,12 @@ class GitHubBuildStatusUpdater(Watcher):
             reply = requests.post(url, data, auth=self.cfg.authtoken)
 
         except requests.exceptions.ConnectionError as exc:
-            raise RuntimeError(
-                "Failed status connection to '%s': %s" % (url, exc)
-            ) from None
+            # TODO: schedule this request for resubmission
+            logging.warning("[github] Failed status connection to '%s': %s",
+                            url, exc)
+            reply = None
 
-        if not reply.ok:
+        if reply is not None and not reply.ok:
             if "status" in reply.headers:
                 replytext = reply.headers["status"] + '\n' + reply.text
                 logging.warn("[github] status update request rejected "
