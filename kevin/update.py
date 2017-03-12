@@ -167,6 +167,14 @@ class JobState(JobUpdate, State):
         self.job_name = job_name
 
 
+class JobEmergencyAbort(JobState):
+    """ Special job state that for job-double-failures """
+
+    def __init__(self, project_name, build_id, job_name, text, time=None):
+        super().__init__(project_name, build_id, job_name,
+                         "error", text, time)
+
+
 class StepState(JobUpdate, State):
     """ Step build state change """
 

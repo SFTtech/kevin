@@ -19,7 +19,7 @@ from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
 from .project import Project
 from .update import (BuildSource, Update, JobState, StepState,
                      StdOut, OutputItem, Enqueued, JobCreated,
-                     GeneratedUpdate, ActionsAttached)
+                     GeneratedUpdate, ActionsAttached, JobEmergencyAbort)
 from .util import recvcoroutine
 from .watcher import Watcher, Watchable
 from .service import Action
@@ -455,11 +455,29 @@ class Job(Watcher, Watchable):
             traceback.print_exc()
 
             try:
+                # make sure the job dies
                 self.error("Job.run(): %r" % (exc))
             except Exception as exc:
-                logging.error("\x1b[31;1mfailed to notify service "
-                              "about error\x1b[m")
+                logging.error(
+                    "\x1b[31;1mjob failure status update failed again! "
+                    "Performing emergency abort, waaaaaah!\x1b[m")
                 traceback.print_exc()
+
+                try:
+                    # make sure the job really really dies
+                    self.send_update(
+                        JobEmergencyAbort(
+                            self.project.name,
+                            self.build.commit_hash,
+                            self.name,
+                            "Killed job after double fault of job."
+                        )
+                    )
+                except Exception as exc:
+                    logging.error(
+                        "\x1b[31;1mOk, I give up. The job won't die. "
+                        "I'm so Sorry.\x1b[m")
+                    traceback.print_exc()
 
         finally:
             # error the leftover steps
@@ -481,10 +499,11 @@ class Job(Watcher, Watchable):
         Produces an 'error' JobState and an 'error' StepState for all
         steps that are currently pending.
         """
-        self.set_state("error", text)
         while self.pending_steps:
             step = self.pending_steps.pop()
             self.set_step_state(step, "error", "build has errored")
+
+        self.set_state("error", text)
 
     @recvcoroutine
     def control_handler(self):

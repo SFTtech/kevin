@@ -4,15 +4,15 @@ Build code
 A build is a repo state that was triggered to be run in multiple jobs.
 """
 
-import datetime
 from pathlib import Path
 import shutil
 import time
 
 from .config import CFG
 from .project import Project
-from .update import (Update, BuildState, BuildSource, Enqueued, JobState,
-                     GeneratedUpdate, JobCreated, JobUpdate, ActionsAttached)
+from .update import (BuildState, BuildSource, Enqueued, JobState,
+                     JobCreated, JobUpdate, ActionsAttached,
+                     JobEmergencyAbort)
 from .watcher import Watchable, Watcher
 
 
@@ -256,7 +256,12 @@ class Build(Watchable, Watcher):
             if self.finished:
                 raise Exception("job created after build was finished!")
 
-        if isinstance(update, JobUpdate):
+        if isinstance(update, JobUpdate)\
+           and not isinstance(update, JobEmergencyAbort):
+
+            # only send the update if it was not a emergency abort!
+            # this prevents that an exception in this call prevents
+            # reaching the finish stuff below.
             self.send_update(update)
 
         if isinstance(update, BuildSource):
@@ -288,7 +293,7 @@ class Build(Watchable, Watcher):
                 # notifications from chantal.
                 pass
 
-            if len(self.jobs_pending) == 0:
+            if not self.jobs_pending:
                 self.finish()
 
     def finish(self):
@@ -304,33 +309,34 @@ class Build(Watchable, Watcher):
             # we're no longer enqueued.
             self.queue = None
 
-        # TODO: we may wanna have allowed-to-fail jobs.
-        if self.jobs_succeeded == set(self.jobs.values()):
-            count = len(self.jobs)
-            self.set_state("success", "%d job%s succeeded" % (
-                count, "s" if count > 1 else ""))
-
-        else:
-            # we had some unsucessful jobs:
-
-            if len(self.jobs_errored) > 0:
-                # one or more jobs errored.
-                count = len(self.jobs_errored)
-                self.set_state("error", "%d job%s errored" % (
+        try:
+            # TODO: we may wanna have allowed-to-fail jobs.
+            if self.jobs_succeeded == set(self.jobs.values()):
+                count = len(self.jobs)
+                self.set_state("success", "%d job%s succeeded" % (
                     count, "s" if count > 1 else ""))
 
             else:
-                # one or more jobs failed.
-                count = len(self.jobs)
-                self.set_state("failure", "%d/%d job%s failed" % (
-                    count - len(self.jobs_succeeded),
-                    count, "s" if count > 1 else ""))
+                # we had some unsucessful jobs:
 
-        # build is completed now!
-        if not CFG.args.volatile:
-            self.path.joinpath("_completed").touch()
-        self.completed = time.time()
-        self.finished = True
+                if self.jobs_errored:
+                    # one or more jobs errored.
+                    count = len(self.jobs_errored)
+                    self.set_state("error", "%d job%s errored" % (
+                        count, "s" if count > 1 else ""))
+
+                else:
+                    # one or more jobs failed.
+                    count = len(self.jobs)
+                    self.set_state("failure", "%d/%d job%s failed" % (
+                        count - len(self.jobs_succeeded),
+                        count, "s" if count > 1 else ""))
+        finally:
+            # build is completed now!
+            if not CFG.args.volatile:
+                self.path.joinpath("_completed").touch()
+            self.completed = time.time()
+            self.finished = True
 
     def abort(self):
         """ Abort this build """
