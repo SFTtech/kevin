@@ -27,11 +27,15 @@ class QEMU(Container):
         cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
 
         base_img = Path(cfgdata["base_image"])
-        if base_img.is_absolute():
+        if not base_img.is_absolute():
             base_img = cfgpath / base_img
+        cfg.base_image = base_img.absolute()
 
-        cfg.base_image = base_img
-        cfg.overlay_image = Path(cfgdata["overlay_image"])
+        overlay_img = Path(cfgdata["overlay_image"])
+        if not overlay_img.is_absolute():
+            overlay_img = cfgpath / overlay_img
+        cfg.overlay_image = overlay_img.absolute()
+
         cfg.command = cfgdata["command"]
 
         if not cfg.base_image.is_file():
@@ -44,7 +48,6 @@ class QEMU(Container):
 
         if not self.manage:
             # create a temporary runimage
-
             idx = 0
             while True:
                 tmpimage = Path(str(self.cfg.overlay_image) + "_%02d" % idx)
