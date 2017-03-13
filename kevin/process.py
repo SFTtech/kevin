@@ -3,7 +3,6 @@ subprocess utility functions and classes.
 """
 
 import asyncio, asyncio.streams
-import fcntl
 import functools
 import os
 import selectors

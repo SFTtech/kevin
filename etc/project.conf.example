@@ -8,6 +8,7 @@ job_timeout = 10m
 job_silence_timeout = 5min
 job_max_output = 100MiB
 job_desc_file = .kevin
+job_max_output = 256MiB
 
 # now follow a list of triggers/actions
 # to register the same trigger/action multiple times with different

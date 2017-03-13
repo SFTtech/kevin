@@ -9,7 +9,7 @@ import signal
 import sys
 
 from .config import CFG
-from .httpd import HTTPD
+from .httpd.httpd import HTTPD
 from .jobqueue import Queue
 from .util import log_setup
 

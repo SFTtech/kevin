@@ -259,7 +259,7 @@ class Job(Watcher, Watchable):
             # now, we subscribe the build to us so it gets our updates.
             # when we reconstructed the job from filesystem,
             # this step feeds all the data into the build.
-            self.watch(self.build)
+            self.send_updates_to(self.build)
 
         elif isinstance(update, Enqueued):
             if self.completed is None:
@@ -297,7 +297,7 @@ class Job(Watcher, Watchable):
                                    self.name, step_name, state, text,
                                    time=None))
 
-    def on_watch(self, watcher):
+    def on_subscriber_register(self, watcher):
         # send all previous job updates to the watcher
         for update in self.updates:
             watcher.on_update(update)

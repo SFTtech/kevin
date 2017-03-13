@@ -228,12 +228,12 @@ class Build(Watchable, Watcher):
         # it into the right queue.
         self.jobs_pending.add(job)
 
-    def on_watch(self, watcher):
+    def on_subscriber_register(self, watcher):
         """
         Registers a watcher object to this build.
 
         The watcher's on_update() member method will be called for every
-        update that ever was and ever will be until unwatch() below is
+        update that ever was and ever will be until stop_sending_updates_to() below is
         called.
         """
 

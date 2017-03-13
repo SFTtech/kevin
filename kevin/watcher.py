@@ -12,7 +12,7 @@ class Watchable:
     def __init__(self):
         self.watchers = set()
 
-    def watch(self, watcher):
+    def send_updates_to(self, watcher):
         """
         Register a watcher object,
         which gets updates sent by send_update(update).
@@ -22,19 +22,19 @@ class Watchable:
             raise Exception("invalid watcher type: %s" % type(watcher))
 
         self.watchers.add(watcher)
-        self.on_watch(watcher)
+        self.on_subscriber_register(watcher)
 
-    def on_watch(self, watcher):
+    def on_subscriber_register(self, watcher):
         """
         Custom actions when a watcher subscribes for receiving new updates
         """
         pass
 
-    def unwatch(self, watcher):
+    def stop_sending_updates_to(self, watcher):
         """ Un-subscribe a watcher from the notification list """
         self.watchers.remove(watcher)
 
-    def on_unwatch(self, watcher):
+    def on_subscriber_unregister(self, watcher):
         """ Custom actions when a watcher unsubscribes """
         pass
 
@@ -54,7 +54,7 @@ class Watcher:
     """
     Abstract event watcher. Gets notified by a Watchable.
 
-    When registered to SomeWatchable.watch(Watcher(...)),
+    When registered to SomeWatchable.send_updates_to(Watcher(...)),
     each update will be supplied to the watcher then.
     """
 
