@@ -445,7 +445,6 @@ class GitHubBuildStatusUpdater(Watcher):
             return
 
         # craft the update message
-        # TODO: update the urls for mandy!
         if isinstance(update, BuildState):
             state, description = update.state, update.text
             context = CFG.ci_name
@@ -455,7 +454,10 @@ class GitHubBuildStatusUpdater(Watcher):
             state, description = update.state, update.text
             context = "%s: %s" % (CFG.ci_name,
                                   update.job_name)
-            target_url = self.build.target_url + "&job=" + update.job_name
+            target_url = "%s&job=%s" % (
+                self.build.target_url,
+                update.job_name
+            )
 
         elif isinstance(update, StepState):
             state, description = update.state, update.text
@@ -464,7 +466,11 @@ class GitHubBuildStatusUpdater(Watcher):
                                           update.step_number,
                                           update.step_name)
 
-            target_url = None
+            target_url = "%s&job=%s#%s" % (
+                self.build.target_url,
+                update.job_name,
+                update.step_name
+            )
 
         else:
             # unhandled update

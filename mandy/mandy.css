@@ -1,0 +1,80 @@
+html, body {
+    margin: 0;
+    padding: 0;
+}
+
+#sidebar {
+    position: fixed;
+    overflow-y: scroll;
+    height: 100%;
+    overflow-x: hidden;
+    width: 300px;
+}
+
+#sidebar a {
+    display: block;
+    font-family: sans-serif;
+    padding: 5px 2px 5px 2px;
+    box-sizing: border-box;
+    background-color: lightgrey;
+    border-width: 2px 0px;
+    border-color: lightgray;
+    border-style: solid;
+}
+
+#sidebar a div {
+    margin-top: 2px;
+    margin-bottom: -5px;
+    margin-right: -2px;
+}
+
+#sidebar a:link, a:visited {
+    text-decoration: none;
+    color: #202020;
+}
+
+#sidebar a:hover, a:active {
+    border-color: #808080;
+}
+
+#sidebar .active {
+    border-width: 3px 0px;
+    border-color: black !important;
+}
+
+#sidebar .jobstate {
+    margin-left: 10px;
+    border-width: 2px 0px 0px 2px;
+}
+
+#sidebar .waiting {
+    background-color: gray;
+}
+
+#sidebar .skipped {
+    background-color: gray;
+}
+
+#sidebar .running {
+    background-color: #d8c618;
+}
+
+#sidebar .success {
+    background-color: #00b000;
+}
+
+#sidebar .failure {
+    background-color: red;
+}
+
+#sidebar .error {
+    background-color: red;
+}
+
+#terminal {
+    position: absolute;
+    left: 300px;
+    padding: 3px;
+    min-height: 100%;
+    width: calc(100% - 300px - 6px);
+}

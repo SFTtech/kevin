@@ -253,7 +253,7 @@ class Job(Watcher, Watchable):
         """
 
         if isinstance(update, ActionsAttached):
-            # tell the build that we're a assigned job.
+            # tell the build that we're an assigned job.
             self.build.register_job(self)
 
             # we are already attached to receive updates from a build
@@ -314,15 +314,6 @@ class Job(Watcher, Watchable):
         try:
             if self.completed is not None:
                 raise Exception("tried to run a completed job!")
-
-            logging.info(
-                "job output: "
-                "\x1b[1mcurl -N '%s?project=%s&hash=%s&job=%s'\x1b[m",
-                CFG.dyn_url,
-                self.build.project.name,
-                self.build.commit_hash,
-                self.name
-            )
 
             # falk contact
             self.set_state("pending", "requesting machine")
@@ -462,6 +453,10 @@ class Job(Watcher, Watchable):
                 # make sure the job dies
                 self.error("Job.run(): %r" % (exc))
             except Exception as exc:
+                # we end up here if the error update can not be sent,
+                # because one of our watchers has a programming error.
+                # some emergency handling is required.
+
                 logging.error(
                     "\x1b[31;1mjob failure status update failed again! "
                     "Performing emergency abort, waaaaaah!\x1b[m")
@@ -616,6 +611,7 @@ class Job(Watcher, Watchable):
                     raise ValueError("an output item is already present")
 
                 self.current_output_item = OutputItem(
+                    self.name,
                     path,
                     isdir=(cmd == 'output-dir')
                 )

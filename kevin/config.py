@@ -23,7 +23,7 @@ class Config:
         self.web_url = None
         self.dyn_port = None
         self.dyn_address = ipaddress.ip_address("0.0.0.0")
-        self.dyn_url = None
+        self.dyn_host = None
 
         self.project_folder = None
         self.output_folder = None
@@ -108,9 +108,9 @@ class Config:
 
             # web configuration
             web = raw["web"]
-            self.web_url = web["url"]
+            self.web_url = web["static_url"]
             self.dyn_port = int(web["dyn_port"])
-            self.dyn_url = web["dyn_url"]
+            self.dyn_host = web["dyn_host"]
 
             # vm providers
             falk_entries = raw["falk"]
@@ -144,8 +144,6 @@ class Config:
             raise NotADirectoryError(str(self.output_folder))
         if not os.access(str(self.output_folder), os.W_OK):
             raise OSError("output_folder is not writable")
-        if not self.dyn_url.endswith('/'):
-            raise ValueError("public status URL must end in '/'")
 
     def project_postprocess(self):
         """

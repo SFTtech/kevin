@@ -1,0 +1,133 @@
+.terminal {
+    font-family: "Lucidia Console", monospace;
+    font-size: 12pt;
+    color: #aaa;
+    background-color: black;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+
+/* for use by anchors that were inserted */
+.anchor {
+    font-family: sans-serif;
+    font-size: 10pt;
+    color: white;
+    background-color: grey;
+    border-style: solid;
+    border-width: 1px;
+    border-color: red;
+}
+
+/* the following classes are for use by individual spans in the terminal. */
+
+.bold {
+    font-weight: bold;
+    color: #d7d7d7;
+}
+
+.italic {
+    font-style: italic;
+    color: #87af5f;
+}
+
+.underline {
+    text-decoration: underline;
+    color: #87afd7;
+}
+
+.col0 {
+    color: black;
+}
+
+.bgcol0 {
+    background-color: black;
+}
+
+.col1 {
+    color: #cd0000;
+}
+
+.bgcol1 {
+    background-color: #cd0000;
+}
+
+.col2 {
+    color: #00cd00;
+}
+
+.bgcol2 {
+    background-color: #00cd00;
+}
+
+.col3 {
+    color: #cdcd00;
+}
+
+.bgcol3 {
+    background-color: #cdcd00;
+}
+
+.col4 {
+    color: #5c5cff;
+}
+
+.bgcol4 {
+    background-color: #5c5cff;
+}
+
+.col5 {
+    color: #cd00cd;
+}
+
+.bgcol5 {
+    background-color: #cd00cd;
+}
+
+.col6 {
+    color: #00cdcd;
+}
+
+.bgcol6 {
+    background-color: #00cdcd;
+}
+
+.col7 {
+    color: #e5e5e5;
+}
+
+.bgcol7 {
+    background-color: #e5e5e5;
+}
+
+.col0.bold {
+    color: #4d4d4d;
+}
+
+.col1.bold {
+    color: red;
+}
+
+.col2.bold {
+    color: lime;
+}
+
+.col3.bold {
+    color: yellow;
+}
+
+.col4.bold {
+    color: #5c5cff;
+}
+
+.col5.bold {
+    color: fuchsia;
+}
+
+.col6.bold {
+    color: aqua;
+}
+
+.col7.bold {
+    color: white;
+}

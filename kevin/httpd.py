@@ -12,7 +12,7 @@ from tornado.queues import Queue
 from .build import get_build
 from .config import CFG
 from .service import Trigger
-from .update import StdOut, JobState
+from .update import JobUpdate, JobState, StdOut
 from .watcher import Watcher
 
 
@@ -110,32 +110,67 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     def open(self):
         self.build = None
 
-        project = self.request.query_arguments["project"][0].decode()
-        build_id = self.request.query_arguments["hash"][0].decode()
+        project = CFG.projects[self.get_parameter("project")]
+        build_id = self.get_parameter("hash")
         self.build = get_build(project, build_id)
 
-        if not self.build:
-            self.write_message("no such build")
-            return
+        def get_filter(filter_def):
+            """
+            Returns a filter function from the filter definition string.
+            """
+            if not filter_def:
+                return lambda _: True
+            else:
+                job_names = filter_def.split(",")
+                return lambda job_name: job_name in job_names
+
+        # state_filter specifies which JobState updates to forward.
+        self.state_filter = get_filter(self.get_parameter("state_filter"))
+        # filter_ specifies which JobUpdate updates to forward.
+        # (except for JobState updates, which are treated by the filter above).
+        self.filter_ = get_filter(self.get_parameter("filter"))
+
+        self.build.watch(self)
+
+    def get_parameter(self, name, default=None):
+        """
+        Returns the string value of the URL parameter with the given name.
+        """
+        try:
+            parameter, = self.request.query_arguments[name]
+        except (KeyError, ValueError):
+            return default
         else:
-            self.build.watch(self)
+            return parameter.decode()
 
     def on_close(self):
         if self.build is not None:
             self.build.unwatch(self)
 
     def on_message(self, message):
-        # TODO: websocket protocol
+        # TODO: handle user messages
         pass
 
-    def on_update(self, msg):
+    def on_update(self, update):
         """
         Called by the watched build when an update arrives.
         """
-        if msg is StopIteration:
+        if update is StopIteration:
             self.close()
-        else:
-            self.write_message(msg.json())
+            return
+
+        if isinstance(update, JobUpdate):
+            if isinstance(update, JobState):
+                filter_ = self.state_filter
+            else:
+                filter_ = self.filter_
+
+            if filter_(update.job_name):
+                self.write_message(update.json())
+
+    def check_origin(self, origin):
+        # Allow connections from anywhere.
+        return True
 
 
 class PlainStreamHandler(web.RequestHandler, Watcher):
@@ -181,21 +216,21 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
             self.write(("no such build: project %s [%s]\n" % (
                 project_name, build_id)).encode())
             return
-        else:
-            self.job = build.jobs.get(job_name)
-            if not self.job:
-                self.write(("unknown job in project %s [%s]: %s\n" % (
-                    project_name, build_id, job_name)).encode())
-                return
 
-            # the message queue to be sent to the http client
-            self.queue = Queue()
+        self.job = build.jobs.get(job_name)
+        if not self.job:
+            self.write(("unknown job in project %s [%s]: %s\n" % (
+                project_name, build_id, job_name)).encode())
+            return
 
-            # request the updates from the watched jobs
-            self.job.watch(self)
+        # the message queue to be sent to the http client
+        self.queue = Queue()
 
-            # emit the updates and wait until no more are coming
-            yield self.watch_job()
+        # request the updates from the watched jobs
+        self.job.watch(self)
+
+        # emit the updates and wait until no more are coming
+        yield self.watch_job()
 
     @gen.coroutine
     def watch_job(self):
@@ -224,6 +259,10 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
                          (update.text)).encode()
                     )
                 elif update.is_finished():
+                    # if finished but not errored or succeeded,
+                    # this must be a failure.
+                    # TODO: is htis a good way to implement this?
+                    #       certainly caused me a WTF moment...
                     self.write(
                         ("\x1b[31mfailed:\x1b[m %s\n" %
                          (update.text)).encode()

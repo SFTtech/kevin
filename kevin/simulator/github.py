@@ -162,7 +162,10 @@ class GitHub(service.Service):
         def submit_post():
             try:
                 return requests.post(
-                    url=self.cfg.dyn_url + "hook-github",
+                    url="http://%s:%d/hook-github" % (
+                        self.cfg.dyn_host,
+                        self.cfg.dyn_port
+                    ),
                     data=payload,
                     headers=headers,
                     timeout=5.0,

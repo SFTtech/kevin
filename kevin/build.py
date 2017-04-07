@@ -4,6 +4,7 @@ Build code
 A build is a repo state that was triggered to be run in multiple jobs.
 """
 
+import logging
 from pathlib import Path
 import shutil
 import time
@@ -46,7 +47,6 @@ def get_build(project, commit_hash):
     return an existing build from the cache
     return None if it coultn't be found.
     """
-
     return new_build(project, commit_hash, create_new=False)
 
 
@@ -69,7 +69,7 @@ class Build(Watchable, Watcher):
         self.commit_hash = commit_hash
 
         if not isinstance(project, Project):
-            raise ValueError("invalid project type: %s" % type(project))
+            raise TypeError("invalid project type: %s" % type(project))
         self.project = project
 
         # No more jobs required to perform for this build.
@@ -126,8 +126,13 @@ class Build(Watchable, Watcher):
 
         # info url of this build, on the dyn server for now.
         # later, reference to mandy at web_url.
-        self.target_url = "%s?project=%s&hash=%s" % (
-            CFG.dyn_url, self.project.name, self.commit_hash)
+        self.target_url = "%smandy/?wsurl=ws://%s:%d/ws&project=%s&hash=%s" % (
+            CFG.web_url,
+            CFG.dyn_host,
+            CFG.dyn_port,
+            self.project.name,
+            self.commit_hash
+        )
 
         # try to reconstruct the build state from filesystem
         self.load_from_fs()
@@ -210,7 +215,8 @@ class Build(Watchable, Watcher):
             if self.completed is None:
                 self.set_state("pending", "enqueued")
 
-            # notify all watchers (e.g. jobs) that the job now is enqueued
+            # notify all watchers (e.g. jobs) that the build now is enqueued,
+            # and they should run.
             self.send_update(Enqueued(self.commit_hash, queue,
                                       self.project.name))
             self.actions_notified = True
@@ -236,7 +242,6 @@ class Build(Watchable, Watcher):
         update that ever was and ever will be until unwatch() below is
         called.
         """
-
         # send all previous updates to the watcher
         for update in self.updates:
             watcher.on_update(update)
