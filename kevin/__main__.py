@@ -17,8 +17,8 @@ from .util import log_setup
 def main():
     """ Main entry point """
 
-    if sys.version_info < (3, 5):
-        print("Kevin CI \x1b[1;31mrequires >=python-3.5\x1b[m"
+    if sys.version_info < (3, 6):
+        print("Kevin CI \x1b[1;31mrequires >=python-3.6\x1b[m"
               "\n\x1b[32mYou have:\x1b[m %s" % sys.version)
         exit(1)
 

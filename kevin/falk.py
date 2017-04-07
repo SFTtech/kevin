@@ -297,28 +297,14 @@ class FalkSocket(Falk):
         # perform falk setup
         await self.init()
 
-    # this hack implements send in a different way for older
-    # versions of Python, which did not support async generators.
-    if sys.version_info < (3, 6):
-        from .util import asynciter
-        @asynciter
-        def send(self, msg=None, mode=ProtoType.json):
-            if msg:
-                self.writer.write(msg.pack(mode))
-                yield from self.writer.drain()
+    async def send(self, msg=None, mode=ProtoType.json):
+        if msg:
+            self.writer.write(msg.pack(mode))
+            await self.writer.drain()
 
-            line = yield from self.reader.readline()
-            message = Message.construct(line, self.proto_mode)
-            yield message
-    else:
-        async def send(self, msg=None, mode=ProtoType.json):
-            if msg:
-                self.writer.write(msg.pack(mode))
-                await self.writer.drain()
-
-            line = await self.reader.readline()
-            message = Message.construct(line, self.proto_mode)
-            yield message
+        line = await self.reader.readline()
+        message = Message.construct(line, self.proto_mode)
+        yield message
 
     def get_vm_host(self):
         return "localhost"

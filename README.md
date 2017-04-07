@@ -14,7 +14,7 @@ but you can use it for _any_ project!
 Kevin can create doc files, bundle software, run tests, make screenshots,
 run any container/VM.
 
-Requires [Python >=3.5](https://www.python.org/)
+Requires [Python >=3.6](https://www.python.org/)
 and [tornado](http://www.tornadoweb.org/).
 
 

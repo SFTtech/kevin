@@ -168,62 +168,6 @@ class yieldescape:
         self.value = value
 
 
-# AsyncIterator and asynciter are hacks for python < 3.6.
-# see falk.FalkSocket.send for usage and documentation.
-class AsyncIterator:
-    """ Wrapper class to create a asynchronous iterator """
-
-    def __init__(self, iterator):
-        self.itr = iterator
-
-    async def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        try:
-            yielded = next(self.itr)
-
-            while inspect.isawaitable(yielded):
-                try:
-                    result = await yielded
-                except Exception as e:
-                    yielded = self.itr.throw(e)
-                else:
-                    yielded = self.itr.send(result)
-
-            else:
-                if isinstance(yielded, yieldescape):
-                    return yielded.value
-                else:
-                    return yielded
-
-        except StopIteration:
-            raise StopAsyncIteration
-
-
-def asynciter(func):
-    """
-    annotation to make a function an asynchronous iterator.
-
-    example:
-
-    @asynciter
-    def countdown(n):
-        while n > 0:
-            yield from asyncio.sleep(1)
-            n -= 1
-            yield n
-
-    async def do_work():
-        async for n in countdown(5):
-            print(n)
-    """
-
-    def wrap(*args, **kwargs):
-        return AsyncIterator((asyncio.coroutine(func))(*args, **kwargs))
-    return wrap
-
-
 class AsyncChain:
     """
     Pipe the result of each iterator step into a function,
