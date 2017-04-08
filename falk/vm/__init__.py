@@ -77,10 +77,10 @@ class ContainerConfig:
                 self.ssh_port = None
 
             elif key == "ssh_key":
-                logging.warn("[vm] \x1b[33mwarning\x1b[m: "
-                             "'%s' doesn't have ssh-key configured, "
-                             "making key check impossible!" % (
-                                 self.machine_id))
+                logging.warning("[vm] \x1b[33mwarning\x1b[m: "
+                                "'%s' doesn't have ssh-key configured, "
+                                "making key check impossible!",
+                                self.machine_id)
                 self.ssh_key = None
 
             elif key == "name":

@@ -86,7 +86,7 @@ def main():
                 pass
 
         else:
-            logging.warn("[main] job_task already done!")
+            logging.warning("[main] job_task already done!")
 
     except Exception:
         logging.exception("\x1b[31;1mfatal internal exception\x1b[m")

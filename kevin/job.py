@@ -133,7 +133,7 @@ class Job(Watcher, Watchable):
         if CFG.args.volatile:
             return
 
-        # Check the current status of the job.
+        # Check if the job was completed.
         try:
             self.completed = self.path.joinpath("_completed").stat().st_mtime
         except FileNotFoundError:
@@ -199,14 +199,15 @@ class Job(Watcher, Watchable):
 
             except (LineReadError, ProcessError) as exc:
                 # TODO: connection rejections, auth problems, ...
-                logging.warn("failed communicating "
-                             "with falk '%s'" % falkname)
-                logging.warn("\x1b[31merror\x1b[m: $ %s" % (
-                    " ".join(exc.cmd)))
-                logging.warn("       -> %s" % (exc))
-                logging.warn("  are you sure %s = '%s' "
-                             "is a valid falk entry?" % (
-                                 falkname, falk))
+                logging.warning("failed communicating "
+                                "with falk '%s'", falkname)
+                logging.warning("\x1b[31merror\x1b[m: $ %s",
+                                " ".join(exc.cmd))
+                logging.warning("       -> %s", exc)
+                logging.warning("  are you sure %s = '%s' "
+                                "is a valid falk entry?",
+                                falkname,
+                                falk)
 
             if vm is not None:
                 # we found the machine
@@ -316,9 +317,12 @@ class Job(Watcher, Watchable):
 
             logging.info(
                 "running: "
-                "\x1b[1mcurl -N '%s?project=%s&hash=%s&job=%s'\x1b[m" % (
-                    CFG.dyn_url, self.build.project.name,
-                    self.build.commit_hash, self.name))
+                "\x1b[1mcurl -N '%s?project=%s&hash=%s&job=%s'\x1b[m",
+                CFG.dyn_url,
+                self.build.project.name,
+                self.build.commit_hash,
+                self.name
+            )
 
             # falk contact
             self.set_state("pending", "requesting VM")
@@ -364,7 +368,7 @@ class Job(Watcher, Watchable):
                     raise JobTimeoutError(exc.timeout, exc.was_global)
 
         except asyncio.CancelledError as exc:
-            logging.info("\x1b[31;1mJob aborted:\x1b[m %s" % (self))
+            logging.info("\x1b[31;1mJob aborted:\x1b[m %s", self)
             self.error("Job cancelled")
             raise
 
@@ -376,16 +380,16 @@ class Job(Watcher, Watchable):
                 error = ""
                 what = "timed out"
 
-            logging.error("[job] \x1b[31;1mProcess %s:\x1b[m %s:\n%s" % (
-                what, self, exc))
+            logging.error("[job] \x1b[31;1mProcess %s:\x1b[m %s:\n%s",
+                          what, self, exc)
 
             self.error("Process failed%s" % error)
 
         except (LineReadError, ProcessError) as exc:
             logging.error("[job] \x1b[31;1mCommunication failure:"
-                          "\x1b[m %s" % self)
+                          "\x1b[m %s", self)
 
-            logging.error(" $ %s: %s" % (" ".join(exc.cmd), exc))
+            logging.error(" $ %s: %s", " ".join(exc.cmd), exc)
 
             self.error("Process communication error: %s" % (exc.cmd[0]))
 
@@ -395,11 +399,10 @@ class Job(Watcher, Watchable):
             else:
                 silence = "Silence time"
 
-            logging.error("[job] \x1b[31;1mTimeout:\x1b[m %s" % self)
+            logging.error("[job] \x1b[31;1mTimeout:\x1b[m %s", self)
             logging.error(" $ %s", " ".join(exc.cmd))
             logging.error("\x1b[31;1m%s longer than limit "
-                          "of %.2fs.\x1b[m" % (
-                              silence , exc.timeout))
+                          "of %.2fs.\x1b[m", silence, exc.timeout)
             traceback.print_exc()
 
             self.error("Process %s took > %.02fs." % (exc.cmd[0],
@@ -409,11 +412,9 @@ class Job(Watcher, Watchable):
 
             # did it take too long to finish?
             if exc.was_global:
-                logging.error("[job] \x1b[31;1mTimeout:\x1b[m %s" % (
-                    self))
+                logging.error("[job] \x1b[31;1mTimeout:\x1b[m %s", self)
                 logging.error("\x1b[31;1mTook longer than limit "
-                              "of %.2fs.\x1b[m" % (
-                                  exc.timeout))
+                              "of %.2fs.\x1b[m", exc.timeout)
 
                 if self.current_step:
                     self.set_step_state(self.current_step, "error",
@@ -424,8 +425,8 @@ class Job(Watcher, Watchable):
             # or too long to provide a message?
             else:
                 logging.error("[job] \x1b[31;1mSilence timeout!\x1b[m "
-                              "%s\n\x1b[31mQuiet for > %.2fs.\x1b[m" % (
-                                  self, exc.timeout))
+                              "%s\n\x1b[31mQuiet for > %.2fs.\x1b[m",
+                              self, exc.timeout)
 
                 # a specific step is responsible:
                 if self.current_step:
@@ -439,19 +440,20 @@ class Job(Watcher, Watchable):
 
         except VMError as exc:
             logging.error("\x1b[31;1mMachine action failed\x1b[m "
-                          "%s.%s [\x1b[33m%s\x1b[m]" % (
-                              self.build.project.name,
-                              self.name, self.build.commit_hash))
+                          "%s.%s [\x1b[33m%s\x1b[m]",
+                          self.build.project.name,
+                          self.name,
+                          self.build.commit_hash)
             traceback.print_exc()
 
             self.error("VM Error: %s" % (exc))
 
         except Exception as exc:
             logging.error("\x1b[31;1mexception in Job.run()\x1b[m "
-                          "%s.%s [\x1b[33m%s\x1b[m]" % (
-                              self.build.project.name,
-                              self.name,
-                              self.build.commit_hash))
+                          "%s.%s [\x1b[33m%s\x1b[m]",
+                          self.build.project.name,
+                          self.name,
+                          self.build.commit_hash)
             traceback.print_exc()
 
             try:
@@ -608,8 +610,8 @@ class Job(Watcher, Watchable):
                 raise ValueError("duplicate output path: " + path)
 
             if CFG.args.volatile:
-                logging.warn("'%s' ignored because of "
-                             "volatile mode active." % cmd)
+                logging.warning("'%s' ignored because of "
+                                "volatile mode active.", cmd)
             elif cmd == 'output-file':
                 self.raw_file = pathobj.open('wb')
                 self.raw_remaining = size

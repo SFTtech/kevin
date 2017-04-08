@@ -44,17 +44,16 @@ class Config:
         self.args = args
 
         if self.args.volatile:
-            logging.warn("\x1b[1;31mYou are running in volatile mode, "
-                         "nothing will be stored on disk!\x1b[m")
+            logging.warning("\x1b[1;31mYou are running in volatile mode, "
+                            "nothing will be stored on disk!\x1b[m")
 
     def load(self, filename):
         """ Loads the attributes from the config file """
         raw = ConfigParser()
 
         if not Path(filename).exists():
-            logging.error(
-                "\x1b[31mConfig file '%s' does not exist.\x1b[m" % (
-                    filename))
+            logging.error("\x1b[31mConfig file '%s' does not exist.\x1b[m",
+                          filename)
             exit(1)
 
         raw.read(filename)
@@ -89,9 +88,8 @@ class Config:
             #       instead of iterating through all present files.
             for projectfile in self.project_folder.iterdir():
                 if not str(projectfile).endswith(".conf"):
-                    logging.warn(
-                        "[projects] ignoring non .conf file '%s'" % (
-                            projectfile))
+                    logging.warning("[projects] ignoring non .conf file '%s'",
+                                    projectfile)
                     continue
 
                 # create the project
@@ -100,7 +98,7 @@ class Config:
                     raise NameError("Project '%s' defined twice!" % (
                         newproj.name))
 
-                logging.info("[projects] loaded %s" % newproj.name)
+                logging.info("[projects] loaded %s", newproj.name)
 
                 self.projects[newproj.name] = newproj
 
@@ -129,8 +127,8 @@ class Config:
                 }
 
         except KeyError as exc:
-            logging.error(
-                "\x1b[31mConfig file is missing entry: %s\x1b[m" % (exc))
+            logging.error("\x1b[31mConfig file is missing entry: %s\x1b[m",
+                          exc)
             exit(1)
 
         self.verify()

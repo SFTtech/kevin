@@ -5,10 +5,10 @@ Code for interfacing with Falk instances to aquire VMs.
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-import sys
 
 from .falkvm import FalkVM, VMError
 from .process import SSHProcess
+from .util import AsyncChain
 
 from falk.messages import (Message, ProtoType, Mode, Version, List,
                            Select, Status, OK, Login, Welcome, Error,
@@ -57,8 +57,9 @@ class Falk(ABC):
             else:
                 raise VMError("falk did not welcome us: %s" % welcomemsg)
 
-        logging.info("[falk] '%s' says: %s" % (welcomemsg.name,
-                                               welcomemsg.msg))
+        logging.info("[falk] '%s' says: %s",
+                     welcomemsg.name,
+                     welcomemsg.msg)
 
         # set to json mode.
         jsonset = await self.query(Mode("json"))
@@ -227,7 +228,7 @@ class FalkSSH(Falk):
                 message = Message.construct(line, self.proto_mode)
                 return message
             else:
-                logging.debug("\x1b[31mfalk ssh stderr\x1b[m: %s" % line)
+                logging.debug("\x1b[31mfalk ssh stderr\x1b[m: %s", line)
                 return None
 
         return AsyncChain(answers, construct)

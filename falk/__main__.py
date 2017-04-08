@@ -53,7 +53,7 @@ def main():
             sockdir = os.path.dirname(CFG.control_socket)
             if not os.path.exists(sockdir):
                 try:
-                    logging.info("creating socket directory '%s'" % sockdir)
+                    logging.info("creating socket directory '%s'", sockdir)
                     os.makedirs(sockdir, exist_ok=True)
                 except PermissionError as exc:
                     raise exc from None
@@ -63,7 +63,7 @@ def main():
     # state storage
     falk = Falk()
 
-    logging.warn("listening on '%s'..." % CFG.control_socket)
+    logging.warning("listening on '%s'...", CFG.control_socket)
 
     proto_tasks = set()
 
@@ -77,7 +77,6 @@ def main():
 
         def conn_finished(fut):
             """ remove the task from the pending list """
-            logging.log("[proto] done")
             proto_tasks.remove(proto_task)
 
         proto_task.add_done_callback(
@@ -102,7 +101,7 @@ def main():
     except KeyboardInterrupt:
         print("\nexiting...")
 
-    logging.warn("served %d connections" % falk.handle_id)
+    logging.warning("served %d connections", falk.handle_id)
 
     logging.info("cleaning up...")
 

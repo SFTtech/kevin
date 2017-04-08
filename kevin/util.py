@@ -32,7 +32,7 @@ def log_setup(setting, default=1):
     level = levels[factor]
 
     logging.basicConfig(level=level, format="[%(asctime)s] %(message)s")
-    logging.error("loglevel: %s" % logging.getLevelName(level))
+    logging.error("loglevel: %s", logging.getLevelName(level))
 
 
 def clamp(number, smallest, largest):
@@ -141,8 +141,8 @@ class SSHKnownHostFile:
             raise Exception("you need to use a context for sshhostfile")
 
         if self.key is None:
-            logging.warn("Connecting to '%s:%s' without key verification" % (
-                self.host, self.port))
+            logging.warning("Connecting to '%s:%s' without key verification",
+                            self.host, self.port)
 
             return [
                 "-o", "UserKnownHostsFile=/dev/null",

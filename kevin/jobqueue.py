@@ -107,9 +107,10 @@ class Queue:
             job = await self.job_queue.get()
 
             logging.info("[queue] \x1b[32mProcessing job\x1b[m %s.%s for "
-                         "[\x1b[34m%s\x1b[m]..." % (job.build.project.name,
-                                                    job.name,
-                                                    job.build.commit_hash))
+                         "[\x1b[34m%s\x1b[m]...",
+                         job.build.project.name,
+                         job.name,
+                         job.build.commit_hash)
 
             job_fut = asyncio.get_event_loop().create_task(job.run())
 
@@ -122,8 +123,8 @@ class Queue:
             # wait for jobs to complete if there are too many running
             # this can be done very dynamically in the future.
             if len(self.jobs) >= self.max_running or self.cancelled:
-                logging.warn("[queue] runlimit of %d reached, "
-                             "waiting for completion..." % self.max_running)
+                logging.warning("[queue] runlimit of %d reached, "
+                                "waiting for completion...", self.max_running)
 
                 # wait until a "slot" is available, then the next job
                 # can be processed.
@@ -134,17 +135,17 @@ class Queue:
     def job_done(self, task, job):
         """ callback for finished jobs """
 
-        logging.info("[queue] Job %s.%s finished for [\x1b[34m%s\x1b[m]." % (
-            job.build.project.name,
-            job.name,
-            job.build.commit_hash))
+        logging.info("[queue] Job %s.%s finished for [\x1b[34m%s\x1b[m].",
+                     job.build.project.name,
+                     job.name,
+                     job.build.commit_hash)
 
         try:
             del self.jobs[job]
         except KeyError:
             # TODO: why is the same job callback called?
-            logging.error("\x1b[31mBUG\x1b[m: job %s not in running set" % (
-                job))
+            logging.error("\x1b[31mBUG\x1b[m: job %s not in running set",
+                          job)
 
     async def cancel(self):
         """ cancel all running jobs """
@@ -167,13 +168,15 @@ class Queue:
         cancels = [res for res in results if
                    isinstance(res, asyncio.CancelledError)]
 
-        logging.info("[queue] cancelled %d/%d job%s" % (
-            len(cancels), to_cancel, "s" if to_cancel > 1 else ""))
+        logging.info("[queue] cancelled %d/%d job%s",
+                     len(cancels),
+                     to_cancel,
+                     "s" if to_cancel > 1 else "")
 
     def cancel_job(self, job):
         """ cancel the given job by accessing its future """
 
         if job not in self.jobs:
-            logging.error("[queue] tried to cancel unknown job: %s" % job)
+            logging.error("[queue] tried to cancel unknown job: %s", job)
         else:
             self.jobs[job].cancel()

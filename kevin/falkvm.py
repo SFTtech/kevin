@@ -34,6 +34,7 @@ class FalkVM(Container):
         self.run_id = run_id
         self.falk = falk
 
+    @classmethod
     def config(cls, machine_id, cfgdata, cfgpath):
         raise Exception("config() on the VM controller called")
 
@@ -62,9 +63,10 @@ class FalkVM(Container):
             raise VMError("Failed to kill machine: %s" % msg.msg)
 
     async def cleanup(self):
-        return await self.falk.query(messages.Cleanup(run_id=self.run_id))
+        msg = await self.falk.query(messages.Cleanup(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
             raise VMError("Failed to clean up: %s" % msg.msg)
+        return msg
 
     async def wait_for_ssh_port(self, timeout=60, retry_delay=0.2,
                                 try_timeout=15):
@@ -89,7 +91,7 @@ class FalkVM(Container):
                 loop = asyncio.get_event_loop()
 
                 try:
-                    await loop.create_connection(
+                    transp, _ = await loop.create_connection(
                         lambda: asyncio.StreamReaderProtocol(
                             asyncio.StreamReader(), connection_made
                         ), self.ssh_host, self.ssh_port)
@@ -98,13 +100,15 @@ class FalkVM(Container):
                     logging.debug("    \x1b[31;5mrefused\x1b[m!")
 
                 except Exception as exc:
-                    logging.error("error creating connection: %s" % exc)
+                    logging.error("error creating connection: %s", exc)
 
                 else:
                     try:
-                        asyncio.wait_for(established, timeout=try_timeout)
+                        await asyncio.wait_for(established,
+                                               timeout=try_timeout)
                         raw_acquired = True
                         logging.debug("    \x1b[32;5mopen\x1b[m!")
+                        transp.close()
                         continue
                     except asyncio.TimeoutError:
                         logging.debug("    \x1b[31;5mtimeout\x1b[m!")
@@ -136,7 +140,7 @@ class FalkVM(Container):
                     logging.info("TCP connection established, but no SSH.")
                     if self.ssh_key is not None:
                         logging.info(" Are you sure the ssh key is correct?")
-                        logging.info(" -> %s" % (self.ssh_key))
+                        logging.info(" -> %s", self.ssh_key)
 
                 raise ProcTimeoutError(["ssh", "%s@%s:%s" % (
                     self.ssh_user,

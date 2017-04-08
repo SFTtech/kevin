@@ -91,8 +91,8 @@ class GitHubPullManager(Watcher):
 
                 if not queue:
                     # we didn't get the "Enqueued" update for the build
-                    logging.warn("[github] wanted to abort build "
-                                 "in unknown queue")
+                    logging.warning("[github] wanted to abort build "
+                                    "in unknown queue")
 
                 else:
                     # abort it
@@ -177,8 +177,8 @@ class GitHubHookHandler(HookHandler):
         self.finish()
 
     def post(self):
-        logging.info("[github] \x1b[34mGot webhook from %s\x1b[m" % (
-            self.request.remote_ip))
+        logging.info("[github] \x1b[34mGot webhook from %s\x1b[m",
+                     self.request.remote_ip)
         blob = self.request.body
 
         try:
@@ -219,18 +219,17 @@ class GitHubHookHandler(HookHandler):
             if project is None:
                 if repo_name in tried_repos:
                     # we found the project but the signature was invalid
-                    logging.error(
-                        "[github] \x1b[31minvalid signature\x1b[m "
-                        "for %s hook, sure you use the same keys?" % (
-                            repo_name))
+                    logging.error("[github] \x1b[31minvalid signature\x1b[m "
+                                  "for %s hook, sure you use the same keys?",
+                                  repo_name)
                     raise ValueError("invalid message signature")
 
                 else:
                     # the project could not be found by repo name
                     logging.error(
                         "[github] \x1b[31mcould not find project\x1b[m "
-                        "for hook from '%s'. I tried: %s" % (
-                            repo_name, tried_repos))
+                        "for hook from '%s'. I tried: %s",
+                        repo_name, tried_repos)
                     raise ValueError("invalid project source")
 
             # dispatch by event type
@@ -244,23 +243,21 @@ class GitHubHookHandler(HookHandler):
                 user = json_data["sender"]["login"]
                 forklocation = json_data["forkee"]["full_name"]
                 forkurl = json_data["forkee"]["html_url"]
-                logging.info("[github] %s forked %s to %s at %s" % (
-                    user, repo_name, forklocation, forkurl
-                ))
+                logging.info("[github] %s forked %s to %s at %s",
+                             user, repo_name, forklocation, forkurl)
 
             elif event == "watch":
                 # the "watch" event actually means "star"
                 action = json_data["action"]
                 user = json_data["sender"]["login"]
-                logging.info("[github] %s %s starring %s" % (
-                    user, action, repo_name
-                ))
+                logging.info("[github] %s %s starring %s",
+                             user, action, repo_name)
 
             else:
                 raise ValueError("unhandled hook event '%s'" % event)
 
         except (ValueError, KeyError) as exc:
-            logging.error("[github] bad request: " + repr(exc))
+            logging.error("[github] bad request: %s", repr(exc))
             traceback.print_exc()
 
             self.write(repr(exc).encode())
@@ -474,7 +471,7 @@ class GitHubBuildStatusUpdater(Watcher):
             return
 
         if len(description) > 140:
-            logging.warn("[github] update description too long, truncating")
+            logging.warning("[github] update description too long, truncating")
             description = description[:140]
 
         data = json.dumps({
@@ -511,7 +508,7 @@ class GitHubBuildStatusUpdater(Watcher):
         if reply is not None and not reply.ok:
             if "status" in reply.headers:
                 replytext = reply.headers["status"] + '\n' + reply.text
-                logging.warn("[github] status update request rejected "
-                             "by github: %s" % (replytext))
+                logging.warning("[github] status update request rejected "
+                                "by github: %s", replytext)
             else:
-                logging.warn("[github] reply status: no data given.")
+                logging.warning("[github] reply status: no data given.")

@@ -7,19 +7,19 @@ import logging
 from pathlib import Path
 import subprocess
 
-from .util import INF, SSHKnownHostFile
+from .util import INF, SSHKnownHostFile, AsyncWith
 from .process import Process, SSHProcess, ProcessFailed, ProcTimeoutError
 
 
-class Chantal:
+class Chantal(AsyncWith):
     """
     Virtual machine instance, with ssh login data.
     For a proper clean-up, call cleanup() or use with 'with'.
 
     # TODO: different connection methods (e.g. agent, non-ssh commands)
     """
-    def __init__(self, vm):
-        self.vm = vm
+    def __init__(self, machine):
+        self.machine = machine
         self.ssh_worked = asyncio.Future()
 
     def can_connect(self):
@@ -31,8 +31,8 @@ class Chantal:
 
     async def create(self):
         """ create and prepare the machine """
-        await self.vm.prepare()
-        await self.vm.launch()
+        await self.machine.prepare()
+        await self.machine.launch()
 
     async def upload(self, local_path, remote_folder=".", timeout=10):
         """
@@ -40,18 +40,18 @@ class Chantal:
         remote_folder (default: ~).
         """
 
-        with SSHKnownHostFile(self.vm.ssh_host,
-                              self.vm.ssh_port,
-                              self.vm.ssh_key) as hostfile:
+        with SSHKnownHostFile(self.machine.ssh_host,
+                              self.machine.ssh_port,
+                              self.machine.ssh_key) as hostfile:
             command = [
                 "scp",
-                "-P", str(self.vm.ssh_port),
+                "-P", str(self.machine.ssh_port),
                 "-q",
             ] + hostfile.get_options() + [
                 "-r",
                 str(local_path),
-                self.vm.ssh_user + "@" +
-                self.vm.ssh_host + ":" +
+                self.machine.ssh_user + "@" +
+                self.machine.ssh_host + ":" +
                 str(remote_folder),
             ]
 
@@ -69,15 +69,15 @@ class Chantal:
         allow break-outs.
         """
 
-        with SSHKnownHostFile(self.vm.ssh_host,
-                              self.vm.ssh_port,
-                              self.vm.ssh_key) as hostfile:
+        with SSHKnownHostFile(self.machine.ssh_host,
+                              self.machine.ssh_port,
+                              self.machine.ssh_key) as hostfile:
             command = [
                 "scp", "-q",
-                "-P", str(self.vm.ssh_port),
+                "-P", str(self.machine.ssh_port),
             ] + hostfile.get_options() + [
                 "-r",
-                self.vm.ssh_user + "@" + self.vm.ssh_host + ":" + remote_path,
+                self.machine.ssh_user + "@" + self.machine.ssh_host + ":" + remote_path,
                 local_folder,
             ]
 
@@ -95,8 +95,8 @@ class Chantal:
         """
 
         return SSHProcess(remote_command,
-                          self.vm.ssh_user, self.vm.ssh_host,
-                          self.vm.ssh_port, self.vm.ssh_key,
+                          self.machine.ssh_user, self.machine.ssh_host,
+                          self.machine.ssh_port, self.machine.ssh_key,
                           timeout=timeout,
                           silence_timeout=silence_timeout,
                           must_succeed=must_succeed)
@@ -115,7 +115,7 @@ class Chantal:
                                     must_succeed) as proc:
 
             # ignore output, but this handles the timeouts.
-            async for fd, data in proc.output():
+            async for _, _ in proc.output():
                 pass
 
             return await proc.wait()
@@ -132,17 +132,11 @@ class Chantal:
             raise RuntimeError("VM shutdown timeout")
         finally:
             try:
-                await self.vm.terminate()
-                await self.vm.cleanup()
+                await self.machine.terminate()
+                await self.machine.cleanup()
             except subprocess.SubprocessError:
-                logging.warn("[chantal] failed telling falk about VM "
-                             "teardown, but he'll do that on its own.")
-
-    def __enter__(self):
-        raise Exception("use async with!")
-
-    def __exit__(self, exc, value, traceback):
-        raise Exception("use async with!")
+                logging.warning("[chantal] failed telling falk about VM "
+                                "teardown, but he'll do that on its own.")
 
     async def __aenter__(self):
         await self.create()
@@ -166,8 +160,8 @@ class Chantal:
         #       and allow preinstallations of chantal
         #       -> SSHChantal, ...
         try:
-            await self.vm.wait_for_ssh_port(timeout,
-                                            retry_delay, try_timeout)
+            await self.machine.wait_for_ssh_port(timeout,
+                                                 retry_delay, try_timeout)
         except ProcTimeoutError:
             self.ssh_worked.set_result(False)
             raise
@@ -189,6 +183,8 @@ class Chantal:
         execute chantal in the VM.
         return a state object, use its .output() function to get
         an async iterator.
+
+        TODO: optionally, launch Docker in the VM
         """
 
         return self.exec_remote(

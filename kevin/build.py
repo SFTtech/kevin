@@ -161,7 +161,7 @@ class Build(Watchable, Watcher):
         if CFG.args.volatile:
             return
 
-        # Check the current status of the job.
+        # Check if the build was completed already.
         try:
             self.completed = self.path.joinpath("_completed").stat().st_mtime
         except FileNotFoundError:
@@ -175,10 +175,10 @@ class Build(Watchable, Watcher):
             except FileNotFoundError:
                 pass
 
-    def set_state(self, state, text, time=None):
+    def set_state(self, state, text, timestamp=None):
         """ set this build state """
         self.send_update(BuildState(self.project.name, self.commit_hash,
-                                    state, text, time))
+                                    state, text, timestamp))
 
     def add_source(self, clone_url, repo_url=None, user=None, branch=None,
                    comment=None):
