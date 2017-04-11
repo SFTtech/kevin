@@ -33,4 +33,4 @@ base_image = /path/to/permanent/diskimage.qcow2
 overlay_image = /tmp/kevin-vm-tmp.img
 
 # invocation
-command = qemu-system-x86_64 -machine type=q35,accel=kvm -drive file={IMAGENAME},if=virtio,format=qcow2 -m 2G -smp 2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:{SSHPORT}-:22
+command = qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -smp 2 -m 2G -drive file={IMAGENAME},if=virtio,format=qcow2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:{SSHPORT}-:22
