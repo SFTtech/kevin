@@ -32,8 +32,10 @@ def build_job(args):
 
     shallow = ("--depth %d " % args.shallow) if args.shallow > 0 else ""
 
-    run_command("git clone " + shallow + shlex.quote(args.clone_url) + " repo")
-    os.chdir("repo")
+    run_command("git clone " + shallow +
+                shlex.quote(args.clone_url) +
+                " " + args.folder)
+    os.chdir(args.folder)
     run_command("git checkout -q " + args.commit_sha)
 
     try:
@@ -74,10 +76,14 @@ def build_job(args):
         timer = time()
 
         try:
+            # execute commands
             for command in step.commands:
                 run_command(command, step.env)
+
+            # then, transfer output files
             for output in step.outputs:
                 output_item(output)
+
         except RuntimeError as exc:
             # failure in step.
             update_step_status(step, "failure", str(exc.args[0]))

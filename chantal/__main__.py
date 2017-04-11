@@ -28,6 +28,7 @@ def main():
         cmd.add_argument("commit_sha")
         cmd.add_argument("desc_file")
         cmd.add_argument("--shallow", type=int, default=0)
+        cmd.add_argument("--folder", default="repo")
 
         args = cmd.parse_args()
 
