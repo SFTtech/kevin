@@ -154,12 +154,22 @@ class Step:
             setattr(self, key, True)
 
         elif key == "output":
+            if not val:
+                raise ParseError(lineno, "output filename is empty.")
+
+            if val[0] in {'_', '.'}:
+                raise ParseError(lineno,
+                                 "output filename starts with . or _: %s" % val)
+
             if '/' in val:
-                raise ParseError(lineno, "'/' in output filename: " + val)
+                raise ParseError(lineno, "'/' in output filename: %s" % val)
+
             if not val or not val.isprintable() or not val[0].isalpha():
-                raise ParseError(lineno, "Illegal output filename: " + val)
+                raise ParseError(lineno, "Illegal output filename: %s" % val)
+
             if val in all_outputs:
-                raise ParseError(lineno, "Duplicate filename: " + val)
+                raise ParseError(lineno, "Duplicate filename: %s" % val)
+
             all_outputs.add(val)
             self.outputs.append(val)
 

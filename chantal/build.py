@@ -106,11 +106,11 @@ def build_job(args):
         msg(cmd="job-state", state="success", text="completed")
 
 
-def output_item(path):
+def output_item(name):
     """
     Outputs one output item, as listed in the config.
     """
-    path = pathlib.Path(path)
+    path = pathlib.Path(name)
     if path.is_file():
         output_file(path, path.name)
     elif path.is_dir():
@@ -148,7 +148,7 @@ def output_dir(path, targetpath):
     msg(cmd="output-dir", path=targetpath)
     for entry in path.iterdir():
         entrytargetpath = targetpath + '/' + entry.name
-        if entry.is_file(targetpath):
+        if entry.is_file():
             output_file(entry, entrytargetpath)
-        elif entry.is_dir(targetpath):
+        elif entry.is_dir():
             output_dir(entry, entrytargetpath)

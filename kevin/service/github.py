@@ -149,7 +149,7 @@ class GitHubHook(HookTrigger):
         self.pull_manager = GitHubPullManager(self.repos)
 
     def get_watchers(self):
-        return [ self.pull_manager ]
+        return [self.pull_manager]
 
     def get_handler(self):
         return ("/hook-github", GitHubHookHandler)

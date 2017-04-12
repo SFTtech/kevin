@@ -218,7 +218,7 @@ class OutputItem(JobUpdate):
         """
         Raises an exception if path is not a valid subdir of this.
         """
-        components = path.split('\n')
+        components = path.split('/')
         if components[0] != self.name:
             raise ValueError("not a subdir of " + self.name + ": " + path)
 

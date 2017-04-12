@@ -5,8 +5,8 @@ Symlink management for the build.
 from ..service import Action
 
 
-class Symlink(Action):
+class BranchSymlink(Action):
     """
-    Manages symlinks in the output folder.
+    Manages branch symlinks in the output folder.
     """
     pass

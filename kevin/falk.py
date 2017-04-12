@@ -6,15 +6,14 @@ from abc import ABC, abstractmethod
 import asyncio
 import logging
 
-from .falkvm import FalkVM, VMError
-from .process import SSHProcess
-from .util import AsyncChain
-
 from falk.messages import (Message, ProtoType, Mode, Version, List,
                            Select, Status, OK, Login, Welcome, Error,
                            Exit)
 from falk.protocol import FalkProto
 from falk.vm import ContainerConfig
+
+from .falkvm import FalkVM, VMError
+from .process import SSHProcess
 
 
 class FalkManager:
@@ -28,9 +27,15 @@ class FalkManager:
         self.falks = set()
 
     def add_falk(self, falk):
+        """
+        Add a falk vm provider from the available set.
+        """
         self.falks.add(falk)
 
     def remove_falk(self, falk):
+        """
+        Remove a falk vm provider from the available set.
+        """
         self.falks.remove(falk)
 
 
@@ -146,10 +151,10 @@ class Falk(ABC):
         return ret
 
     @abstractmethod
-    def send(self, msg=None, mode=ProtoType.json):
+    async def send(self, msg=None, mode=ProtoType.json):
         """
         Send a message to falk,
-        return an async iterator for the answer messages
+        This is an async iterator for the answer messages
         """
         raise NotImplementedError()
 
@@ -157,9 +162,9 @@ class Falk(ABC):
         await self.create()
         return self
 
-    async def __aexit__(self, exc, value, tb):
-        answer = await self.query(Exit())
-        pass
+    async def __aexit__(self, exc, value, traceback):
+        # we ignore the query answer of exit
+        await self.query(Exit())
 
 
 class FalkVirtual(Falk):
@@ -176,7 +181,7 @@ class FalkVirtual(Falk):
     async def create(self):
         raise NotImplementedError()
 
-    def send(self, msg=None, mode=ProtoType.json):
+    async def send(self, msg=None, mode=ProtoType.json):
         raise NotImplementedError()
 
     def get_vm_host(self):
@@ -209,7 +214,7 @@ class FalkSSH(Falk):
         # perform falk setup
         await self.init()
 
-    def send(self, msg=None, mode=ProtoType.json):
+    async def send(self, msg=None, mode=ProtoType.json):
         if msg:
             msg = msg.pack(mode)
 
@@ -220,18 +225,13 @@ class FalkSSH(Falk):
             linecount=1,
         )
 
-        # hack to work around the impossibility to
-        # loop through `async for` and then yield values
-        def construct(inp):
-            stream, line = inp
+        async for stream, line in answers:
             if stream == 1 and line:
                 message = Message.construct(line, self.proto_mode)
-                return message
+                yield message
             else:
                 logging.debug("\x1b[31mfalk ssh stderr\x1b[m: %s", line)
-                return None
-
-        return AsyncChain(answers, construct)
+                yield None
 
     def get_vm_host(self):
         return self.ssh_host

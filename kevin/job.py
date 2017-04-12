@@ -2,12 +2,11 @@
 Job processing code
 """
 
-from abc import abstractmethod
 import asyncio
 import json
 import logging
 import shutil
-import time
+import time as clock
 import traceback
 
 from .chantal import Chantal
@@ -16,8 +15,7 @@ from .falk import FalkSSH, FalkSocket
 from .falkvm import VMError
 from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
                       ProcessError)
-from .project import Project
-from .update import (BuildSource, Update, JobState, StepState,
+from .update import (Update, JobState, StepState,
                      StdOut, OutputItem, Enqueued, JobCreated,
                      GeneratedUpdate, ActionsAttached, JobEmergencyAbort)
 from .util import recvcoroutine
@@ -31,7 +29,8 @@ class JobTimeoutError(Exception):
     Indicates a job execution timeout.
     """
     def __init__(self, timeout, was_global):
-        super().__init__(cmd, timeout)
+        super().__init__()
+        self.timeout = timeout
         self.was_global = was_global
 
 
@@ -166,7 +165,7 @@ class Job(Watcher, Watchable):
         return a suitable vm instance for this job from a falk.
         """
 
-        vm = None
+        machine = None
 
         # try each falk to find the machine
         for falkname, falkcfg in CFG.falks.items():
@@ -178,6 +177,7 @@ class Job(Watcher, Watchable):
             #       falk daemon!
 
             falk = None
+
             if falkcfg["connection"] == "ssh":
                 host, port = falkcfg["location"]
                 falk = FalkSSH(host, port, falkcfg["user"],
@@ -195,7 +195,7 @@ class Job(Watcher, Watchable):
                 await falk.create()
 
                 # create container
-                vm = await falk.create_vm(vm_name)
+                machine = await falk.create_vm(vm_name)
 
             except (LineReadError, ProcessError) as exc:
                 # TODO: connection rejections, auth problems, ...
@@ -209,11 +209,11 @@ class Job(Watcher, Watchable):
                                 falkname,
                                 falk)
 
-            if vm is not None:
+            if machine is not None:
                 # we found the machine
-                return vm
+                return machine
 
-        if vm is None:
+        if machine is None:
             raise VMError("VM '%s' could not be provided by any falk" % (
                 vm_name))
 
@@ -296,7 +296,7 @@ class Job(Watcher, Watchable):
         """ send a StepState update. """
         self.send_update(StepState(self.project.name, self.build.commit_hash,
                                    self.name, step_name, state, text,
-                                   time=None))
+                                   time=time))
 
     def on_watch(self, watcher):
         # send all previous job updates to the watcher
@@ -316,7 +316,7 @@ class Job(Watcher, Watchable):
                 raise Exception("tried to run a completed job!")
 
             logging.info(
-                "running: "
+                "job output: "
                 "\x1b[1mcurl -N '%s?project=%s&hash=%s&job=%s'\x1b[m",
                 CFG.dyn_url,
                 self.build.project.name,
@@ -325,25 +325,27 @@ class Job(Watcher, Watchable):
             )
 
             # falk contact
-            self.set_state("pending", "requesting VM")
+            self.set_state("pending", "requesting machine")
 
-            vm = await asyncio.wait_for(self.get_falk_vm(self.vm_name),
-                                        timeout=10)
+            machine = await asyncio.wait_for(self.get_falk_vm(self.vm_name),
+                                             timeout=10)
 
-            # vm was acquired, now boot it.
-            self.set_state("pending", "booting VM")
+            # machine was acquired, now boot it.
+            self.set_state("pending", "booting machine")
 
-            async with Chantal(vm) as chantal:
+            async with Chantal(machine) as chantal:
 
-                # wait for the VM and install chantal
-                # TODO: allow already existing chantal installation?
+                # wait for the machine to be reachable
                 await chantal.wait_for_connection(timeout=60, try_timeout=20)
+
+                # install chantal (someday, might be preinstalled)
                 await chantal.install(timeout=20)
 
+                # create control message parser sink
                 control_handler = self.control_handler()
 
                 try:
-                    # run chantal process in the vm
+                    # run chantal process in the machine
                     async with chantal.run(self) as run:
 
                         # and fetch all the output
@@ -367,7 +369,7 @@ class Job(Watcher, Watchable):
                 except ProcTimeoutError as exc:
                     raise JobTimeoutError(exc.timeout, exc.was_global)
 
-        except asyncio.CancelledError as exc:
+        except asyncio.CancelledError:
             logging.info("\x1b[31;1mJob aborted:\x1b[m %s", self)
             self.error("Job cancelled")
             raise
@@ -488,7 +490,7 @@ class Job(Watcher, Watchable):
                                     'step result was not reported')
 
             # the job is completed!
-            self.completed = time.time()
+            self.completed = clock.time()
 
             if not CFG.args.volatile:
                 # the job is now officially completed
@@ -515,38 +517,51 @@ class Job(Watcher, Watchable):
         Note: The data chunks are entirely untrusted.
         """
         data = bytearray()
+
         while True:
+
+            # transfer files through raw binary mode
             if self.raw_file is not None:
-                # control stream is in raw binary mode
                 if not data:
                     # wait for more data
                     data += yield
 
-                if len(data) < raw_remaining:
+                if len(data) >= self.raw_remaining:
+                    # the file is nearly complete,
+                    # the remaining data is the next control message
+
                     self.raw_file.write(data[:self.raw_remaining])
-                    data = data[self.raw_remaining:]
                     self.raw_file.close()
                     self.raw_file = None
+
+                    del data[:self.raw_remaining]
+
                 else:
+                    # all the data currently buffered shall go into the file
                     self.raw_file.write(data)
                     self.raw_remaining -= len(data)
-                    data = bytearray()
+                    del data[:]
+
                 continue
 
             # control stream is in regular JSON+'\n' mode
-            newline = data.rfind(b"\n")
+            newline = data.find(b"\n")
             if newline < 0:
                 if len(data) > (8 * 1024 * 1024):
                     # chantal is trying to crash us with a >= 8MiB msg
                     raise ValueError("Control message too long")
+
                 # wait for more data
                 data += yield
                 continue
 
-            msgs, data = bytes(data[:newline]), data[newline + 1:]
+            # parse the line as control message,
+            # after the newline may be raw data or the next control message
+            msg = data[:newline + 1].decode().strip()
+            if msg:
+                self.control_message(msg)
 
-            for msg in msgs.split(b"\n"):
-                self.control_message(msg.decode().strip())
+            del data[:newline + 1]
 
     def control_message(self, msg):
         """
@@ -564,6 +579,7 @@ class Job(Watcher, Watchable):
             self.current_step = msg["step"]
             self.set_step_state(msg["step"], msg["state"], msg["text"])
 
+        # finalize file transfer
         elif cmd == 'output-item':
             name = msg["name"]
 
@@ -578,12 +594,23 @@ class Job(Watcher, Watchable):
             self.send_update(self.current_output_item)
             self.current_output_item = None
 
+        # file or folder transfer is announced
         elif cmd in {'output-dir', 'output-file'}:
             path = msg["path"]
+
+            if not path:
+                raise ValueError("invalid path: is empty")
+
+            if path[0] in {".", "_"}:
+                raise ValueError("invalid start of output filename: . or _")
+
             if '/' in path:
+                # a file with / is emitted, it must be some subdirectory/file
+                # -> ensure this happens as part of an output item.
                 if self.current_output_item is None:
                     raise ValueError("no current output item")
                 self.current_output_item.validate_path(path)
+
             else:
                 if self.current_output_item is not None:
                     raise ValueError("an output item is already present")
@@ -609,14 +636,21 @@ class Job(Watcher, Watchable):
             if pathobj.exists():
                 raise ValueError("duplicate output path: " + path)
 
+            self.raw_remaining = size
+
             if CFG.args.volatile:
                 logging.warning("'%s' ignored because of "
-                                "volatile mode active.", cmd)
+                                "volatile mode active: %s", cmd, pathobj)
+                self.raw_file = open("/dev/null", 'wb')
+
             elif cmd == 'output-file':
                 self.raw_file = pathobj.open('wb')
-                self.raw_remaining = size
-            else:
+
+            elif cmd == 'output-dir':
                 pathobj.mkdir(parents=True, exist_ok=True)
+
+            else:
+                raise ValueError("unknown command: {}".format(cmd))
 
         else:
             raise ValueError("unknown build control command: %r" % (cmd))

@@ -369,6 +369,7 @@ class HelpText(Message):
             "",
             " available commands:",
             "  help                   - request this text.",
+            "  exit                   - quit the control connection.",
             "  mode <text|json>       - set protocol mode.",
             "  login <name>           - login as some user, + now unlocked.",
             "+ list                   - list available vms and states",

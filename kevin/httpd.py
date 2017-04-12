@@ -3,9 +3,9 @@ Web server to receive WebHook notifications from GitHub,
 and provide them in a job queue.
 """
 
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 
-from tornado import websocket, web, ioloop, gen
+from tornado import websocket, web, gen
 from tornado.platform.asyncio import AsyncIOMainLoop
 from tornado.queues import Queue
 
@@ -31,14 +31,6 @@ class HookTrigger(Trigger):
         """
         pass
 
-    def add_args(self, kwargdict):
-        """
-        Let the hook trigger add itself to the existing kwarg dict
-        which will be passed to the class returned in `get_handler()`
-        when instanciated.
-        """
-        return kwargdict
-
     def merge_cfg(self, urlhandlers):
         # when e.g. GitHubHookHandler is instanciated,
         # the list of all Triggers that use it
@@ -54,7 +46,7 @@ class HookTrigger(Trigger):
         handlerkwargs["triggers"].append(self)
 
         # additional custom keyword arguments for this
-        urlhandlers[self.get_handler()] = self.add_args(handlerkwargs)
+        urlhandlers[self.get_handler()] = handlerkwargs
 
 
 class HookHandler(web.RequestHandler):
@@ -78,7 +70,7 @@ class HookHandler(web.RequestHandler):
         raise NotImplementedError()
 
 
-class HTTPD:
+def run_httpd(handlers, queue):
     """
     This class contains a server that listens for WebHook
     notifications to spawn triggered actions, e.g. new Builds.
@@ -87,31 +79,30 @@ class HTTPD:
     handlers: (url, handlercls) -> [cfg, cfg, ...]
     queue: the jobqueue.Queue where new builds/jobs are put in
     """
-    def __init__(self, handlers, queue):
-        # use the main asyncio loop to run tornado
-        AsyncIOMainLoop().install()
+    # use the main asyncio loop to run tornado
+    AsyncIOMainLoop().install()
 
-        urlhandlers = dict()
-        urlhandlers[("/", PlainStreamHandler)] = None
-        urlhandlers[("/ws", WebSocketHandler)] = None
+    urlhandlers = dict()
+    urlhandlers[("/", PlainStreamHandler)] = None
+    urlhandlers[("/ws", WebSocketHandler)] = None
 
-        urlhandlers.update(handlers)
+    urlhandlers.update(handlers)
 
-        # create the tornado application
-        # that serves assigned urls to handlers.
-        handlers = list()
-        for (url, handler), cfgs in urlhandlers.items():
-            if cfgs is not None:
-                handlers.append((url, handler, cfgs))
-            else:
-                handlers.append((url, handler))
+    # create the tornado application
+    # that serves assigned urls to handlers.
+    handlers = list()
+    for (url, handler), cfgs in urlhandlers.items():
+        if cfgs is not None:
+            handlers.append((url, handler, cfgs))
+        else:
+            handlers.append((url, handler))
 
-        self.app = web.Application(handlers)
+    app = web.Application(handlers)
 
-        self.app.queue = queue
+    app.queue = queue
 
-        # bind to tcp port
-        self.app.listen(CFG.dyn_port, address=str(CFG.dyn_address))
+    # bind to tcp port
+    app.listen(CFG.dyn_port, address=str(CFG.dyn_address))
 
 
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
@@ -149,9 +140,12 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
 class PlainStreamHandler(web.RequestHandler, Watcher):
     """ Provides the job stdout stream via plain HTTP GET """
+
+    def initialize(self):
+        self.job = None
+
     @gen.coroutine
     def get(self):
-        self.job = None
 
         try:
             project_name = self.request.query_arguments["project"][0]

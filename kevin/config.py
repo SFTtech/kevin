@@ -18,6 +18,7 @@ class Config:
     def __init__(self):
         self.ci_name = None
         self.max_jobs_queued = None
+        self.max_jobs_running = None
 
         self.web_url = None
         self.dyn_port = None
@@ -155,7 +156,7 @@ class Config:
         the configs need to be prepared for that.
         """
         # gather triggers to be installed.
-        for name, project in self.projects.items():
+        for _, project in self.projects.items():
             # for each handler type (e.g. github webhook),
             # collect all the configs
             for trigger in project.triggers:

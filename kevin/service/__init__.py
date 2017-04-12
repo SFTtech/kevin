@@ -50,7 +50,7 @@ class Service(metaclass=ServiceMeta):
 
     def __init__(self, cfg, project):
         from ..project import Project
-        if type(project) != Project:
+        if not isinstance(project, Project):
             raise TypeError("project has invalid type '%s'" % (type(project)))
         self.project = project
 
@@ -82,7 +82,7 @@ class Trigger(Service):
         """
         return []
 
-    def merge_cfg(self):
+    def merge_cfg(self, urlhandlers):
         """
         Perform merge operations so that this trigger only functions as
         a config for another class that is instanciated later.

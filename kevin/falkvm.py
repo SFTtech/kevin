@@ -86,6 +86,7 @@ class FalkVM(Container):
 
                 def connection_made(reader, writer):
                     """ called when the connection was made """
+                    del reader, writer  # unused
                     established.set_result(True)
 
                 loop = asyncio.get_event_loop()

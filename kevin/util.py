@@ -158,38 +158,8 @@ class SSHKnownHostFile:
         self.create()
         return self
 
-    def __exit__(self, exc, value, tb):
+    def __exit__(self, exc, value, traceback):
         self.remove()
-
-
-class yieldescape:
-    """ wrapper class for yielded values to allow passing out awaitables """
-    def __init__(self, value):
-        self.value = value
-
-
-class AsyncChain:
-    """
-    Pipe the result of each iterator step into a function,
-    return the calculated value of the function in each step.
-    """
-
-    def __init__(self, iterator, function):
-        self.itr = iterator
-        self.func = function
-
-    async def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        value = await self.itr.__anext__()
-        transformed = self.func(value)
-
-        # TODO: maybe we want to return None
-        if transformed is None:
-            return await self.__anext__()
-        else:
-            return transformed
 
 
 def parse_connection_entry(name, entry, cfglocation=None, require_key=True,
@@ -267,3 +237,15 @@ def parse_connection_entry(name, entry, cfglocation=None, require_key=True,
                          name, entry, "\n    ".join(
                              format[0] for format in formats.values()
                          )))
+
+
+class AsyncWith:
+    """
+    Base class for objects that are usable with `async with` only.
+    """
+
+    def __enter__(self):
+        raise Exception("use async with!")
+
+    def __exit__(self, exc, value, traceback):
+        raise Exception("use async with!")

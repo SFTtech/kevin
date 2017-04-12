@@ -3,7 +3,6 @@ Job queuing for Kevin.
 """
 
 import asyncio
-from datetime import datetime
 import functools
 import logging
 
@@ -40,25 +39,18 @@ class Queue:
         Add a build to be processed.
         Called from where a new build was created and should now be run.
         """
-        logging.info("[queue] build request [\x1b[33m%s\x1b[m] @%s",
+
+        logging.info("[queue] added build: [\x1b[33m%s\x1b[m] @ %s",
                      build.commit_hash,
                      build.clone_url)
 
         if build in self.pending_builds:
-            logging.info("[queue]  \u2517 request is already pending")
             return
-        elif build.completed is not None:
-            # the build has already been completed at some earlier point.
-            # there's no need to enqueue it.
-            logging.info("[queue]  \u2517 has already been completed at %s",
-                         datetime.fromtimestamp(build.completed).isoformat())
-        else:
-            self.pending_builds.add(build)
-            self.build_ids[build.commit_hash] = build
-            logging.info("[queue]  \u2517 enqueued as new pending build")
+
+        self.pending_builds.add(build)
+        self.build_ids[build.commit_hash] = build
 
         # send signal to build so it can notify its jobs to add themselves!
-        # TODO: is this required for builds that are flagged as 'completed'?
         build.on_enqueue(self)
 
     def remove_build(self, build):
@@ -72,7 +64,7 @@ class Queue:
         build = self.build_ids.get(build_id)
 
         if build:
-            if build.completed is None:
+            if not build.completed:
                 build.abort()
 
     def is_pending(self, commit_hash):
@@ -84,7 +76,7 @@ class Queue:
     def add_job(self, job):
         """ Add a job to the queue """
 
-        if job.completed is not None:
+        if job.completed:
             # don't enqueue completed jobs.
             return
 
@@ -134,6 +126,7 @@ class Queue:
 
     def job_done(self, task, job):
         """ callback for finished jobs """
+        del task  # unused
 
         logging.info("[queue] Job %s.%s finished for [\x1b[34m%s\x1b[m].",
                      job.build.project.name,

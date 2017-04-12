@@ -2,16 +2,13 @@
 subprocess utility functions and classes.
 """
 
-import asyncio, asyncio.streams
-import fcntl
+import asyncio
+import asyncio.streams
 import functools
-import os
-import selectors
 import subprocess
 import sys
-import time
 
-from .util import INF, SSHKnownHostFile
+from .util import INF, SSHKnownHostFile, AsyncWith
 
 
 class ProcTimeoutError(subprocess.TimeoutExpired):
@@ -52,7 +49,7 @@ class ProcessError(subprocess.SubprocessError):
         self.cmd = cmd
 
 
-class Process:
+class Process(AsyncWith):
     """
     Contains a running process specified by command.
 
@@ -189,18 +186,15 @@ class Process:
         """ send sigkill to the process """
         self.transport.kill()
 
-    def __enter__(self):
-        raise Exception("use async with!")
-
-    def __exit__(self, exc, value, traceback):
-        raise Exception("use async with!")
-
     async def __aenter__(self):
         await self.create()
         return self
 
     async def __aexit__(self, exc, value, traceback):
         await self.pwn()
+
+        if not (self.killed.done() or self.killed.cancelled()):
+            self.killed.cancel()
 
 
 class SSHProcess(Process):
@@ -271,6 +265,9 @@ class SSHProcess(Process):
                                 linecount=linecount)
 
     def cleanup(self):
+        """
+        cleanup the ssh connection by removing the ssh known hosts file
+        """
         self.ssh_hash.remove()
 
     async def __aexit__(self, exc, value, traceback):
@@ -280,6 +277,9 @@ class SSHProcess(Process):
 
 class WorkerInteraction(asyncio.streams.FlowControlMixin,
                         asyncio.SubprocessProtocol):
+    """
+    Subprocess protocol specialization to allow output line buffering.
+    """
     def __init__(self, process, chop_lines, linebuf_max, line_cache=INF):
         super().__init__()
         self.process = process
@@ -300,7 +300,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
                                           reader=None,
                                           loop=asyncio.get_event_loop())
 
-    def pipe_connection_lost(self, fd, exc):
+    def pipe_connection_lost(self, fdnr, exc):
         # the given fd is no longer connected.
         pass
 
@@ -316,16 +316,19 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
         self.enqueue_data(StopIteration)
 
     async def write(self, data):
+        """
+        Wait until data was written to the process stdin.
+        """
         self.stdin.write(data)
         # TODO: really drain?
         await self.stdin.drain()
 
-    def pipe_data_received(self, fd, data):
+    def pipe_data_received(self, fdnr, data):
         if len(self.buf) + len(data) > self.linebuf_max:
             raise subprocess.SubprocessError(
                 "too much data")
 
-        if fd == 1:
+        if fdnr == 1:
             # add data to buffer
             self.buf.extend(data)
 
@@ -338,19 +341,22 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
                 lines = self.buf[:npos].split(b"\n")
 
                 for line in lines:
-                    self.enqueue_data((fd, bytes(line)))
+                    self.enqueue_data((fdnr, bytes(line)))
 
                 del self.buf[:(npos+1)]
 
             # no line chopping
             else:
-                self.enqueue_data((fd, bytes(self.buf)))
+                self.enqueue_data((fdnr, bytes(self.buf)))
                 del self.buf[:]
         else:
             # non-stdout data:
-            self.enqueue_data((fd, data))
+            self.enqueue_data((fdnr, data))
 
     def enqueue_data(self, data):
+        """
+        Add data so it can be sent to the process.
+        """
         try:
             self.queue.put_nowait(data)
         except asyncio.QueueFull as exc:
@@ -432,7 +438,8 @@ class ProcessIterator:
 
         # we sent enough data
         if self.lines_emitted >= self.linecount:
-            await self.stop_iter(enough=True)
+            # stop the iteration as there were enough lines
+            await self.stop_iter()
 
         # now, either the process exits,
         # there's an exception (process killed)
@@ -464,28 +471,26 @@ class ProcessIterator:
                 if not self.process.killed.done():
                     self.process.killed.set_result(entry)
 
-                    # raise the stop iteration
-                    await self.stop_iter(enough=False)
+                    # raise the stop iteration, because process exited
+                    await self.stop_iter()
 
-            fd, data = entry
+            fdnr, data = entry
 
             # only count stdout lines
-            if fd == 1:
+            if fdnr == 1:
                 self.lines_emitted += 1
 
-            return fd, data
+            return fdnr, data
 
         raise Exception("internal fail: no future was done!")
 
-    async def stop_iter(self, enough=False):
+    async def stop_iter(self):
         """
         Raise StopAsyncIteration or another exception.
         Check if the number of read lines is expected.
 
         This is called either when the process exited,
         or when enough lines were read.
-
-        enough: True=reason was enough lines, False=reason was proc exit.
         """
 
         # cancel running timers as we're terminating anyway
@@ -517,11 +522,14 @@ class ProcessIterator:
         raise StopAsyncIteration()
 
 
-async def test_coro(loop, output_timeout, timeout):
+async def test_coro(output_timeout, timeout):
+    """
+    Run an async process with Python to test its functionality.
+    """
     import tempfile
 
-    f = tempfile.NamedTemporaryFile()
-    f.write(b"\n".join([
+    prog = tempfile.NamedTemporaryFile()
+    prog.write(b"\n".join([
         b'import signal',
         b'import sys, time',
         b'signal.signal(signal.SIGTERM, lambda a, b: print("haha term"))',
@@ -530,30 +538,30 @@ async def test_coro(loop, output_timeout, timeout):
         b'    print(i)',
         b'    time.sleep(0.5 + i * 0.1)',
     ]))
-    f.flush()
+    prog.flush()
 
-    async with Process([sys.executable, '-u', f.name],
+    async with Process([sys.executable, '-u', prog.name],
                        chop_lines=True) as proc:
 
         try:
             print("proc: %s" % proc.args)
 
-            async for fd, line in proc.communicate(
+            async for fdn, line in proc.communicate(
                 b"10\n", output_timeout=output_timeout, timeout=timeout,
                 linecount=4):
 
-                print("1st: %d %s" % (fd, line))
+                print("1st: %d %s" % (fdn, line))
 
-            async for fd, line in proc.communicate(
+            async for fdn, line in proc.communicate(
                 output_timeout=output_timeout, timeout=timeout,
                 linecount=2):
 
-                print("2nd: %d %s" % (fd, line))
+                print("2nd: %d %s" % (fdn, line))
 
-            async for fd, line in proc.communicate(output_timeout=1,
-                                                   timeout=2):
+            async for fdn, line in proc.communicate(output_timeout=1,
+                                                    timeout=2):
 
-                print("last: %d %s" % (fd, line))
+                print("last: %d %s" % (fdn, line))
 
 
         except ProcTimeoutError as exc:
@@ -564,11 +572,14 @@ async def test_coro(loop, output_timeout, timeout):
 
 
 def test():
+    """
+    Test the async Process creation
+    """
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
 
     try:
-        task = loop.create_task(test_coro(loop, output_timeout=2, timeout=5))
+        task = loop.create_task(test_coro(output_timeout=2, timeout=5))
         loop.run_until_complete(task)
     except KeyboardInterrupt:
         print("\nexiting...")
@@ -582,5 +593,4 @@ def test():
     loop.close()
 
 if __name__ == "__main__":
-    import argparse
     test()

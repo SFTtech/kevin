@@ -5,11 +5,10 @@ Program entry point
 import argparse
 import asyncio
 import logging
-import signal
 import sys
 
 from .config import CFG
-from .httpd import HTTPD
+from .httpd import run_httpd
 from .jobqueue import Queue
 from .util import log_setup
 
@@ -61,7 +60,7 @@ def main():
     queue = Queue(max_running=CFG.max_jobs_running)
 
     # start thread for receiving webhooks
-    httpd = HTTPD(CFG.urlhandlers, queue)
+    run_httpd(CFG.urlhandlers, queue)
 
     job_task = loop.create_task(queue.process_jobs())
 
@@ -76,7 +75,7 @@ def main():
         if not job_task.done():
             # cancel all running jobs
             cancel_jobs_task = loop.create_task(queue.cancel())
-            cancels = loop.run_until_complete(cancel_jobs_task)
+            loop.run_until_complete(cancel_jobs_task)
 
             # cancel the job processing
             job_task.cancel()
