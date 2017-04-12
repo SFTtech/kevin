@@ -6,8 +6,8 @@ import argparse
 import traceback
 
 from .build import build_job
-from .util import FatalBuildError, stdout
-from . import msg
+from .util import FatalBuildError
+from .msg import job_state, stdout
 
 
 def main():
@@ -31,18 +31,10 @@ def main():
         build_job(args)
 
     except FatalBuildError as exc:
-        msg.msg(
-            cmd="job-state",
-            state="error",
-            text=str(exc)
-        )
+        job_state("error", str(exc))
         stdout("\x1b[31;1mFATAL\x1b[m %s\n" % str(exc))
     except BaseException as exc:
-        msg.msg(
-            cmd="job-state",
-            state="error",
-            text="Internal error in Chantal: %r" % exc
-        )
+        job_state("error", "Internal error in Chantal: %r" % exc)
         stdout("\x1b[31;1;5minternal error\x1b[m\n")
         traceback.print_exc()
     else:

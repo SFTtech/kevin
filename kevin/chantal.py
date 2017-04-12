@@ -143,6 +143,7 @@ class Chantal(AsyncWith):
         return self
 
     async def __aexit__(self, exc, value, traceback):
+        del exc, traceback  # unused
         try:
             await self.cleanup()
         except Exception as new_exc:

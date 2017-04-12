@@ -212,7 +212,7 @@ class Build(Watchable, Watcher):
 
         if not self.actions_notified:
             if self.completed is None:
-                self.set_state("pending", "enqueued")
+                self.set_state("waiting", "enqueued")
 
             # notify all watchers (e.g. jobs) that the build now is enqueued,
             # and they should run.

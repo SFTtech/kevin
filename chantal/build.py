@@ -9,19 +9,14 @@ import shlex
 from time import time
 
 from .controlfile import parse_control_file, ParseError
-from .msg import msg, raw_msg
-from .util import FatalBuildError, run_command, stdout
-
-
-def update_step_status(step, state, text):
-    """
-    updates the status for the given step.
-    does not send the update if the step is hidden.
-    """
-    if step.hidden:
-        return
-
-    msg(cmd="step-state", step=step.name, state=state, text=text)
+from .msg import (
+    job_state, step_state, stdout,
+    output_item as msg_output_item,
+    output_dir as msg_output_dir,
+    output_file as msg_output_file,
+    raw_msg
+)
+from .util import FatalBuildError, run_command
 
 
 def build_job(args):
@@ -34,7 +29,7 @@ def build_job(args):
         "GCC_COLORS": "yes"
     })
 
-    msg(cmd="job-state", state="pending", text="cloning repo")
+    job_state("running", "cloning repo")
 
     shallow = ("--depth %d " % args.shallow) if args.shallow > 0 else ""
 
@@ -55,29 +50,25 @@ def build_job(args):
                                              exc.args[1]))
 
     for step in steps:
-        update_step_status(step, "pending", "waiting")
+        step_state(step, "waiting", "waiting")
 
     errors = []
     success = set()
     for step in steps:
         if not errors:
-            msg(
-                cmd="job-state",
-                state="pending",
-                text="running (" + step.name + ")"
-            )
+            job_state("running", "running (" + step.name + ")")
 
         depend_issues = set(step.depends) - success
 
         if depend_issues:
             text = "depends failed: " + ", ".join(depend_issues)
-            update_step_status(step, "failure", text)
+            step_state(step, "error", text)
             stdout("\n\x1b[36;1m[%s]\x1b[m\n\x1b[31;1m%s\x1b[m\n" %
                    (step.name, text))
             continue
 
         if step.commands or step.outputs:
-            update_step_status(step, "pending", "running")
+            step_state(step, "running", "running")
         timer = time()
         stdout("\n\x1b[36;1m[%s]\x1b[m\n" % step.name)
 
@@ -96,24 +87,23 @@ def build_job(args):
 
         except RuntimeError as exc:
             # failure in step.
-            update_step_status(step, "failure", str(exc.args[0]))
+            step_state(step, "failure", str(exc.args[0]))
 
             if not step.hidden:
                 errors.append(step.name)
-                msg(
-                    cmd="job-state",
-                    state="failure",
-                    text="steps failed: " + ", ".join(sorted(errors))
+                job_state(
+                    "failure",
+                    "steps failed: " + ", ".join(sorted(errors))
                 )
         else:
-            update_step_status(
+            step_state(
                 step, "success",
                 "completed in %.2f seconds" % (time() - timer)
             )
             success.add(step.name)
 
     if not errors:
-        msg(cmd="job-state", state="success", text="completed")
+        job_state("success", "completed")
 
 
 def output_item(name):
@@ -128,7 +118,7 @@ def output_item(name):
     else:
         raise RuntimeError("non-existing output: " + str(path))
 
-    msg(cmd="output-item", name=path.name)
+    msg_output_item(path.name)
 
 
 def output_file(path, targetpath):
@@ -138,7 +128,7 @@ def output_file(path, targetpath):
     """
     size = path.stat().st_size
     with path.open('rb') as fileobj:
-        msg(cmd="output-file", path=targetpath, size=size)
+        msg_output_file(targetpath, size)
         remaining = size
         while remaining:
             chunksize = min(remaining, 8388608)  # read max 8MiB at once
@@ -155,7 +145,7 @@ def output_dir(path, targetpath):
     """
     Recursively outputs a directory.
     """
-    msg(cmd="output-dir", path=targetpath)
+    msg_output_dir(targetpath)
     for entry in path.iterdir():
         entrytargetpath = targetpath + '/' + entry.name
         if entry.is_file():

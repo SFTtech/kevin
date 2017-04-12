@@ -4,8 +4,12 @@ import json
 import time as clock
 from abc import ABCMeta
 
-ALLOWED_BUILD_STATES = {"pending", "success", "failure", "error"}
-FINISH_STATES = {"success", "failure", "error"}
+ALLOWED_BUILD_STATES = {
+    "waiting", "running",
+    "success", "failure", "error", "skipped"
+}
+
+FINISH_STATES = {"success", "failure", "error", "skipped"}
 SUCCESS_STATES = {"success"}
 ERROR_STATES = {"error"}
 

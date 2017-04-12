@@ -316,13 +316,13 @@ class Job(Watcher, Watchable):
                 raise Exception("tried to run a completed job!")
 
             # falk contact
-            self.set_state("pending", "requesting machine")
+            self.set_state("waiting", "requesting machine")
 
             machine = await asyncio.wait_for(self.get_falk_vm(self.vm_name),
                                              timeout=10)
 
             # machine was acquired, now boot it.
-            self.set_state("pending", "booting machine")
+            self.set_state("waiting", "booting machine")
 
             async with Chantal(machine) as chantal:
 

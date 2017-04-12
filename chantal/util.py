@@ -5,14 +5,7 @@ Utility routines.
 import codecs
 import os
 
-from .msg import msg
-
-
-def stdout(text):
-    """
-    Sends a stdout message.
-    """
-    msg(cmd='stdout', text=text)
+from .msg import stdout
 
 
 def run_command(cmd, env):

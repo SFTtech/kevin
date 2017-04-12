@@ -261,7 +261,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
                 elif update.is_finished():
                     # if finished but not errored or succeeded,
                     # this must be a failure.
-                    # TODO: is htis a good way to implement this?
+                    # TODO: is this a good way to implement this?
                     #       certainly caused me a WTF moment...
                     self.write(
                         ("\x1b[31mfailed:\x1b[m %s\n" %

@@ -25,6 +25,17 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
+# translation lookup-table for kevin states -> github states
+STATE_TRANSLATION = {
+    "waiting": "pending",
+    "running": "pending",
+    "success": "success",
+    "failure": "failure",
+    "error": "error",
+    "skipped": "failure"
+}
+
+
 class GitHubStatusURL(GeneratedUpdate):
     """ transmit the github status url to be set """
 
@@ -482,7 +493,7 @@ class GitHubBuildStatusUpdater(Watcher):
 
         data = json.dumps({
             "context": context,
-            "state": state,
+            "state": STATE_TRANSLATION[state],
             "description": description,
             "target_url": target_url
         })
