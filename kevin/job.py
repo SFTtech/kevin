@@ -335,30 +335,33 @@ class Job(Watcher, Watchable):
                 # create control message parser sink
                 control_handler = self.control_handler()
 
+                error_messages = bytearray()
                 try:
                     # run chantal process in the machine
                     async with chantal.run(self) as run:
 
                         # and fetch all the output
                         async for stream_id, data in run.output():
-                            # stdout message:
                             if stream_id == 1:
-                                self.send_update(
-                                    StdOut(self.project.name,
-                                           self.build.commit_hash,
-                                           self.name,
-                                           data.decode("utf-8",
-                                                       errors="replace")))
-
-                            # control message stream chunk:
-                            elif stream_id == 2:
+                                # control message stream chunk
                                 control_handler.send(data)
+                            else:
+                                error_messages += data
 
                         # wait for chantal termination
                         await run.wait()
 
                 except ProcTimeoutError as exc:
                     raise JobTimeoutError(exc.timeout, exc.was_global)
+
+                except ProcessFailed as exc:
+                    error_messages += b"process returned %d" % exc.returncode
+
+                if error_messages:
+                    error_messages = error_messages.decode(errors='replace')
+                    logging.error("[job] \x1b[31;1mChantal failed\x1b[m\n%s", error_messages)
+                    self.error("Chantal failed; stdout: %s" %
+                               error_messages.replace("\n", ", "))
 
         except asyncio.CancelledError:
             logging.info("\x1b[31;1mJob aborted:\x1b[m %s", self)
@@ -480,7 +483,7 @@ class Job(Watcher, Watchable):
 
         finally:
             # error the leftover steps
-            for step in self.pending_steps:
+            for step in list(self.pending_steps):
                 self.set_step_state(step, 'error',
                                     'step result was not reported')
 
@@ -573,6 +576,14 @@ class Job(Watcher, Watchable):
         elif cmd == 'step-state':
             self.current_step = msg["step"]
             self.set_step_state(msg["step"], msg["state"], msg["text"])
+
+        elif cmd == 'stdout':
+            self.send_update(StdOut(
+                self.project.name,
+                self.build.commit_hash,
+                self.name,
+                msg["text"]
+            ))
 
         # finalize file transfer
         elif cmd == 'output-item':

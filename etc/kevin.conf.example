@@ -11,7 +11,8 @@ output_folder = /your/writable/static/web/folder/served/below
 
 # the internet interaction:
 [web]
-static_url = http://your.kevin.host/output_folder/statically
+static_url = http://your.kevin.host/output_folder/statically/
+mandy_url = http://your.kevin.host/mandy/
 dyn_port = 7777
 dyn_host = your.kevin.host
 

@@ -10,7 +10,7 @@ from time import time
 
 from .controlfile import parse_control_file, ParseError
 from .msg import msg, raw_msg
-from .util import run_command, FatalBuildError
+from .util import FatalBuildError, run_command, stdout
 
 
 def update_step_status(step, state, text):
@@ -28,15 +28,21 @@ def build_job(args):
     """
     Main entry point for building a job.
     """
+    base_env = os.environ.copy()
+    base_env.update({
+        "TERM": "xterm",
+        "GCC_COLORS": "yes"
+    })
+
     msg(cmd="job-state", state="pending", text="cloning repo")
 
     shallow = ("--depth %d " % args.shallow) if args.shallow > 0 else ""
 
     run_command("git clone " + shallow +
                 shlex.quote(args.clone_url) +
-                " " + args.folder)
+                " " + args.folder, base_env)
     os.chdir(args.folder)
-    run_command("git checkout -q " + args.commit_sha)
+    run_command("git checkout -q " + args.commit_sha, base_env)
 
     try:
         with open(args.desc_file) as controlfile:
@@ -54,8 +60,6 @@ def build_job(args):
     errors = []
     success = set()
     for step in steps:
-        print("\n\x1b[36;1m[%s]\x1b[m" % step.name)
-
         if not errors:
             msg(
                 cmd="job-state",
@@ -68,17 +72,23 @@ def build_job(args):
         if depend_issues:
             text = "depends failed: " + ", ".join(depend_issues)
             update_step_status(step, "failure", text)
-            print("skipping because " + text)
+            stdout("\n\x1b[36;1m[%s]\x1b[m\n\x1b[31;1m%s\x1b[m\n" %
+                   (step.name, text))
             continue
 
         if step.commands or step.outputs:
             update_step_status(step, "pending", "running")
         timer = time()
+        stdout("\n\x1b[36;1m[%s]\x1b[m\n" % step.name)
+
 
         try:
+            step_env = base_env.copy()
+            step_env.update(step.env)
+
             # execute commands
             for command in step.commands:
-                run_command(command, step.env)
+                run_command(command, step_env)
 
             # then, transfer output files
             for output in step.outputs:

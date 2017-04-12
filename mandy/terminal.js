@@ -233,37 +233,38 @@ class Terminal {
         }
 
         for (let code of sgr.split(';')) {
-            if (code === "0")  {
+            code = parseInt(code, 10);
+            if (code === 0)  {
                 this.bold = false;
                 this.italic = false;
                 this.underline = false;
                 this.bgcol = null;
                 this.fgcol = null;
             }
-            else if (code === "1")  { this.bold = true; }
-            else if (code === "21") { this.bold = false; }
-            else if (code === "3")  { this.italic = true; }
-            else if (code === "23") { this.italic = false; }
-            else if (code === "4")  { this.underline = true; }
-            else if (code === "24") { this.underline = false; }
-            else if (code === "30") { this.fgcol = "col0"; }
-            else if (code === "31") { this.fgcol = "col1"; }
-            else if (code === "32") { this.fgcol = "col2"; }
-            else if (code === "33") { this.fgcol = "col3"; }
-            else if (code === "34") { this.fgcol = "col4"; }
-            else if (code === "35") { this.fgcol = "col5"; }
-            else if (code === "36") { this.fgcol = "col6"; }
-            else if (code === "37") { this.fgcol = "col7"; }
-            else if (code === "39") { this.fgcol = null; }
-            else if (code === "40") { this.bgcol = "bgcol0"; }
-            else if (code === "41") { this.bgcol = "bgcol1"; }
-            else if (code === "42") { this.bgcol = "bgcol2"; }
-            else if (code === "43") { this.bgcol = "bgcol3"; }
-            else if (code === "44") { this.bgcol = "bgcol4"; }
-            else if (code === "45") { this.bgcol = "bgcol5"; }
-            else if (code === "46") { this.bgcol = "bgcol6"; }
-            else if (code === "47") { this.bgcol = "bgcol7"; }
-            else if (code === "49") { this.bgcol = null; }
+            else if (code === 1)  { this.bold = true; }
+            else if (code === 21) { this.bold = false; }
+            else if (code === 3)  { this.italic = true; }
+            else if (code === 23) { this.italic = false; }
+            else if (code === 4)  { this.underline = true; }
+            else if (code === 24) { this.underline = false; }
+            else if (code === 30) { this.fgcol = "col0"; }
+            else if (code === 31) { this.fgcol = "col1"; }
+            else if (code === 32) { this.fgcol = "col2"; }
+            else if (code === 33) { this.fgcol = "col3"; }
+            else if (code === 34) { this.fgcol = "col4"; }
+            else if (code === 35) { this.fgcol = "col5"; }
+            else if (code === 36) { this.fgcol = "col6"; }
+            else if (code === 37) { this.fgcol = "col7"; }
+            else if (code === 39) { this.fgcol = null; }
+            else if (code === 40) { this.bgcol = "bgcol0"; }
+            else if (code === 41) { this.bgcol = "bgcol1"; }
+            else if (code === 42) { this.bgcol = "bgcol2"; }
+            else if (code === 43) { this.bgcol = "bgcol3"; }
+            else if (code === 44) { this.bgcol = "bgcol4"; }
+            else if (code === 45) { this.bgcol = "bgcol5"; }
+            else if (code === 46) { this.bgcol = "bgcol6"; }
+            else if (code === 47) { this.bgcol = "bgcol7"; }
+            else if (code === 49) { this.bgcol = null; }
             else {
                 // unknown SGR code
                 console.log("unimplemented SGR code " + code);

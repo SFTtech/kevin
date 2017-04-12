@@ -448,7 +448,7 @@ class GitHubBuildStatusUpdater(Watcher):
         if isinstance(update, BuildState):
             state, description = update.state, update.text
             context = CFG.ci_name
-            target_url = CFG.web_url + "/" + str(self.build.relpath)
+            target_url = None
 
         elif isinstance(update, JobState):
             state, description = update.state, update.text

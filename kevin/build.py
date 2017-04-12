@@ -124,10 +124,9 @@ class Build(Watchable, Watcher):
         # storage path for the job output
         self.path = CFG.output_folder / self.relpath
 
-        # info url of this build, on the dyn server for now.
-        # later, reference to mandy at web_url.
-        self.target_url = "%smandy/?wsurl=ws://%s:%d/ws&project=%s&hash=%s" % (
-            CFG.web_url,
+        # info url of this build
+        self.target_url = "%s?wsurl=ws://%s:%d/ws&project=%s&hash=%s" % (
+            CFG.mandy_url,
             CFG.dyn_host,
             CFG.dyn_port,
             self.project.name,

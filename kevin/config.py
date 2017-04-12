@@ -20,7 +20,8 @@ class Config:
         self.max_jobs_queued = None
         self.max_jobs_running = None
 
-        self.web_url = None
+        self.static_url = None
+        self.mandy_url = None
         self.dyn_port = None
         self.dyn_address = ipaddress.ip_address("0.0.0.0")
         self.dyn_host = None
@@ -108,7 +109,8 @@ class Config:
 
             # web configuration
             web = raw["web"]
-            self.web_url = web["static_url"]
+            self.static_url = web["static_url"]
+            self.mandy_url = web["mandy_url"]
             self.dyn_port = int(web["dyn_port"])
             self.dyn_host = web["dyn_host"]
 
@@ -138,8 +140,9 @@ class Config:
         """
         Verifies the validity of the loaded attributes
         """
-        if not self.web_url.endswith('/'):
-            raise ValueError("web URL must end in '/': '%s'" % self.web_url)
+        if not self.static_url.endswith('/'):
+            raise ValueError("static URL must end in '/': '%s'" %
+                             self.static_url)
         if not self.output_folder.is_dir():
             raise NotADirectoryError(str(self.output_folder))
         if not os.access(str(self.output_folder), os.W_OK):

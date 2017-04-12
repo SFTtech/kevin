@@ -27,7 +27,7 @@ class SideBar {
                 "elem": document.createElement("a"),
                 "textNode": document.createTextNode(text)
             };
-            job.elem.appendChild(document.createTextNode(name));
+            job.elem.appendChild(document.createElement("b")).appendChild(document.createTextNode(name));
             job.elem.appendChild(document.createElement("br"));
             job.elem.appendChild(job.textNode);
             if (name !== this.jobName) {
@@ -77,7 +77,7 @@ class SideBar {
                 "elem": document.createElement("a"),
                 "textNode": document.createTextNode(text)
             };
-            step.elem.appendChild(document.createTextNode(name));
+            step.elem.appendChild(document.createElement("b")).appendChild(document.createTextNode(name));
             step.elem.appendChild(document.createElement("br"));
             step.elem.appendChild(step.textNode);
             step.elem.href = "#" + name;

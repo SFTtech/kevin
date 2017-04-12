@@ -2,74 +2,55 @@
 Utility routines.
 """
 
-import fcntl
+import codecs
 import os
-import subprocess
-import sys
+
+from .msg import msg
 
 
-def run_command(cmd, env=None):
+def stdout(text):
     """
-    Prints the command, then runs it, then throws RuntimeError on retval != 0.
-
-    If a dict is given for env, those additional environment variables are
-    passed.
+    Sends a stdout message.
     """
-
-    print("\x1b[32;1m$\x1b[m " + cmd)
-
-    cmdenv = os.environ.copy()
-    if env is not None:
-        cmdenv.update(env)
-
-    retval = subprocess.call(cmd, env=cmdenv, shell=True)
-
-    if retval != 0:
-        print("\x1b[31;1mcommand returned %d\x1b[m" % retval)
-        raise RuntimeError(
-            "command failed: %s [%d]" % (cmd, retval))
+    msg(cmd='stdout', text=text)
 
 
-def wrap_in_pty():
+def run_command(cmd, env):
     """
-    Wraps the subsequent flow of execution inside a PTY.
-    Both stdout and stderr are redirected to the former stdout,
-    and a file object that allows writing to the old stderr is returned.
+    Prints the command name, then runs it.
+    Throws RuntimeError on retval != 0.
 
-    Note that os.getpid() will differ after calling this method.
-    Don't call this method from multi-threaded applications.
+    Env is the environment variables that are passed.
     """
-    # control connection: relay to stderr
-    old_stderr = os.dup(sys.stderr.fileno())
+    stdout("\x1b[32;1m$\x1b[m %s\n" % cmd)
+
     child_pid, tty_fd = os.forkpty()
-
-    if child_pid != 0:
-        # we're not the child.
-        os.close(old_stderr)
-
     if child_pid < 0:
         raise OSError("could not fork")
 
-    if child_pid > 0:
-        # we're the parent, tasked with relaying the tty output to old stdout.
-        stdout = os.fdopen(1, 'wb')
-        while True:
-            try:
-                data = os.read(tty_fd, 8192)
-            except OSError:
-                # slave has been closed
-                os.close(tty_fd)
-                _, status = os.waitpid(child_pid, 0)
-                exit(status % 128 + status // 256)
+    if child_pid == 0:
+        # we're the child; launch the subprocess here.
+        os.execve("/bin/sh", ["sh", "-c", cmd], env)
+        # we only reach this point if the execve has failed
+        print("\x1b[31;1mcould not execve\x1b[m")
+        raise SystemExit(1)
 
-            # relay data
-            stdout.write(data)
-            stdout.flush()
-    else:
-        # we're the child, the code flow will continue here.
-        # we don't want any subprocesses to access the control file.
-        fcntl.fcntl(old_stderr, fcntl.F_SETFD, fcntl.FD_CLOEXEC)
-        return os.fdopen(old_stderr, 'wb')
+    # we're the parent; process the child's stdout and wait for it to
+    # terminate.
+    output_decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+    while True:
+        try:
+            stdout(output_decoder.decode(os.read(tty_fd, 65536)))
+        except OSError:
+            # slave has been closed
+            os.close(tty_fd)
+            _, status = os.waitpid(child_pid, 0)
+            retval = status % 128 + status // 256
+            break
+
+    if retval != 0:
+        stdout("\x1b[31;1mcommand returned %d\x1b[m\n" % retval)
+        raise RuntimeError("command failed: %s [%d]" % (cmd, retval))
 
 
 class FatalBuildError(Exception):

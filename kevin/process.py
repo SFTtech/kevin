@@ -503,9 +503,8 @@ class ProcessIterator:
         retcode = self.process.returncode()
 
         if self.process.must_succeed:
-            if retcode is not None:
-                if retcode != 0:
-                    raise ProcessFailed(retcode, self.process.args)
+            if retcode is not None and retcode != 0:
+                raise ProcessFailed(retcode, self.process.args)
 
         # check if we received enough lines
         if self.linecount < INF and self.lines_emitted < self.linecount:
