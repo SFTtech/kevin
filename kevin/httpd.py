@@ -12,7 +12,10 @@ from tornado.queues import Queue
 from .build import get_build
 from .config import CFG
 from .service import Trigger
-from .update import JobUpdate, JobState, StdOut
+from .update import (
+    JobCreated, JobUpdate, JobState,
+    StdOut, BuildState, BuildSource
+)
 from .watcher import Watcher
 
 
@@ -160,6 +163,9 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             return
 
         if isinstance(update, JobUpdate):
+            if isinstance(update, JobCreated):
+                # those are not interesting for the webinterface.
+                return
             if isinstance(update, JobState):
                 filter_ = self.state_filter
             else:
@@ -167,6 +173,10 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
             if filter_(update.job_name):
                 self.write_message(update.json())
+
+        elif isinstance(update, (BuildState, BuildSource)):
+            # these build-specific updates are never filtered.
+            self.write_message(update.json())
 
     def check_origin(self, origin):
         # Allow connections from anywhere.

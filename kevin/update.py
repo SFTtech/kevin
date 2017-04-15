@@ -52,7 +52,10 @@ class Update(metaclass=UpdateMeta):
         return json.dumps(result)
 
     def __repr__(self):
-        return self.json()
+        try:
+            return self.json()
+        except json.JSONDecodeError:
+            return f"<{type(self).__name__}>"
 
     @staticmethod
     def construct(jsonmsg):
@@ -96,13 +99,13 @@ class JobUpdate(Update):
         pass
 
 
-class JobCreated(GeneratedUpdate, JobUpdate):
+class JobCreated(JobUpdate):
     """
     Update that notifies the creation of a job.
     """
-    def __init__(self, build_id, job_name):
-        self.build_id = build_id
+    def __init__(self, job_name, vm_name):
         self.job_name = job_name
+        self.vm_name = vm_name
 
 
 class BuildSource(Update):
@@ -240,18 +243,16 @@ class OutputItem(JobUpdate):
 
 class StdOut(JobUpdate):
     """ Process has produced output on the TTY """
-    def __init__(self, project, build_id, job_name, data):
+    def __init__(self, job_name, data):
         if not isinstance(data, str):
             raise TypeError("StdOut.data not str: %r" % (data,))
 
-        self.project = project
-        self.build_id = build_id
         self.job_name = job_name
         self.data = data
 
 
-class Enqueued(GeneratedUpdate):
-    """ The build was enqueued and jobs can be run. """
+class QueueActions(GeneratedUpdate):
+    """ Actions of a build can now be enqueued. """
 
     def __init__(self, build_id, queue, project):
         self.build_id = build_id

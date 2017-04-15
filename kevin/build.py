@@ -4,16 +4,16 @@ Build code
 A build is a repo state that was triggered to be run in multiple jobs.
 """
 
-import logging
 from pathlib import Path
 import shutil
 import time
 
 from .config import CFG
+from .job import Job
 from .project import Project
-from .update import (BuildState, BuildSource, Enqueued, JobState,
+from .update import (BuildState, BuildSource, QueueActions, JobState,
                      JobCreated, JobUpdate, ActionsAttached,
-                     JobEmergencyAbort)
+                     Update, GeneratedUpdate, JobEmergencyAbort)
 from .watcher import Watchable, Watcher
 
 
@@ -80,12 +80,6 @@ class Build(Watchable, Watcher):
         # Was the finish() function called?
         self.finished = False
 
-        # were the build actions attached?
-        self.actions_attached = False
-
-        # were the actions notified of the enqueuing?
-        self.actions_notified = False
-
         # The Queue where this build was put in
         self.queue = None
 
@@ -118,43 +112,45 @@ class Build(Watchable, Watcher):
             self.project.name,
             "jobs",
             self.commit_hash[:3],  # -> 4096 folders with 2**148 files max
-            self.commit_hash
+            self.commit_hash[3:]
         )
 
         # storage path for the job output
         self.path = CFG.output_folder / self.relpath
 
         # info url of this build
-        self.target_url = "%s?wsurl=ws://%s:%d/ws&project=%s&hash=%s" % (
+        mandy_url = "%s?wsurl=ws://%s:%d/ws&staticurl=%s&project=%s&hash=%s"
+        self.target_url = mandy_url % (
             CFG.mandy_url,
             CFG.dyn_host,
             CFG.dyn_port,
+            CFG.static_url,
             self.project.name,
             self.commit_hash
         )
 
         # try to reconstruct the build state from filesystem
+        # when reconstruction is possible, this also reconstructs jobs.
+        self.reconstruct()
+
+        # add jobs and other actions defined by the project
+        # only if the build is not finished already.
+        if not self.completed:
+            self.project.attach_actions(self)
+
+        # tell all watchers (e.g. jobs) that they were attached,
+        # and may now register themselves at this build.
+        self.send_update(ActionsAttached())
+
+    def reconstruct(self):
+        """
+        reconstruct the build state from the filesystem.
+        """
         self.load_from_fs()
 
         if not CFG.args.volatile:
             if not self.path.is_dir():
                 self.path.mkdir(parents=True)
-
-        # create and attach all actions defined in the project.
-        # this creates and registers the watchers.
-        # even if the build is finished: that way,
-        # they receive the updates again.
-        #
-        # the attachment should happen whenever the build
-        # state is recreated, even if the build was completed already.
-        if not self.actions_attached:
-            self.project.attach_actions(self)
-            self.actions_attached = True
-
-            # notify all watchers that all actions (which are watchers)
-            # are now attached.
-            # this e.g. triggers that jobs register at the build.
-            self.send_update(ActionsAttached())
 
     def load_from_fs(self):
         """
@@ -171,7 +167,12 @@ class Build(Watchable, Watcher):
         except FileNotFoundError:
             pass
 
-        if self.completed is None:
+        if self.completed is not None:
+            with self.path.joinpath("_updates").open() as updates_file:
+                for json_line in updates_file:
+                    self.send_update(Update.construct(json_line),
+                                     reconstruction=True)
+        else:
             # make sure that there are no remains
             # of previous aborted build.
             try:
@@ -189,8 +190,12 @@ class Build(Watchable, Watcher):
         """
         Store the build source settings, namely the repo url.
         """
+        # a primitive duplicate-source filter
+        for source in self.sources:
+            if source.repo_url == repo_url:
+                return
 
-        self.on_update(BuildSource(
+        self.send_update(BuildSource(
             clone_url=clone_url,   # Where to clone the repo from
             repo_url=repo_url,     # Website of the repo
             author=user,           # User that triggered the build
@@ -198,32 +203,36 @@ class Build(Watchable, Watcher):
             comment=comment,
         ))
 
-    def on_enqueue(self, queue):
+    def enqueue_actions(self, queue):
         """
-        Run when the build is added to the processing queue.
-
-        Let this build run all the actions it should.
-        Just trigger the enqueue action so the actions place
-        themselves in the requested queue.
+        The actions of this build must now add themselves to the
+        given queue.
         """
 
         # memorize the queue
         self.queue = queue
 
-        if not self.actions_notified:
-            if self.completed is None:
-                self.set_state("waiting", "enqueued")
+        # if loaded from fs, we know if the build was completed.
+        if self.completed is None:
+            # TODO send more fine-grained build progress states
+            self.set_state("waiting", "enqueued")
 
-            # notify all watchers (e.g. jobs) that the build now is enqueued,
-            # and they should run.
-            self.send_update(Enqueued(self.commit_hash, queue,
+        # notify all watchers (e.g. jobs) that they should run.
+        # jobs use this as the signal to reconstruct themselves,
+        # or, if they're "new" jobs, to enqueue their execution.
+        self.send_update(QueueActions(self.commit_hash, queue,
                                       self.project.name))
-            self.actions_notified = True
 
     def register_job(self, job):
         """
         Registers a job that is run for this build.
+
+        This is called from the Job when we send
+        the `ActionsAttached` update.
         """
+        if job.name in self.jobs:
+            raise ValueError(f"Job {job.name} already registered")
+
         # some job was notified by this build and now
         # says "hey i'm created now."
         self.jobs[job.name] = job
@@ -245,35 +254,87 @@ class Build(Watchable, Watcher):
         for update in self.updates:
             watcher.on_update(update)
 
-    def on_send_update(self, update):
-        """ When an update is to be sent to all watchers """
+    def on_send_update(self, update, reconstruction=False):
+        """ Called before this update is sent to all watchers. """
 
         if update == StopIteration:
             return
 
-        self.updates.append(update)
+        # record update for replay to new watcher
+        record = True
+
+        # if reconstructing, we don't need to save anything to disk
+        store_to_disk = not reconstruction
+
+        # don't serialize generated updates to disk
+        if isinstance(update, GeneratedUpdate):
+            store_to_disk = False
+
+        elif isinstance(update, BuildSource):
+            self.sources.add(update)
+            self.clone_url = update.clone_url
+
+        elif isinstance(update, JobCreated):
+            if update.job_name not in self.jobs:
+                # recreate all the jobs that were active when the build ran.
+                if reconstruction:
+                    # TODO: don't register the job here dirtily, instead:
+                    #       the action attaching should add an update that
+                    #       describes the action to be attached.
+                    #       then, action attaching can be replayed
+                    #       in a general way!
+                    job = Job(self, self.project,
+                              update.job_name, update.vm_name,
+                              reconstruct=True)
+                    self.register_job(job)
+
+        if record:
+            self.updates.append(update)
+
+        if not store_to_disk or CFG.args.volatile:
+            # don't write the update to the job storage
+            return
+
+        # whitelist for stored build updates
+        if not isinstance(update, (BuildSource, JobCreated)):
+            return
+
+        # append this update to the build updates file
+        # TODO perf: don't open _updates on each update!
+        with self.path.joinpath("_updates").open("a") as ufile:
+            ufile.write(update.json() + "\n")
 
     def on_update(self, update):
-        """ Received message from somewhere """
+        """
+        Received message from somewhere,
+        now relay it to watchers that may want to see it.
+        """
+
+        # shall we relay the message to the watchers of the build?
+        distribute = False
 
         if isinstance(update, JobCreated):
             if self.finished:
                 raise Exception("job created after build was finished!")
 
-        if isinstance(update, JobUpdate)\
-           and not isinstance(update, JobEmergencyAbort):
+        # all job updates are distributed.
+        if isinstance(update, JobUpdate):
+            distribute = True
 
-            # only send the update if it was not a emergency abort!
-            # this prevents that an exception in this call prevents
-            # reaching the finish stuff below.
+            if isinstance(update, JobEmergencyAbort):
+                # only send the update if it was not a emergency abort!
+                # this prevents that an exception in this call prevents
+                # reaching the finish stuff below.
+                distribute = False
+
+        # send the update e.g. to mandy
+        if distribute:
             self.send_update(update)
 
-        if isinstance(update, BuildSource):
-            # TODO: detect duplicate sources? conflicts?
-            self.sources.add(update)
-            self.clone_url = update.clone_url
-
-        elif isinstance(update, JobState):
+        # track job state updates:
+        if isinstance(update, JobState):
+            # TODO: if one step of a job failed,
+            # the build must wait until the remaining steps are run.
             if update.job_name not in self.jobs:
                 raise Exception("unknown state update for job '%s' "
                                 "in project '%s'" % (update.job_name,
@@ -302,7 +363,6 @@ class Build(Watchable, Watcher):
 
     def finish(self):
         """ no more jobs are pending  """
-
         if self.finished:
             # finish message already sent.
             return

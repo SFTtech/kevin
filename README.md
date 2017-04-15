@@ -77,7 +77,6 @@ You have to set up 3 things: **Kevin**, **Falk** and **Chantal**.
 
 ### TODO
 
-* `mandy` webinterface in [EmberJS](http://emberjs.com/)
 * `rolf` command line client
 * More actions: Email, IRC, ...
 * More hosting services:

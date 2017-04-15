@@ -16,7 +16,7 @@ from .falkvm import VMError
 from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
                       ProcessError)
 from .update import (Update, JobState, StepState,
-                     StdOut, OutputItem, Enqueued, JobCreated,
+                     StdOut, OutputItem, QueueActions, JobCreated,
                      GeneratedUpdate, ActionsAttached, JobEmergencyAbort)
 from .util import recvcoroutine
 from .watcher import Watcher, Watchable
@@ -61,7 +61,7 @@ class Job(Watcher, Watchable):
     TODO: when "restarting" the job, the reconstruction from fs must
           not happen. for that, a "reset" must be implemented.
     """
-    def __init__(self, build, project, name, vm_name):
+    def __init__(self, build, project, name, vm_name, reconstruct=False):
         super().__init__()
 
         # the project and build this job is invoked by
@@ -110,10 +110,17 @@ class Job(Watcher, Watchable):
         # storage folder for this job.
         self.path = build.path.joinpath(self.name)
 
-        # tell the our watchers that we enqueued ourselves
-        self.send_update(JobCreated(self.build.commit_hash, self.name))
+        if reconstruct:
+            self.reconstruct()
 
-        # try to reconstruct from the persistent storage.
+        else:
+            # tell the our watchers that this job is now created
+            self.send_update(JobCreated(self.name, self.vm_name))
+
+    def reconstruct(self):
+        """
+        try to reconstruct from the persistent storage.
+        """
         self.load_from_fs()
 
         # create the output directory structure
@@ -138,8 +145,8 @@ class Job(Watcher, Watchable):
         except FileNotFoundError:
             pass
 
+        # load update list from file
         if self.completed is not None:
-            # load update list from file
             with self.path.joinpath("_updates").open() as updates_file:
                 for json_line in updates_file:
                     self.send_update(Update.construct(json_line),
@@ -234,6 +241,9 @@ class Job(Watcher, Watchable):
 
         if isinstance(update, GeneratedUpdate):
             save = False
+        if isinstance(update, JobCreated):
+            # this is stored by the build.
+            fs_store = False
 
         if save:
             self.updates.append(update)
@@ -243,6 +253,7 @@ class Job(Watcher, Watchable):
             return
 
         # append this update to the build updates file
+        # TODO perf: don't open _updates on each update!
         with self.path.joinpath("_updates").open("a") as ufile:
             ufile.write(update.json() + "\n")
 
@@ -250,19 +261,26 @@ class Job(Watcher, Watchable):
         """
         When this job receives updates from any of its watched
         watchables, the update is processed here.
+
+        That means normally: the Build notifies this Job.
         """
 
         if isinstance(update, ActionsAttached):
+
             # tell the build that we're an assigned job.
             self.build.register_job(self)
 
             # we are already attached to receive updates from a build
             # now, we subscribe the build to us so it gets our updates.
-            # when we reconstructed the job from filesystem,
-            # this step feeds all the data into the build.
             self.watch(self.build)
 
-        elif isinstance(update, Enqueued):
+        elif isinstance(update, QueueActions):
+            # try to reconstruct job state from filesystem
+            # if this succeeds, we don't need to enqueue.
+            if not self.completed:
+                self.reconstruct()
+
+            # the job should now run.
             if self.completed is None:
                 # add the job to the processing queue
                 update.queue.add_job(self)
@@ -579,8 +597,6 @@ class Job(Watcher, Watchable):
 
         elif cmd == 'stdout':
             self.send_update(StdOut(
-                self.project.name,
-                self.build.commit_hash,
                 self.name,
                 msg["text"]
             ))

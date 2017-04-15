@@ -7,7 +7,6 @@ All github interaction originates from this module.
 import  json
 import hmac
 import logging
-import traceback
 from hashlib import sha1
 
 import requests
@@ -16,8 +15,8 @@ from . import Action
 from ..build import new_build
 from ..config import CFG
 from ..httpd import HookHandler, HookTrigger
-from ..update import (Update, BuildState, JobState,
-                      StepState, GeneratedUpdate, Enqueued)
+from ..update import (BuildState, JobState,
+                      StepState, GeneratedUpdate, QueueActions)
 from ..watcher import Watcher
 
 # silence the library log messages
@@ -112,8 +111,8 @@ class GitHubPullManager(Watcher):
                 # and store the new build id for that pull request
                 self.running_pull_builds[key] = (update.commit_hash, None)
 
-        elif isinstance(update, Enqueued):
-            # catch the queue of the build
+        elif isinstance(update, QueueActions):
+            # catch the queue of the build actions
             # only if we track that build, we store the queue
 
             # select the tracked build and store the learned queue
@@ -268,15 +267,13 @@ class GitHubHookHandler(HookHandler):
                 raise ValueError("unhandled hook event '%s'" % event)
 
         except (ValueError, KeyError) as exc:
-            logging.error("[github] bad request: %s", repr(exc))
-            traceback.print_exc()
+            logging.exception("[github] bad request")
 
             self.write(repr(exc).encode())
             self.set_status(400, "Bad request")
 
         except Exception as exc:
-            logging.error("[github] \x1b[31;1mexception in post hook\x1b[m")
-            traceback.print_exc()
+            logging.exception("[github] \x1b[31;1mexception in post hook\x1b[m")
 
             self.set_status(500, "Internal error")
         else:

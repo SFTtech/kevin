@@ -3,8 +3,8 @@ Project configuration file definition
 """
 
 from configparser import ConfigParser
+import logging
 import re
-import traceback
 
 from ..service import SERVICES
 from ..util import parse_size, parse_time
@@ -80,8 +80,7 @@ class Config:
                 self.services.append(module)
 
         except KeyError as exc:
-            traceback.print_exc()
-            print("\x1b[31mConfig file '%s' section [%s] "
-                  "is missing entry: %s\x1b[m" % (
-                      filename, current_section, exc))
+            logging.exception("\x1b[31mConfig file '%s' section [%s] "
+                              "is missing entry: %s\x1b[m",
+                              filename, current_section, exc)
             exit(1)

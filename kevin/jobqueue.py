@@ -51,7 +51,7 @@ class Queue:
         self.build_ids[build.commit_hash] = build
 
         # send signal to build so it can notify its jobs to add themselves!
-        build.on_enqueue(self)
+        build.enqueue_actions(self)
 
     def remove_build(self, build):
         """ Remove a finished build """
