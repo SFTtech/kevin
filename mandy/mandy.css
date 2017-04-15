@@ -1,3 +1,4 @@
+/* basic page layout */
 html, body {
     margin: 0;
     padding: 0;
@@ -9,23 +10,27 @@ html, body {
     height: 100%;
     overflow-x: hidden;
     width: 300px;
+    font-family: sans-serif;
 }
 
+#terminal {
+    position: absolute;
+    left: 300px;
+    padding: 3px;
+    width: calc(100% - 300px - 6px);
+    min-height: 100%;
+}
+
+/* style of sidebar elements */
 #sidebar a {
     display: block;
-    font-family: sans-serif;
     padding: 5px 2px 5px 2px;
     box-sizing: border-box;
-    background-color: lightgrey;
-    border-width: 2px 0px;
+    background-color: white;
     border-color: lightgray;
     border-style: solid;
-}
-
-#sidebar a div {
-    margin-top: 2px;
-    margin-bottom: -5px;
-    margin-right: -2px;
+    border-width: 2px 0px 0px 0px;
+    color: #202020;
 }
 
 #sidebar a:link, a:visited {
@@ -34,19 +39,51 @@ html, body {
 }
 
 #sidebar a:hover, a:active {
-    border-color: #808080;
 }
 
-#sidebar .active {
-    border-width: 3px 0px;
-    border-color: black !important;
+#sidebar .buildsources {
+    margin-left: 10px;
+    margin-top: 2px;
+    margin-bottom: -5px;
+    margin-right: -2px;
+}
+
+#sidebar .buildsource {
+    border-width: 2px 0px 0px 2px;
+    border-color: lightgray;
+}
+
+#sidebar .job {
+}
+
+#sidebar .job.inactive {
+    opacity: 0.65;
+}
+
+#sidebar .jobstates {
+    margin-left: 10px;
+    margin-top: 2px;
+    margin-bottom: -5px;
+    margin-right: -2px;
 }
 
 #sidebar .jobstate {
-    margin-left: 10px;
     border-width: 2px 0px 0px 2px;
 }
 
+#sidebar .outputitems {
+    margin-left: 10px;
+    margin-top: 2px;
+    margin-bottom: -5px;
+    margin-right: -2px;
+}
+
+#sidebar .outputitem {
+    background-color: lightblue;
+    border-width: 2px 0px 0px 2px;
+}
+
+/* background colors for sidebar stati */
 #sidebar .waiting {
     background-color: gray;
 }
@@ -69,12 +106,4 @@ html, body {
 
 #sidebar .error {
     background-color: red;
-}
-
-#terminal {
-    position: absolute;
-    left: 300px;
-    padding: 3px;
-    min-height: 100%;
-    width: calc(100% - 300px - 6px);
 }

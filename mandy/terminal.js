@@ -12,7 +12,6 @@ class Terminal {
         this.div = div;
         this.div.className = "terminal";
         this.anchors = {};
-        this.anchorList = [];
 
         this.unfinishedSequence = null;
 
