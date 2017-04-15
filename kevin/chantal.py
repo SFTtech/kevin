@@ -192,7 +192,8 @@ class Chantal(AsyncWith):
             ("python3", "-u", "-m", "chantal",
              job.build.clone_url,
              job.build.commit_hash,
-             job.build.project.cfg.job_desc_file),
+             job.build.project.cfg.job_desc_file,
+             job.name),
             timeout=job.build.project.cfg.job_timeout,
             silence_timeout=job.build.project.cfg.job_silence_timeout,
         )

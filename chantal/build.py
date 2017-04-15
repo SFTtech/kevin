@@ -41,7 +41,7 @@ def build_job(args):
 
     try:
         with open(args.desc_file) as controlfile:
-            steps = parse_control_file(controlfile.read())
+            steps = parse_control_file(controlfile.read(), args)
     except FileNotFoundError:
         raise FatalBuildError(
             "no kevin config file named '%s' was found" % (args.desc_file))
@@ -50,15 +50,23 @@ def build_job(args):
                                              exc.args[1]))
 
     for step in steps:
-        step_state(step, "waiting", "waiting")
+        if not step.skip:
+            step_state(step, "waiting", "waiting")
 
     errors = []
     success = set()
     for step in steps:
+        depend_issues = set(step.depends) - success
+
+        if step.skip:
+            # the step has been marked to be skipped in the control file.
+            # do not run it or produce any output.
+            if not depend_issues:
+                success.add(step.name)
+            continue
+
         if not errors:
             job_state("running", "running (" + step.name + ")")
-
-        depend_issues = set(step.depends) - success
 
         if depend_issues:
             text = "depends failed: " + ", ".join(depend_issues)

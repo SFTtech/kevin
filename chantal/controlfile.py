@@ -18,7 +18,7 @@ def get_indent(line):
     return line[:-len(line.lstrip())]
 
 
-def preprocess_lines(data):
+def preprocess_lines(data, args):
     """
     Preprocesses the raw text in data,
 
@@ -28,6 +28,8 @@ def preprocess_lines(data):
 
     Yields tuples of lineno, line, isindented
     """
+    condition_env = args.__dict__.copy()
+
     file_indent = None
     for lineno, line in enumerate(data.split('\n')):
         indent = get_indent(line)
@@ -42,6 +44,29 @@ def preprocess_lines(data):
                     "Illegal indent; expected %r" % file_indent
                 )
 
+        # check the condition at the end of the line
+        if line.endswith(" ?)"):
+            try:
+                line, condition = line[:-3].rsplit("(? if ", maxsplit=1)
+            except ValueError:
+                raise ParseError(
+                    lineno,
+                    "Expected '(? if ' to match ' ?)' at end of line"
+                ) from None
+
+            try:
+                condition_env["lineno"] = lineno
+                condition_result = eval(condition, condition_env)
+            except Exception as exc:
+                raise ParseError(
+                    lineno,
+                    "Could not eval() condition: %r" % exc
+                ) from None
+
+            if not condition_result:
+                # the line is disabled.
+                continue
+
         # remove comments at the end of the line
         line = line.partition('#')[0].strip()
         # skip empty lines
@@ -51,7 +76,7 @@ def preprocess_lines(data):
         yield lineno, line, bool(indent)
 
 
-def parse_control_file(data):
+def parse_control_file(data, args):
     """
     Parses control file contents, yields a list of steps.
     """
@@ -60,7 +85,7 @@ def parse_control_file(data):
 
     result = []
 
-    for lineno, line, isindented in preprocess_lines(data):
+    for lineno, line, isindented in preprocess_lines(data, args):
         if isindented:
             # step content
             try:
@@ -112,6 +137,7 @@ class Step:
 
         # the various attributes that may be set in header lines.
         self.hidden = False
+        self.skip = False
         self.outputs = []
         self.env = {}
 
@@ -147,7 +173,7 @@ class Step:
         key: what does this header do?
         val: definition of the specific header action
         """
-        if key in {"hidden"}:
+        if key in {"hidden", "skip"}:
             # boolean flags
             if val is not None:
                 raise ParseError(lineno, key + " is just a flag, nothing more.")
