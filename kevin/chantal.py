@@ -18,9 +18,10 @@ class Chantal(AsyncWith):
 
     # TODO: different connection methods (e.g. agent, non-ssh commands)
     """
-    def __init__(self, machine):
+    def __init__(self, machine, loop=None):
         self.machine = machine
-        self.ssh_worked = asyncio.Future()
+        self.loop = loop or asyncio.get_event_loop()
+        self.ssh_worked = self.loop.create_future()
 
     def can_connect(self):
         """ return if the vm ssh connection was successful once. """

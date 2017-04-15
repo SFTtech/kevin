@@ -12,7 +12,17 @@ from falk.vm import Container
 from .process import SSHProcess, ProcTimeoutError
 
 
-class VMError(Exception):
+class FalkError(Exception):
+    """
+    Error that occurs when Falk does something fishy,
+    for example provide nonsense, talk garbage or cook salmon.
+    """
+
+    def __init__(self, msg):
+        self.msg = msg
+
+
+class VMError(FalkError):
     """
     Raised when a request to a Container was not successful.
     """
@@ -42,12 +52,12 @@ class FalkVM(Container):
         msg = await self.falk.query(messages.Prepare(run_id=self.run_id,
                                                      manage=manage))
         if not isinstance(msg, messages.OK):
-            raise VMError("Failed to prepare: %s" % msg.msg)
+            raise VMError(f"Failed to prepare: {msg.msg}")
 
     async def launch(self):
         msg = await self.falk.query(messages.Launch(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
-            raise VMError("Failed to launch machine: %s" % msg.msg)
+            raise VMError(f"Failed to launch machine: {msg.msg}")
 
     async def status(self):
         return await self.falk.query(messages.Status(run_id=self.run_id))
@@ -60,12 +70,12 @@ class FalkVM(Container):
     async def terminate(self):
         msg = await self.falk.query(messages.Terminate(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
-            raise VMError("Failed to kill machine: %s" % msg.msg)
+            raise VMError(f"Failed to kill machine: {msg.msg}")
 
     async def cleanup(self):
         msg = await self.falk.query(messages.Cleanup(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
-            raise VMError("Failed to clean up: %s" % msg.msg)
+            raise VMError(f"Failed to clean up: {msg.msg}")
         return msg
 
     async def wait_for_ssh_port(self, timeout=60, retry_delay=0.2,
@@ -74,6 +84,10 @@ class FalkVM(Container):
         Loops until the SSH port is open.
         raises ProcTimeoutError on timeout.
         """
+
+        # TODO: provide the loop as optional constructor argument
+        loop = asyncio.get_event_loop()
+
         raw_acquired = False
         endtime = time.time() + timeout
         while True:
@@ -82,14 +96,12 @@ class FalkVM(Container):
             if not raw_acquired:
                 logging.debug("testing for ssh port...")
 
-                established = asyncio.Future()
+                established = loop.create_future()
 
                 def connection_made(reader, writer):
                     """ called when the connection was made """
                     del reader, writer  # unused
                     established.set_result(True)
-
-                loop = asyncio.get_event_loop()
 
                 try:
                     transp, _ = await loop.create_connection(
@@ -147,3 +159,9 @@ class FalkVM(Container):
                     self.ssh_user,
                     self.ssh_host,
                     self.ssh_port)], timeout)
+
+    async def wait_for_shutdown(self, timeout=60):
+        """
+        Request from falk so he tells us when the machine is dead.
+        """
+        raise NotImplementedError()

@@ -4,26 +4,24 @@ subprocess utility functions and classes.
 
 import asyncio
 import asyncio.streams
-import functools
 import subprocess
 import sys
 
 from .util import INF, SSHKnownHostFile, AsyncWith
 
 
-class ProcTimeoutError(subprocess.TimeoutExpired):
+class ProcessError(subprocess.SubprocessError):
     """
-    A subprocess can timeout because it took to long to finish or
-    no output was received for a given time period.
-    This exception is raised and stores whether it just took too long,
-    or did not respond in time to provide any new output.
+    Generic process error.
     """
-    def __init__(self, cmd, timeout, was_global=False):
-        super().__init__(cmd, timeout)
-        self.was_global = was_global
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return f"Process failed: {self.msg}"
 
 
-class LineReadError(subprocess.SubprocessError):
+class LineReadError(ProcessError):
     """
     We could not read the requested amount of lines!
     """
@@ -32,26 +30,51 @@ class LineReadError(subprocess.SubprocessError):
         self.cmd = cmd
 
 
-class ProcessFailed(subprocess.CalledProcessError):
+class ProcTimeoutError(ProcessError):
+    """
+    A subprocess can timeout because it took to long to finish or
+    no output was received for a given time period.
+    This exception is raised and stores whether it just took too long,
+    or did not respond in time to provide any new output.
+    """
+    def __init__(self, cmd, timeout, was_global=False):
+        super().__init__("Process timeout")
+        self.cmd = cmd
+        self.timeout = timeout
+        self.was_global = was_global
+
+    def __str__(self):
+        return ("Command '%s' timed out after %s seconds" %
+                (self.cmd, self.timeout))
+
+
+class ProcessFailed(ProcessError):
     """
     The executed process returned with a non-0 exit code
     """
-    def __init__(self, retcode, args):
-        super().__init__(retcode, args)
-
-
-class ProcessError(subprocess.SubprocessError):
-    """
-    The process did something unexpected.
-    """
-    def __init__(self, msg, cmd):
-        super().__init__(msg)
+    def __init__(self, returncode, cmd):
+        super().__init__("Process failed")
+        self.returncode = returncode
         self.cmd = cmd
+
+    def __str__(self):
+        if self.returncode and self.returncode < 0:
+            try:
+                return "Process '%s' died with %r." % (
+                    self.cmd, signal.Signals(-self.returncode))
+            except ValueError:
+                return "Process '%s' died with unknown signal %d." % (
+                    self.cmd, -self.returncode)
+        else:
+            return "Process '%s' returned non-zero exit status %d." % (
+                self.cmd, self.returncode)
 
 
 class Process(AsyncWith):
     """
     Contains a running process specified by command.
+
+    You really should use this in `async with Process(...) as proc:`.
 
     Main feature: interact/communicate with the process multiple times.
     You can repeatedly send data to stdin and fetch the replies.
@@ -71,7 +94,10 @@ class Process(AsyncWith):
         self.loop = loop or asyncio.get_event_loop()
 
         self.created = False
-        self.killed = asyncio.Future()
+
+        # future to track exit state.
+        # it is only set when the process timeouts or 
+        self.exited = self.loop.create_future()
 
         pipe = subprocess.PIPE if pipes else None
         self.capture_data = pipes
@@ -88,6 +114,8 @@ class Process(AsyncWith):
 
         self.transport = None
         self.protocol = None
+
+        self.exit_callbacks = list()
 
     async def create(self):
         """ Launch the process """
@@ -117,11 +145,10 @@ class Process(AsyncWith):
         """
 
         if not self.created:
-            raise Exception("process.create() not yet called")
+            raise Exception("can't communicate as process was not yet created")
 
-        if self.killed.done():
-            raise Exception("process was already killed "
-                            "and no output is waiting")
+        if self.exited.done():
+            raise Exception("process exited and no output is waiting")
 
         if not self.capture_data:
             raise Exception("pipes=False, but you wanted to communicate()")
@@ -139,6 +166,9 @@ class Process(AsyncWith):
 
     def returncode(self):
         """ get the exit code, or None if still running """
+        if not self.transport:
+            raise Exception("Process has never run!")
+
         return self.transport.get_returncode()
 
     async def wait(self):
@@ -161,6 +191,13 @@ class Process(AsyncWith):
         return the exit code.
         """
 
+        # TODO: if this poll is removed,
+        #       the process may be terminated
+        #       but the pid is no longer running!??
+        if self.transport and self.transport._proc:
+            self.transport._proc.poll()
+
+        # check if the process already exited
         ret = self.returncode()
 
         if ret is not None:
@@ -186,6 +223,31 @@ class Process(AsyncWith):
         """ send sigkill to the process """
         self.transport.kill()
 
+    def on_exit(self, callback):
+        """
+        call the callback when the process exited
+        callback() is called.
+        """
+        if not callable(callback):
+            raise ValueError(f"invalid callback: {callback}")
+
+        self.exit_callbacks.append(callback)
+
+    def _exited(self):
+        """
+        Called from the protocol when the process exited.
+        """
+        for callback in self.exit_callbacks:
+            callback()
+
+        if not self.exited.done():
+            # process exited regularly!
+            self.exited.set_result(StopIteration)
+        else:
+            raise ProcessError("process exit called after "
+                               "process already exited with: "
+                               f"{self.exited.result()}")
+
     async def __aenter__(self):
         await self.create()
         return self
@@ -193,8 +255,8 @@ class Process(AsyncWith):
     async def __aexit__(self, exc, value, traceback):
         await self.pwn()
 
-        if not (self.killed.done() or self.killed.cancelled()):
-            self.killed.cancel()
+        if not self.exited.done():
+            raise ProcessError("process still alive after exit")
 
 
 class SSHProcess(Process):
@@ -220,7 +282,7 @@ class SSHProcess(Process):
     def __init__(self, command, ssh_user, ssh_host, ssh_port, ssh_key=None,
                  timeout=INF, silence_timeout=INF, chop_lines=False,
                  must_succeed=False, pipes=True, options=None,
-                 linebuf_max=(8 * 1024 ** 2), line_cache=128):
+                 loop=None, linebuf_max=(8 * 1024 ** 2), line_cache=128):
 
         if not isinstance(command, (list, tuple)):
             raise Exception("invalid command: %r" % (command,))
@@ -239,7 +301,7 @@ class SSHProcess(Process):
             "--",
         ] + list(command)
 
-        super().__init__(ssh_cmd, chop_lines=chop_lines,
+        super().__init__(ssh_cmd, chop_lines=chop_lines, loop=loop,
                          linebuf_max=linebuf_max, line_cache=line_cache,
                          must_succeed=must_succeed, pipes=pipes)
 
@@ -302,7 +364,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
 
     def pipe_connection_lost(self, fdnr, exc):
         # the given fd is no longer connected.
-        pass
+        self.transport.get_pipe_transport(fdnr).close()
 
     def process_exited(self):
         # process exit happens after all the pipes were lost.
@@ -314,6 +376,8 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
 
         # mark the end-of-stream
         self.enqueue_data(StopIteration)
+        self.transport.close()
+        self.process._exited()
 
     async def write(self, data):
         """
@@ -325,8 +389,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
 
     def pipe_data_received(self, fdnr, data):
         if len(self.buf) + len(data) > self.linebuf_max:
-            raise subprocess.SubprocessError(
-                "too much data")
+            raise ProcessError("too much data")
 
         if fdnr == 1:
             # add data to buffer
@@ -360,8 +423,8 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
         try:
             self.queue.put_nowait(data)
         except asyncio.QueueFull as exc:
-            if not self.process.killed.done():
-                self.process.killed.set_exception(exc)
+            if not self.process.exited.done():
+                self.process.exited.set_exception(exc)
 
 
 class ProcessIterator:
@@ -396,7 +459,7 @@ class ProcessIterator:
             # set the global timer
             self.overall_timer = self.loop.call_later(
                 self.run_timeout,
-                functools.partial(self.timeout, was_global=True))
+                lambda: self.timeout(was_global=True))
 
     def timeout(self, was_global=False):
         """
@@ -404,89 +467,99 @@ class ProcessIterator:
         line_output: it was the line-timeout that triggered.
         """
 
-        if not self.process.killed.done():
-            self.process.killed.set_exception(ProcTimeoutError(
+        if not self.process.exited.done():
+            self.process.exited.set_exception(ProcTimeoutError(
                 self.process.args,
                 self.run_timeout if was_global else self.output_timeout,
                 was_global,
             ))
 
     async def __aiter__(self):
-        return self
-
-    async def __anext__(self):
         """
-        Returns a tuple of (fd, data) where fd is one of
+        Yields tuples of (fd, data) where fd is one of
         {stdout_fileno, stderr_fileno}, and data is the bytes object
         that was written to that stream (may be a line if requested).
         """
 
-        # cancel the previous line timeout
-        if self.output_timeout < INF:
-            if self.line_timer:
-                self.line_timer.cancel()
+        while True:
+            # cancel the previous line timeout
+            if self.output_timeout < INF:
+                if self.line_timer:
+                    self.line_timer.cancel()
 
-            # and set the new one
-            self.line_timer = self.loop.call_later(
-                self.output_timeout,
-                functools.partial(self.timeout, was_global=False))
+                # and set the new one
+                self.line_timer = self.loop.call_later(
+                    self.output_timeout,
+                    lambda: self.timeout(was_global=False))
 
-        # send data to stdin
-        if self.data:
-            await self.process.protocol.write(self.data)
-            self.data = None
+            # send data to stdin
+            if self.data:
+                await self.process.protocol.write(self.data)
+                self.data = None
 
-        # we sent enough data
-        if self.lines_emitted >= self.linecount:
-            # stop the iteration as there were enough lines
-            await self.stop_iter()
+            # we sent enough data
+            if self.lines_emitted >= self.linecount:
+                # stop the iteration as there were enough lines
+                self.error_check()
+                return
 
-        # now, either the process exits,
-        # there's an exception (process killed)
-        # or the queue gives us the next data item.
-        # wait for the first of those events.
-        done, pending = await asyncio.wait(
-            [self.process.protocol.queue.get(), self.process.killed],
-            return_when=asyncio.FIRST_COMPLETED)
+            # now, either the process exits,
+            # there's an exception (process will be killed)
+            # or the queue gives us the next data item.
+            # wait for the first of those events.
+            done, pending = await asyncio.wait(
+                [self.process.protocol.queue.get(), self.process.exited],
+                return_when=asyncio.FIRST_COMPLETED)
 
-        # at least one of them is done now:
-        for future in done:
-            # if something failed, cancel the pending futures
-            # and raise the exception
-            # this happens e.g. for a timeout.
-            if future.exception():
-                for future_pending in pending:
-                    future_pending.cancel()
+            # at least one of them is done now:
+            for future in done:
+                # if something failed, cancel the pending futures
+                # and raise the exception
+                # this happens e.g. for a timeout.
+                if future.exception():
+                    for future_pending in pending:
+                        future_pending.cancel()
 
-                # kill the process before throwing the error!
-                await self.process.pwn()
-                raise future.exception()
+                    # kill the process before throwing the error!
+                    await self.process.pwn()
+                    raise future.exception()
 
-            # fetch output from the process
-            entry = future.result()
+                # fetch output from the process
+                entry = future.result()
 
-            # it can be stopiteration to indicate the last data chunk
-            # as the process exited on its own.
-            if entry == StopIteration:
-                if not self.process.killed.done():
-                    self.process.killed.set_result(entry)
+                # it can be stopiteration to indicate the last data chunk
+                # as the process exited on its own.
+                if entry is StopIteration:
+                    if not self.process.exited.done():
+                        # we end up here if the self.process doesn't know
+                        # yet that it terminated.
+                        self.process.exited.set_result(entry)
 
-                    # raise the stop iteration, because process exited
-                    await self.stop_iter()
+                        # stop the iteration, because process exited
+                        self.error_check()
+                        return
 
-            fdnr, data = entry
+                    elif self.process.exited.result() is not StopIteration:
+                        raise ProcessError(
+                            "Inconsistency between output queue "
+                            "and process exit: "
+                            f"{self.process.exited.result()}"
+                        )
+                    else:
+                        # regular process exit!
+                        self.error_check()
+                        return
 
-            # only count stdout lines
-            if fdnr == 1:
-                self.lines_emitted += 1
+                fdnr, data = entry
 
-            return fdnr, data
+                # only count stdout lines
+                if fdnr == 1:
+                    self.lines_emitted += 1
 
-        raise Exception("internal fail: no future was done!")
+                yield fdnr, data
 
-    async def stop_iter(self):
+    def error_check(self):
         """
-        Raise StopAsyncIteration or another exception.
         Check if the number of read lines is expected.
 
         This is called either when the process exited,
@@ -510,20 +583,18 @@ class ProcessIterator:
         if self.linecount < INF and self.lines_emitted < self.linecount:
             # received 0 lines:
             if self.lines_emitted == 0:
-                raise ProcessError(
-                    "process did not provide any stdout lines",
-                    self.process.args)
+                raise ProcessError("process did not provide any stdout lines")
             else:
                 raise LineReadError("could only read %d of %d line%s" % (
                     self.lines_emitted, self.linecount,
                     "s" if self.linecount > 1 else ""), self.process.args)
 
-        raise StopAsyncIteration()
-
 
 async def test_coro(output_timeout, timeout):
     """
     Run an async process with Python to test its functionality.
+
+    This should kill the process because of line timeout.
     """
     import tempfile
 

@@ -6,15 +6,19 @@ import asyncio
 import functools
 import logging
 
-from .config import CFG
-
 
 class Queue:
     """
     Job queue to manage pending builds and jobs.
     """
 
-    def __init__(self, max_running=1):
+    def __init__(self, loop, job_manager, max_running=1, max_queued=30):
+        # event loop
+        self.loop = loop
+
+        # job distribution
+        self.job_manager = job_manager
+
         # all builds that are pending
         self.pending_builds = set()
 
@@ -22,7 +26,7 @@ class Queue:
         self.build_ids = dict()
 
         # jobs that should be run
-        self.job_queue = asyncio.Queue(maxsize=CFG.max_jobs_queued)
+        self.job_queue = asyncio.Queue(maxsize=max_queued)
 
         # running job futures
         # job -> job_future
@@ -33,6 +37,9 @@ class Queue:
 
         # number of jobs running in parallel
         self.max_running = max_running
+
+        # keep processing jobs
+        self.processing = loop.create_task(self.process_jobs())
 
     def add_build(self, build):
         """
@@ -104,7 +111,9 @@ class Queue:
                          job.name,
                          job.build.commit_hash)
 
-            job_fut = asyncio.get_event_loop().create_task(job.run())
+            # create the run.
+            # the job will be distributed to one of the runners.
+            job_fut = self.loop.create_task(job.run(self.job_manager))
 
             self.jobs[job] = job_fut
 
@@ -136,9 +145,7 @@ class Queue:
         try:
             del self.jobs[job]
         except KeyError:
-            # TODO: why is the same job callback called?
-            logging.error("\x1b[31mBUG\x1b[m: job %s not in running set",
-                          job)
+            logging.error("\x1b[31mBUG\x1b[m: job %s not in running set", job)
 
     async def cancel(self):
         """ cancel all running jobs """
@@ -173,3 +180,21 @@ class Queue:
             logging.error("[queue] tried to cancel unknown job: %s", job)
         else:
             self.jobs[job].cancel()
+
+    async def shutdown(self):
+        """
+        cancel all jobs that are pending and shutdown the queue
+        """
+        if not self.processing.done():
+            await self.cancel()
+
+            # cancel the job processing
+            self.processing.cancel()
+            try:
+                await self.processing
+            except asyncio.CancelledError:
+                # expected :)
+                logging.debug("[queue] processing canceled.")
+
+        else:
+            logging.warning("[queue] queue processing was already done!")

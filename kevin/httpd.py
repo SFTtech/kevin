@@ -5,11 +5,10 @@ and provide them in a job queue.
 
 from abc import abstractmethod
 
-from tornado import websocket, web, gen
+from tornado import websocket, web, gen, httpserver
 from tornado.platform.asyncio import AsyncIOMainLoop
 from tornado.queues import Queue
 
-from .build import get_build
 from .config import CFG
 from .service import Trigger
 from .update import (
@@ -73,49 +72,82 @@ class HookHandler(web.RequestHandler):
         raise NotImplementedError()
 
 
-def run_httpd(handlers, queue):
+class HTTPD:
     """
     This class contains a server that listens for WebHook
     notifications to spawn triggered actions, e.g. new Builds.
     It also provides the websocket API and plain log streams for curl.
-
-    handlers: (url, handlercls) -> [cfg, cfg, ...]
-    queue: the jobqueue.Queue where new builds/jobs are put in
     """
-    # use the main asyncio loop to run tornado
-    AsyncIOMainLoop().install()
 
-    urlhandlers = dict()
-    urlhandlers[("/", PlainStreamHandler)] = None
-    urlhandlers[("/ws", WebSocketHandler)] = None
+    def __init__(self, external_handlers, queue, build_manager):
+        """
+        external_handlers: (url, handlercls) -> [cfg, cfg, ...]
+        queue: the jobqueue.Queue where new builds/jobs are put in
+        build_manager: build_manager.BuildManager for caching
+                       and restoring buils from disk.
+        """
 
-    urlhandlers.update(handlers)
+        # use the main asyncio loop to run tornado
+        AsyncIOMainLoop().install()
 
-    # create the tornado application
-    # that serves assigned urls to handlers.
-    handlers = list()
-    for (url, handler), cfgs in urlhandlers.items():
-        if cfgs is not None:
-            handlers.append((url, handler, cfgs))
-        else:
-            handlers.append((url, handler))
+        # this dict will be the kwargs of each urlhandler
+        handler_args = {
+            "build_manager": build_manager,
+        }
 
-    app = web.Application(handlers)
+        # url handler configuration dict
+        # (urlmatch, requesthandlerclass) => custom_args
+        urlhandlers = dict()
+        urlhandlers[("/", PlainStreamHandler)] = None
+        urlhandlers[("/ws", WebSocketHandler)] = None
 
-    app.queue = queue
+        urlhandlers.update(external_handlers)
 
-    # bind to tcp port
-    app.listen(CFG.dyn_port, address=str(CFG.dyn_address))
+        # create the tornado application
+        # that serves assigned urls to handlers:
+        # [web.URLSpec(match, handler, kwargs)]
+        handlers = list()
+        for (url, handler), custom_args in urlhandlers.items():
+
+            # custom handlers may have custom kwargs
+            if custom_args is not None:
+                kwargs = handler_args.copy()
+                kwargs.update(custom_args)
+                handler = web.URLSpec(url, handler, kwargs)
+
+            else:
+                handler = web.URLSpec(url, handler, handler_args)
+
+            handlers.append(handler)
+
+        app = web.Application(handlers)
+
+        app.queue = queue
+
+        # bind http server to tcp port
+        self.server = httpserver.HTTPServer(app)
+        self.server.listen(port=CFG.dyn_port, address=str(CFG.dyn_address))
+
+    async def stop(self):
+        """
+        Stop listening for http requests
+        """
+        self.server.stop()
+        # TODO: await the stop, but maybe tornado doesn't even support that
 
 
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     """ Provides a job description stream via WebSocket """
+
+    def initialize(self, build_manager):
+        self.build_manager = build_manager
+
     def open(self):
         self.build = None
 
         project = CFG.projects[self.get_parameter("project")]
         build_id = self.get_parameter("hash")
-        self.build = get_build(project, build_id)
+        self.build = self.build_manager.get_build(project, build_id)
 
         def get_filter(filter_def):
             """
@@ -186,7 +218,8 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 class PlainStreamHandler(web.RequestHandler, Watcher):
     """ Provides the job stdout stream via plain HTTP GET """
 
-    def initialize(self):
+    def initialize(self, build_manager):
+        self.build_manager = build_manager
         self.job = None
 
     @gen.coroutine
@@ -221,7 +254,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
             self.write(b"unknown project requested\n")
             return
 
-        build = get_build(project, build_id)
+        build = self.build_manager.get_build(project, build_id)
         if not build:
             self.write(("no such build: project %s [%s]\n" % (
                 project_name, build_id)).encode())

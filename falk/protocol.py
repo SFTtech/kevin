@@ -27,8 +27,9 @@ class FalkProto(asyncio.Protocol):
     # message protocol version
     VERSION = 0
 
-    def __init__(self, falk):
+    def __init__(self, falk, loop=None):
         self.falk = falk
+        self.loop = loop or asyncio.get_event_loop()
 
         # line buffer
         self.buf = bytearray()
@@ -55,7 +56,7 @@ class FalkProto(asyncio.Protocol):
         self.queue = asyncio.Queue()
 
         # is the connection still alive?
-        self.disconnected = asyncio.Future()
+        self.disconnected = self.loop.create_future()
 
     def connection_made(self, transport):
         self.connected = True

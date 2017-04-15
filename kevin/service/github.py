@@ -12,7 +12,6 @@ from hashlib import sha1
 import requests
 
 from . import Action
-from ..build import new_build
 from ..config import CFG
 from ..httpd import HookHandler, HookTrigger
 from ..update import (BuildState, JobState,
@@ -177,7 +176,9 @@ class GitHubHookHandler(HookHandler):
     The configuration takes place in many GitHubHook instances.
     """
 
-    def initialize(self, triggers):
+    def initialize(self, build_manager, triggers):
+        self.build_manager = build_manager
+
         # list of GitHubHooks that are can invoke this hook handler
         self.triggers = triggers
 
@@ -308,8 +309,8 @@ class GitHubHookHandler(HookHandler):
         user = json_data["pusher"]["name"]
         branch = json_data["ref"]        # e.g. "refs/heads/master"
 
-        self.new_build(project, commit_sha, clone_url, repo_url, user,
-                       branch, status_url=None)
+        self.create_build(project, commit_sha, clone_url, repo_url, user,
+                          branch, status_url=None)
 
     def handle_pull_request(self, project, json_data):
         """
@@ -346,11 +347,11 @@ class GitHubHookHandler(HookHandler):
             GitHubPullRequest(project.name, repo_name, pull_id, commit_sha),
         ]
 
-        self.new_build(project, commit_sha, clone_url, repo_url, user,
-                       branch, status_update_url, updates)
+        self.create_build(project, commit_sha, clone_url, repo_url, user,
+                          branch, status_update_url, updates)
 
-    def new_build(self, project, commit_sha, clone_url, repo_url, user,
-                  branch, status_url=None, initial_updates=None):
+    def create_build(self, project, commit_sha, clone_url, repo_url, user,
+                     branch, status_url=None, initial_updates=None):
         """
         Create a new build for this commit hash.
         This commit may already exist, so a existing Build is retrieved.
@@ -358,7 +359,7 @@ class GitHubHookHandler(HookHandler):
 
         # this creates a new build, or, if the commit hash is already known,
         # reuses a known build
-        build = new_build(project, commit_sha)
+        build = self.build_manager.new_build(project, commit_sha)
 
         # the github push is a source for the build
         build.add_source(clone_url, repo_url, user, branch)

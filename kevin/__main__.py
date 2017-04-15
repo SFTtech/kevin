@@ -8,8 +8,7 @@ import logging
 import sys
 
 from .config import CFG
-from .httpd import run_httpd
-from .jobqueue import Queue
+from .kevin import Kevin
 from .util import log_setup
 
 
@@ -56,41 +55,23 @@ def main():
 
     logging.error("\x1b[1;32mKevin CI starting...\x1b[m")
 
-    # build job queue
-    queue = Queue(max_running=CFG.max_jobs_running)
-
-    # start thread for receiving webhooks
-    run_httpd(CFG.urlhandlers, queue)
-
-    job_task = loop.create_task(queue.process_jobs())
-
     try:
-        loop.run_until_complete(job_task)
+        kevin = Kevin(loop, config=CFG)
+        kevin.run()
 
     except (KeyboardInterrupt, SystemExit):
         print("")
         logging.info("exiting...")
-
-        # teardown
-        if not job_task.done():
-            # cancel all running jobs
-            cancel_jobs_task = loop.create_task(queue.cancel())
-            loop.run_until_complete(cancel_jobs_task)
-
-            # cancel the job processing
-            job_task.cancel()
-            try:
-                loop.run_until_complete(job_task)
-            except asyncio.CancelledError:
-                pass
-
-        else:
-            logging.warning("[main] job_task already done!")
+        shutdown = loop.create_task(kevin.shutdown())
+        loop.run_until_complete(shutdown)
 
     except Exception:
         logging.exception("\x1b[31;1mfatal internal exception\x1b[m")
 
     logging.info("cleaning up...")
+
+    # terminate generators
+    loop.run_until_complete(loop.shutdown_asyncgens())
 
     # run the loop one more time to process leftover tasks
     loop.stop()

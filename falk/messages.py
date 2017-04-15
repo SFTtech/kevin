@@ -397,7 +397,7 @@ class List(Request):
 class MachineList(Message):
     """
     Lists available machines
-    machines = [(vm_id, (type, name)), ...]
+    machines = [(vm_id, (typename, name)), ...]
     """
     def __init__(self, machines):
         self.machines = dict(machines)

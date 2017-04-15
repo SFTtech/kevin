@@ -11,7 +11,6 @@ import traceback
 
 from .chantal import Chantal
 from .config import CFG
-from .falk import FalkSSH, FalkSocket
 from .falkvm import VMError
 from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
                       ProcessError)
@@ -27,6 +26,9 @@ from .service import Action
 class JobTimeoutError(Exception):
     """
     Indicates a job execution timeout.
+
+    was_global=True: termination time limit reached
+    was_global=False: output silence limit reached
     """
     def __init__(self, timeout, was_global):
         super().__init__()
@@ -37,6 +39,9 @@ class JobTimeoutError(Exception):
 class JobAction(Action):
     """
     This action attaches a new job to a build.
+
+    The inheritance alone leads to the availability of
+    a [job] action in the project config file.
     """
 
     @classmethod
@@ -60,6 +65,7 @@ class Job(Watcher, Watchable):
 
     TODO: when "restarting" the job, the reconstruction from fs must
           not happen. for that, a "reset" must be implemented.
+          The restart is not implemented either, though.
     """
     def __init__(self, build, project, name, vm_name, reconstruct=False):
         super().__init__()
@@ -132,7 +138,7 @@ class Job(Watcher, Watchable):
         """
         reconstruct the job from the filesystem.
         TODO: currently, the old job attempt is deleted if not finished.
-        maybe we wanna keep it.
+              maybe we wanna keep it.
         """
 
         # only reconstruct if we wanna use the local storage
@@ -166,63 +172,6 @@ class Job(Watcher, Watchable):
             self.build.project.name,
             self.name,
             self.build.commit_hash)
-
-    async def get_falk_vm(self, vm_name):
-        """
-        return a suitable vm instance for this job from a falk.
-        """
-
-        machine = None
-
-        # try each falk to find the machine
-        for falkname, falkcfg in CFG.falks.items():
-
-            # TODO: better selection if this falk is suitable, e.g. has
-            #       machine for this job. either via cache or direct query.
-            #
-            # TODO: allow falk bypass by launching VM locally without a
-            #       falk daemon!
-
-            falk = None
-
-            if falkcfg["connection"] == "ssh":
-                host, port = falkcfg["location"]
-                falk = FalkSSH(host, port, falkcfg["user"],
-                               falkcfg["key"])
-
-            elif falkcfg["connection"] == "unix":
-                falk = FalkSocket(falkcfg["location"], falkcfg["user"])
-
-            else:
-                raise Exception("unknown falk connection type: %s -> %s" % (
-                    falkname, falkcfg["connection"]))
-
-            try:
-                # connect
-                await falk.create()
-
-                # create container
-                machine = await falk.create_vm(vm_name)
-
-            except (LineReadError, ProcessError) as exc:
-                # TODO: connection rejections, auth problems, ...
-                logging.warning("failed communicating "
-                                "with falk '%s'", falkname)
-                logging.warning("\x1b[31merror\x1b[m: $ %s",
-                                " ".join(exc.cmd))
-                logging.warning("       -> %s", exc)
-                logging.warning("  are you sure %s = '%s' "
-                                "is a valid falk entry?",
-                                falkname,
-                                falk)
-
-            if machine is not None:
-                # we found the machine
-                return machine
-
-        if machine is None:
-            raise VMError("VM '%s' could not be provided by any falk" % (
-                vm_name))
 
     def on_send_update(self, update, save=True, fs_store=True,
                        forbid_completed=True):
@@ -325,8 +274,7 @@ class Job(Watcher, Watchable):
         if self.completed is not None:
             watcher.on_update(StopIteration)
 
-
-    async def run(self):
+    async def run(self, job_manager):
         """ Attempts to build the job. """
 
         try:
@@ -336,8 +284,11 @@ class Job(Watcher, Watchable):
             # falk contact
             self.set_state("waiting", "requesting machine")
 
-            machine = await asyncio.wait_for(self.get_falk_vm(self.vm_name),
-                                             timeout=10)
+            # figure out which machine to run the job on
+            machine = await asyncio.wait_for(
+                job_manager.get_machine(self.vm_name),
+                timeout=10
+            )
 
             # machine was acquired, now boot it.
             self.set_state("waiting", "booting machine")
@@ -399,13 +350,13 @@ class Job(Watcher, Watchable):
 
             self.error("Process failed%s" % error)
 
-        except (LineReadError, ProcessError) as exc:
+        except ProcessError as exc:
             logging.error("[job] \x1b[31;1mCommunication failure:"
                           "\x1b[m %s", self)
 
-            logging.error(" $ %s: %s", " ".join(exc.cmd), exc)
+            logging.exception("This was kinda unexpected...")
 
-            self.error("Process communication error: %s" % (exc.cmd[0]))
+            self.error("SSH Process communication error")
 
         except ProcTimeoutError as exc:
             if exc.was_global:

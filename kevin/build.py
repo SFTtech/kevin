@@ -17,39 +17,6 @@ from .update import (BuildState, BuildSource, QueueActions, JobState,
 from .watcher import Watchable, Watcher
 
 
-# stores known builds by (project, hash) -> build
-BUILD_CACHE = dict()
-
-
-def new_build(project, commit_hash, create_new=True):
-    """ create a new build or return it from the cache """
-    cache_key = (project, commit_hash)
-
-    if cache_key in BUILD_CACHE:
-        # already known build.
-        return BUILD_CACHE[cache_key]
-
-    else:
-        # this tries loading from filesystem
-        newbuild = Build(project, commit_hash)
-
-        # store it as known build?
-        if newbuild.completed is not None or create_new:
-            BUILD_CACHE[cache_key] = newbuild
-        else:
-            newbuild = None
-
-        return newbuild
-
-
-def get_build(project, commit_hash):
-    """
-    return an existing build from the cache
-    return None if it coultn't be found.
-    """
-    return new_build(project, commit_hash, create_new=False)
-
-
 class Build(Watchable, Watcher):
     """
     A Build is a request to process a specific state of a repo, identified

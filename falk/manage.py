@@ -18,8 +18,8 @@ async def spawn_shell(falk, vm_id, volatile, command):
     logging.debug("connecting to falk...")
     await falk.create()
 
-    logging.debug("creating vm '%s'..." % vm_id)
-    vm = await falk.create_vm(vm_id, explicit=True)
+    logging.debug("looking up machine '%s'..." % vm_id)
+    vm = await falk.create_vm(vm_id)
 
     if vm is None:
         raise Exception("vm '%s' was not found on falk '%s'. "
@@ -27,7 +27,7 @@ async def spawn_shell(falk, vm_id, volatile, command):
                             vm_id, falk, await self.get_vms()))
 
     manage = not volatile
-    logging.debug("preparing and launching VM (manage=%s)..." % manage)
+    logging.debug("preparing and launching machine (manage=%s)..." % manage)
     await vm.prepare(manage=manage)
     await vm.launch()
 
@@ -40,6 +40,12 @@ async def spawn_shell(falk, vm_id, volatile, command):
                           vm.ssh_port, vm.ssh_key, pipes=False,
                           options=["-t"]) as proc:
         ret = await proc.wait()
+
+    # dirty hardcode to wait for vm shutdown
+    # otherwise, disks may not be synced.
+    # let falk tell us when the vm dies.
+    # TODO: await vm.wait_for_shutdown(30)
+    await asyncio.sleep(5)
 
     await vm.terminate()
     await vm.cleanup()
