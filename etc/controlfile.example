@@ -5,6 +5,8 @@
 #     - optional rule setup stuff, e.g.:
 #     - env: variable=value mom="really fat"  # set environment variables
 #     - hidden                                # hide that rule from all output
+#     - skip                                  # skip this step
+#     - skip  (? if job == "some_jobname" ?)  # skip only if jobname matches
 #     - output: "some/file/thats/copied/out/to/static/output/folder"
 #     - output: "or/some/directory/to/send"
 #     echo "some command executed in sh"
@@ -25,6 +27,7 @@ tamale:
 sudo:
 	- hidden
 	sudo echo "i got root!"
+	echo "running on whitespaceOS"  (? if job == "whitespaceOS" ?)
 
 cpuinfo: tamale sudo
 	echo awsum vm:
