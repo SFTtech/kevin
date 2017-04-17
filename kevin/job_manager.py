@@ -46,11 +46,13 @@ class JobManager:
                 falk = FalkSSH(falkname,
                                host, port,
                                falkcfg["user"],
-                               falkcfg["key"])
+                               falkcfg["key"],
+                               loop=self.loop)
 
             elif falkcfg["connection"] == "unix":
                 falk = FalkSocket(falkname,
-                                  falkcfg["location"], falkcfg["user"])
+                                  falkcfg["location"], falkcfg["user"],
+                                  loop=self.loop)
 
             # TODO: allow falk bypass by launching VM locally without a
             #       falk daemon (that is the falk.FalkVirtual).

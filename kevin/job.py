@@ -70,8 +70,6 @@ class Job(Watcher, Watchable):
     def __init__(self, build, project, name, vm_name):
         super().__init__()
 
-        print("============= Job created.... ==============")
-
         # the project and build this job is invoked by
         self.build = build
         self.project = project

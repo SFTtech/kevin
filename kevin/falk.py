@@ -30,6 +30,10 @@ class Falk(ABC):
         # list of callbacks that are invoked upon disconnect
         self.disconnect_callbacks = list()
 
+        # set to false when this falk shall no longer be active
+        # used for the reconnect mechanism in JobManager.
+        self.active = True
+
     @abstractmethod
     async def create(self):
         """ create the falk connection """
@@ -195,10 +199,6 @@ class FalkSSH(Falk):
 
         self.ssh_process = None
 
-        # set to false when this falk shall no longer be active
-        # used for the reconnect mechanism in JobManager.
-        self.active = True
-
         self.loop = loop or asyncio.get_event_loop()
 
     async def create(self):
@@ -269,8 +269,8 @@ class FalkSocket(Falk):
     """
     Falk connection via unix socket.
     """
-    def __init__(self, path, user, loop=None):
-        super().__init__(f"{user}@{path}")
+    def __init__(self, name, path, user, loop=None):
+        super().__init__(name)
 
         self.path = path
         self.user = user
@@ -330,14 +330,14 @@ class FalkSocket(Falk):
         yield message
 
     async def close(self):
-        if not self.transport.is_closing():
+        if self.transport and not self.transport.is_closing():
             self.transport.close()
 
     def get_vm_host(self):
         return "localhost"
 
     def __str__(self):
-        return f"<FalkSocket {self.name} {self.user}@{self.host}>"
+        return f"<FalkSocket {self.user}@{self.path}>"
 
 
 class FalkSocketStreamProtocol(asyncio.StreamReaderProtocol):
@@ -351,5 +351,5 @@ class FalkSocketStreamProtocol(asyncio.StreamReaderProtocol):
         self.disconnect_callback = disconnect_callback
 
     def connection_lost(self, exc):
-        super().connection_list(exc)
+        super().connection_lost(exc)
         self.disconnect_callback()
