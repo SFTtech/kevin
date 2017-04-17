@@ -270,7 +270,7 @@ class FalkSocket(Falk):
     Falk connection via unix socket.
     """
     def __init__(self, path, user, loop=None):
-        super().__init__()
+        super().__init__(f"{user}@{path}")
 
         self.path = path
         self.user = user
