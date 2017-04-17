@@ -409,6 +409,8 @@ class Select(Message):
     and you'll get an RunID answer.
     """
     def __init__(self, name):
+        if not isinstance(name, str):
+            raise ValueError(f"invalid vm name: {name}")
         self.name = name
 
     @classmethod

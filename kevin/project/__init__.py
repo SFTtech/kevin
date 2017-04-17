@@ -55,3 +55,6 @@ class Project:
         # attach additional watchers which were created by some trigger.
         for watcher in self.watchers:
             watchable.watch(watcher)
+
+    def __str__(self):
+        return f"<Project name={self.name}>"

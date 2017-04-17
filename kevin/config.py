@@ -60,17 +60,22 @@ class Config:
 
         raw.read(filename)
 
+        # remember the current section for the error message below :)
+        current_section = None
+
         try:
             cfglocation = Path(filename).parent
 
             # main config
-            kevin = raw["kevin"]
+            current_section = "kevin"
+            kevin = raw[current_section]
             self.ci_name = kevin["name"]
             self.max_jobs_queued = int(kevin["max_jobs_queued"])
             self.max_jobs_running = int(kevin["max_jobs_running"])
 
             # project configurations.
-            projects = raw["projects"]
+            current_section = "projects"
+            projects = raw[current_section]
 
             # for each project, there's a projname.conf in that folder
             projfolder = Path(projects["config_folder"])
@@ -108,14 +113,16 @@ class Config:
             self.project_postprocess()
 
             # web configuration
-            web = raw["web"]
+            current_section = "web"
+            web = raw[current_section]
             self.static_url = web["static_url"]
             self.mandy_url = web["mandy_url"]
             self.dyn_port = int(web["dyn_port"])
             self.dyn_host = web["dyn_host"]
 
             # vm providers
-            falk_entries = raw["falk"]
+            current_section = "falk"
+            falk_entries = raw[current_section]
             for name, url in falk_entries.items():
                 if name in self.falks:
                     raise ValueError("Falk double-defined: %s" % name)
@@ -130,8 +137,8 @@ class Config:
                 }
 
         except KeyError as exc:
-            logging.error("\x1b[31mConfig file is missing entry: %s\x1b[m",
-                          exc)
+            logging.error("\x1b[31mMissing config entry "
+                          f"in section {current_section}: {exc}\x1b[m")
             exit(1)
 
         self.verify()
@@ -141,7 +148,7 @@ class Config:
         Verifies the validity of the loaded attributes
         """
         if not self.static_url.endswith('/'):
-            raise ValueError("static URL must end in '/': '%s'" %
+            raise ValueError("static_url must end in '/': '%s'" %
                              self.static_url)
         if not self.output_folder.is_dir():
             raise NotADirectoryError(str(self.output_folder))

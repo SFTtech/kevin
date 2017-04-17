@@ -98,26 +98,20 @@ class Build(Watchable, Watcher):
 
         # try to reconstruct the build state from filesystem
         # when reconstruction is possible, this also reconstructs jobs.
-        self.reconstruct()
+        self.load_from_fs()
+
+        # create the output folder
+        if not CFG.args.volatile:
+            if not self.path.is_dir():
+                self.path.mkdir(parents=True)
 
         # add jobs and other actions defined by the project
-        # only if the build is not finished already.
-        if not self.completed:
-            self.project.attach_actions(self)
+        # some jobs may already be attached by the reconstruction.
+        self.project.attach_actions(self)
 
         # tell all watchers (e.g. jobs) that they were attached,
         # and may now register themselves at this build.
         self.send_update(ActionsAttached())
-
-    def reconstruct(self):
-        """
-        reconstruct the build state from the filesystem.
-        """
-        self.load_from_fs()
-
-        if not CFG.args.volatile:
-            if not self.path.is_dir():
-                self.path.mkdir(parents=True)
 
     def load_from_fs(self):
         """
@@ -197,8 +191,12 @@ class Build(Watchable, Watcher):
         This is called from the Job when we send
         the `ActionsAttached` update.
         """
+
         if job.name in self.jobs:
-            raise ValueError(f"Job {job.name} already registered")
+            # the job is already registered if the build is reconstructed
+            # and a job in the reconstruction was attached by
+            # project settings previously!
+            return
 
         # some job was notified by this build and now
         # says "hey i'm created now."
@@ -224,16 +222,16 @@ class Build(Watchable, Watcher):
     def on_send_update(self, update, reconstruction=False):
         """ Called before this update is sent to all watchers. """
 
-        if update == StopIteration:
-            return
-
-        # record update for replay to new watcher
+        # if the update is stored in the update list that
+        # is sent to a new subscriber.
         record = True
 
         # if reconstructing, we don't need to save anything to disk
         store_to_disk = not reconstruction
 
         # don't serialize generated updates to disk
+        # when we'll reconstruct from disk,
+        # those will be generated again.
         if isinstance(update, GeneratedUpdate):
             store_to_disk = False
 
@@ -242,18 +240,18 @@ class Build(Watchable, Watcher):
             self.clone_url = update.clone_url
 
         elif isinstance(update, JobCreated):
-            if update.job_name not in self.jobs:
-                # recreate all the jobs that were active when the build ran.
-                if reconstruction:
-                    # TODO: don't register the job here dirtily, instead:
-                    #       the action attaching should add an update that
-                    #       describes the action to be attached.
-                    #       then, action attaching can be replayed
-                    #       in a general way!
-                    job = Job(self, self.project,
-                              update.job_name, update.vm_name,
-                              reconstruct=True)
-                    self.register_job(job)
+
+            # recreate all jobs that were active when the
+            # build ran.
+            if reconstruction and update.job_name not in self.jobs:
+
+                job = Job(self, self.project,
+                          update.job_name, update.vm_name)
+
+                # subscribe the job to build's updates.
+                # that way, the job will get the ActionsAttached update
+                # and the job will register at this build.
+                self.watch(job)
 
         if record:
             self.updates.append(update)
@@ -296,7 +294,11 @@ class Build(Watchable, Watcher):
 
         # send the update e.g. to mandy
         if distribute:
-            self.send_update(update)
+            # exclude jobs from receiving the update
+            self.send_update(
+                update,
+                lambda subscriber: isinstance(subscriber, Job)
+            )
 
         # track job state updates:
         if isinstance(update, JobState):

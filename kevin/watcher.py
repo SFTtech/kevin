@@ -38,11 +38,18 @@ class Watchable:
         """ Custom actions when a watcher unsubscribes """
         pass
 
-    def send_update(self, update, **kwargs):
-        """ Send an update to all registered watchers """
+    def send_update(self, update, exclude=False, **kwargs):
+        """
+        Send an update to all registered watchers
+        Exclude: callable that can exclude subscribers from
+        receiving the update. (called with func(subscriber))
+        """
         self.on_send_update(update, **kwargs)
 
         for watcher in self.watchers:
+            if exclude and exclude(watcher):
+                continue
+
             watcher.on_update(update)
 
     def on_send_update(self, update, **kwargs):

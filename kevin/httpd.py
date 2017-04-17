@@ -4,6 +4,7 @@ and provide them in a job queue.
 """
 
 from abc import abstractmethod
+import logging
 
 from tornado import websocket, web, gen, httpserver
 from tornado.platform.asyncio import AsyncIOMainLoop
@@ -141,13 +142,18 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
     def initialize(self, build_manager):
         self.build_manager = build_manager
-
-    def open(self):
         self.build = None
 
+    def open(self):
         project = CFG.projects[self.get_parameter("project")]
         build_id = self.get_parameter("hash")
         self.build = self.build_manager.get_build(project, build_id)
+
+        if not self.build:
+            logging.warning(f"unknown build {build_id} "
+                            f"of {project} requested.")
+            # TODO: send not-found message.
+            return
 
         def get_filter(filter_def):
             """

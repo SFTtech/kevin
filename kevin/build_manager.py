@@ -42,4 +42,4 @@ class BuildManager:
         Return None if it coultn't be found.
         """
 
-        return new_build(project, commit_hash, create_new=False)
+        return self.new_build(project, commit_hash, create_new=False)

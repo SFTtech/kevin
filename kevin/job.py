@@ -14,7 +14,7 @@ from .config import CFG
 from .falkvm import VMError
 from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
                       ProcessError)
-from .update import (Update, JobState, StepState,
+from .update import (Update, JobState, JobUpdate, StepState,
                      StdOut, OutputItem, QueueActions, JobCreated,
                      GeneratedUpdate, ActionsAttached, JobEmergencyAbort)
 from .util import recvcoroutine
@@ -67,8 +67,10 @@ class Job(Watcher, Watchable):
           not happen. for that, a "reset" must be implemented.
           The restart is not implemented either, though.
     """
-    def __init__(self, build, project, name, vm_name, reconstruct=False):
+    def __init__(self, build, project, name, vm_name):
         super().__init__()
+
+        print("============= Job created.... ==============")
 
         # the project and build this job is invoked by
         self.build = build
@@ -116,23 +118,27 @@ class Job(Watcher, Watchable):
         # storage folder for this job.
         self.path = build.path.joinpath(self.name)
 
-        if reconstruct:
-            self.reconstruct()
+        # are all updates from the job in the update list already?
+        self.all_loaded = False
 
-        else:
-            # tell the our watchers that this job is now created
-            self.send_update(JobCreated(self.name, self.vm_name))
-
-    def reconstruct(self):
-        """
-        try to reconstruct from the persistent storage.
-        """
-        self.load_from_fs()
+        # check if the job was completed.
+        # this means we can do a reconstruction.
+        try:
+            self.completed = self.path.joinpath("_completed").stat().st_mtime
+        except FileNotFoundError:
+            pass
 
         # create the output directory structure
         if not CFG.args.volatile:
             if not self.path.is_dir():
                 self.path.mkdir(parents=True)
+
+        # if this job is being reconstructed (-> it was completed once),
+        # don't send the JobCreated update, as it triggered
+        # this reconstruction, otherwise we'd inf-loop.
+        if not self.completed:
+            # tell the our watchers that this job is now created
+            self.send_update(JobCreated(self.name, self.vm_name))
 
     def load_from_fs(self):
         """
@@ -143,21 +149,17 @@ class Job(Watcher, Watchable):
 
         # only reconstruct if we wanna use the local storage
         if CFG.args.volatile:
-            return
-
-        # Check if the job was completed.
-        try:
-            self.completed = self.path.joinpath("_completed").stat().st_mtime
-        except FileNotFoundError:
-            pass
+            return False
 
         # load update list from file
         if self.completed is not None:
             with self.path.joinpath("_updates").open() as updates_file:
                 for json_line in updates_file:
                     self.send_update(Update.construct(json_line),
-                                     save=True, fs_store=False,
-                                     forbid_completed=False)
+                                     reconstruct=True)
+
+            # jup, we reconstructed.
+            return True
 
         else:
             # make sure that there are no remains
@@ -167,37 +169,50 @@ class Job(Watcher, Watchable):
             except FileNotFoundError:
                 pass
 
+            # no, reconstruction failed.
+            return False
+
     def __str__(self):
         return "%s.%s [\x1b[33m%s\x1b[m]" % (
             self.build.project.name,
             self.name,
             self.build.commit_hash)
 
-    def on_send_update(self, update, save=True, fs_store=True,
-                       forbid_completed=True):
+    def on_send_update(self, update, reconstruct=False):
         """
         When an update is to be sent to all watchers
         """
 
-        if update == StopIteration:
+        if update is StopIteration:
             return
 
-        if forbid_completed and self.completed is not None:
+        # store the update in the list of updates
+        # that are replayed to each new subscriber
+        replay = True
+
+        # when reconstructing, the update just came from the file
+        fs_save = not reconstruct
+
+        if not reconstruct and self.completed is not None:
             raise Exception("job sending update after being completed.")
 
-        # when it's a StepUpdate, this manages the pending_steps set.
-        update.apply_to(self)
+        if isinstance(update, JobUpdate):
+            # run the job-update hook.
+            # when it's a StepUpdate, this manages the pending_steps set.
+            update.apply_to(self)
 
         if isinstance(update, GeneratedUpdate):
-            save = False
+            replay = False
+            fs_save = False
+
         if isinstance(update, JobCreated):
             # this is stored by the build.
-            fs_store = False
+            fs_save = False
 
-        if save:
+        if replay:
             self.updates.append(update)
 
-        if not save or not fs_store or CFG.args.volatile:
+        if not fs_save or CFG.args.volatile:
             # don't write the update to the job storage
             return
 
@@ -215,7 +230,6 @@ class Job(Watcher, Watchable):
         """
 
         if isinstance(update, ActionsAttached):
-
             # tell the build that we're an assigned job.
             self.build.register_job(self)
 
@@ -224,15 +238,16 @@ class Job(Watcher, Watchable):
             self.watch(self.build)
 
         elif isinstance(update, QueueActions):
-            # try to reconstruct job state from filesystem
-            # if this succeeds, we don't need to enqueue.
-            if not self.completed:
-                self.reconstruct()
+            if not self.all_loaded:
+                if self.completed:
+                    # we can reconstruct as the _completed file exists.
+                    if not self.load_from_fs():
+                        raise Exception("Job could not be recreated!")
 
-            # the job should now run.
-            if self.completed is None:
-                # add the job to the processing queue
-                update.queue.add_job(self)
+                    self.all_loaded = True
+                else:
+                    # run the job by adding it to the processing queue
+                    update.queue.add_job(self)
 
     def step_update(self, update):
         """ apply a step update to this job. """
@@ -458,6 +473,7 @@ class Job(Watcher, Watchable):
 
             # the job is completed!
             self.completed = clock.time()
+            self.all_loaded = True
 
             if not CFG.args.volatile:
                 # the job is now officially completed

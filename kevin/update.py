@@ -54,7 +54,7 @@ class Update(metaclass=UpdateMeta):
     def __repr__(self):
         try:
             return self.json()
-        except json.JSONDecodeError:
+        except TypeError:
             return f"<{type(self).__name__}>"
 
     @staticmethod

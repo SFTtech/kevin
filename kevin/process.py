@@ -4,6 +4,7 @@ subprocess utility functions and classes.
 
 import asyncio
 import asyncio.streams
+import logging
 import subprocess
 import sys
 
@@ -96,7 +97,8 @@ class Process(AsyncWith):
         self.created = False
 
         # future to track exit state.
-        # it is only set when the process timeouts or 
+        # this contains the exception if the program
+        # was killed e.g. because of a timeout.
         self.exited = self.loop.create_future()
 
         pipe = subprocess.PIPE if pipes else None
@@ -121,6 +123,8 @@ class Process(AsyncWith):
         """ Launch the process """
         if self.created:
             raise Exception("process already created")
+
+        logging.debug("creating process '%s'...", self.args)
 
         self.transport, self.protocol = await self.proc
         self.created = True
@@ -369,7 +373,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
     def process_exited(self):
         # process exit happens after all the pipes were lost.
 
-        # send out remaining data
+        # send out remaining data to queue
         if self.buf:
             self.enqueue_data((1, bytes(self.buf)))
             del self.buf[:]
@@ -497,7 +501,7 @@ class ProcessIterator:
                 await self.process.protocol.write(self.data)
                 self.data = None
 
-            # we sent enough data
+            # we emitted enough lines
             if self.lines_emitted >= self.linecount:
                 # stop the iteration as there were enough lines
                 self.error_check()
@@ -528,16 +532,13 @@ class ProcessIterator:
                 entry = future.result()
 
                 # it can be stopiteration to indicate the last data chunk
-                # as the process exited on its own.
+                # as the process exited on its own,
+                # or the exited future was fulfilled by a regular exit.
                 if entry is StopIteration:
                     if not self.process.exited.done():
                         # we end up here if the self.process doesn't know
                         # yet that it terminated.
                         self.process.exited.set_result(entry)
-
-                        # stop the iteration, because process exited
-                        self.error_check()
-                        return
 
                     elif self.process.exited.result() is not StopIteration:
                         raise ProcessError(
@@ -545,8 +546,16 @@ class ProcessIterator:
                             "and process exit: "
                             f"{self.process.exited.result()}"
                         )
+
+                    # the process exited: self.process.exited.done().
+                    # yield remaining data.
+                    if not self.process.protocol.queue.empty():
+                        entry = self.process.protocol.queue.get_nowait()
+                        if entry is StopIteration:
+                            self.error_check()
+                            return
                     else:
-                        # regular process exit!
+                        # no more data, so stop iterating
                         self.error_check()
                         return
 
@@ -614,31 +623,32 @@ async def test_coro(output_timeout, timeout):
                        chop_lines=True) as proc:
 
         try:
-            print("proc: %s" % proc.args)
+            logging.info("proc: %s" % proc.args)
 
             async for fdn, line in proc.communicate(
                 b"10\n", output_timeout=output_timeout, timeout=timeout,
                 linecount=4):
 
-                print("1st: %d %s" % (fdn, line))
+                logging.info("1st: %d %s" % (fdn, line))
 
             async for fdn, line in proc.communicate(
                 output_timeout=output_timeout, timeout=timeout,
                 linecount=2):
 
-                print("2nd: %d %s" % (fdn, line))
+                logging.info("2nd: %d %s" % (fdn, line))
 
             async for fdn, line in proc.communicate(output_timeout=1,
                                                     timeout=2):
 
-                print("last: %d %s" % (fdn, line))
+                logging.info("last: %d %s" % (fdn, line))
 
 
         except ProcTimeoutError as exc:
-            print("timeout %s: %s" % ("global" if exc.was_global else "line",
-                                      exc))
+            logging.info("timeout %s: %s" % (
+                "global" if exc.was_global else "line",
+                exc))
 
-        print("ret=%d" % (await proc.wait()))
+        logging.info("ret=%d" % (await proc.wait()))
 
 
 def test():
@@ -648,15 +658,19 @@ def test():
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
 
+    from .util import log_setup
+
+    log_setup(2)
+
     try:
         task = loop.create_task(test_coro(output_timeout=2, timeout=5))
         loop.run_until_complete(task)
     except KeyboardInterrupt:
-        print("\nexiting...")
+        logging.info("\nexiting...")
     except Exception as exc:
         import traceback
         traceback.print_exc()
-        print("fail: %s" % exc)
+        logging.info("fail: %s" % exc)
 
     loop.stop()
     loop.run_forever()
