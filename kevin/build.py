@@ -5,6 +5,7 @@ A build is a repo state that was triggered to be run in multiple jobs.
 """
 
 from pathlib import Path
+import logging
 import shutil
 import time
 
@@ -14,7 +15,8 @@ from .project import Project
 from .update import (BuildState, BuildSource, QueueActions, JobState,
                      JobCreated, JobUpdate, ActionsAttached,
                      Update, GeneratedUpdate, JobEmergencyAbort)
-from .watcher import Watchable, Watcher
+from .watchable import Watchable
+from .watcher import Watcher
 
 
 class Build(Watchable, Watcher):
@@ -47,6 +49,10 @@ class Build(Watchable, Watcher):
         # Was the finish() function called?
         self.finished = False
 
+        # If completed is true, but this is false,
+        # then we can load updates from disk.
+        self.all_loaded = False
+
         # The Queue where this build was put in
         self.queue = None
 
@@ -69,6 +75,10 @@ class Build(Watchable, Watcher):
         self.jobs_pending = set()
         self.jobs_succeeded = set()
         self.jobs_errored = set()
+
+        # jobs that were once running
+        # (we remember them when this build is reconstructed)
+        self.jobs_to_reconstruct = list()
 
         # URL where the repo containing this commit can be cloned from
         # during the 'building' phase.
@@ -96,50 +106,122 @@ class Build(Watchable, Watcher):
             self.commit_hash
         )
 
-        # try to reconstruct the build state from filesystem
-        # when reconstruction is possible, this also reconstructs jobs.
-        self.load_from_fs()
-
-        # create the output folder
+        # load previous state
         if not CFG.args.volatile:
-            if not self.path.is_dir():
-                self.path.mkdir(parents=True)
+            try:
+                # check if the build was completed already.
+                self.completed = self.path.joinpath("_completed").stat().st_mtime
+            except FileNotFoundError:
+                pass
 
-        # add jobs and other actions defined by the project
-        # some jobs may already be attached by the reconstruction.
-        self.project.attach_actions(self)
+        # add jobs and other actions defined by the project.
+        # some of the actions may be skipped if the build is completed already.
+        self.project.attach_actions(self, self.completed)
 
         # tell all watchers (e.g. jobs) that they were attached,
-        # and may now register themselves at this build.
+        # and may now register themselves at this build.s
         self.send_update(ActionsAttached())
+
+        if not CFG.args.volatile:
+            # try to load job data, or purge the folder.
+            self.load_or_purge_fs()
 
     def load_from_fs(self):
         """
-        set up this build from the filesystem.
+        Reconstruct this build from updates stored on disk.
         """
 
-        # only reconstruct if we wanna use the local storage
         if CFG.args.volatile:
-            return
+            return False
 
-        # Check if the build was completed already.
-        try:
-            self.completed = self.path.joinpath("_completed").stat().st_mtime
-        except FileNotFoundError:
-            pass
-
-        if self.completed is not None:
+        if self.completed and not self.all_loaded:
             with self.path.joinpath("_updates").open() as updates_file:
                 for json_line in updates_file:
                     self.send_update(Update.construct(json_line),
-                                     reconstruction=True)
+                                     reconstruct=True)
+
+                self.all_loaded = True
+            return True
+
+        return False
+
+    def purge_fs(self):
+        """
+        Remove the whole build directory (and create a fresh one).
+        """
+
+        if CFG.args.volatile:
+            return
+
+        # make sure that there are no remains
+        # of a previously aborted build.
+        try:
+            shutil.rmtree(str(self.path))
+        except FileNotFoundError:
+            pass
+
+        # create the output folder
+        if not self.path.is_dir():
+            self.path.mkdir(parents=True)
+
+    def load_or_purge_fs(self):
+        """
+        Recreate the build from the filesystem.
+        If this is not possible, purge the output directory.
+        """
+
+        if not self.completed:
+            self.purge_fs()
+
+        elif not self.all_loaded:
+            if not self.load_from_fs():
+                raise Exception("could not load build from disk!")
+
         else:
-            # make sure that there are no remains
-            # of previous aborted build.
+            # nothing to do, all is loaded.
+            pass
+
+    def reconstruct_jobs(self, preferred_job=None):
+        """
+        Reconstruct previously active jobs.
+        """
+
+        # if a job preference was given, reconstruct it first.
+        if preferred_job:
             try:
-                shutil.rmtree(str(self.path))
-            except FileNotFoundError:
+                # find the preferred job
+                pref_idx = self.jobs_to_reconstruct.index(preferred_job)
+                jobs = list()
+                jobs.append(self.jobs_to_reconstruct[pref_idx])
+
+                for idx, job in self.jobs_to_reconstruct:
+                    if idx == pref_idx:
+                        continue
+                    else:
+                        jobs.append(job)
+
+            except ValueError:
+                # requested job not in joblist.
                 pass
+        else:
+            jobs = self.jobs_to_reconstruct
+
+        for job_name, vm_name in jobs:
+            if job_name in self.jobs:
+                raise Exception("Job to reconstruct is already registered")
+
+            job = Job(self, self.project, job_name, vm_name)
+
+            # subscribe the job to build's updates.
+            # that way, the job will get the ActionsAttached update
+            # and the job will register at this build.
+            self.register_watcher(job)
+
+            # reconstruct this job
+            if not job.load_from_fs():
+                raise Exception("job could not be reconstructed")
+
+        self.jobs_to_reconstruct.clear()
 
     def set_state(self, state, text, timestamp=None):
         """ set this build state """
@@ -164,19 +246,30 @@ class Build(Watchable, Watcher):
             comment=comment,
         ))
 
-    def enqueue_actions(self, queue):
+    def requires_run(self):
         """
-        The actions of this build must now add themselves to the
-        given queue.
+        Returns true if this build requires a run.
         """
 
+        return (not self.completed or
+                self.jobs_to_reconstruct)
+
+    def run(self, queue):
+        """
+        The actions of this build must now add themselves
+        to the given queue.
+        This is called to actually start the build and its jobs.
+        """
         # memorize the queue
         self.queue = queue
 
-        # if loaded from fs, we know if the build was completed.
         if self.completed is None:
             # TODO send more fine-grained build progress states
             self.set_state("waiting", "enqueued")
+
+        elif self.all_loaded:
+            # attach jobs that were once active
+            self.reconstruct_jobs()
 
         # notify all watchers (e.g. jobs) that they should run.
         # jobs use this as the signal to reconstruct themselves,
@@ -188,8 +281,7 @@ class Build(Watchable, Watcher):
         """
         Registers a job that is run for this build.
 
-        This is called from the Job when we send
-        the `ActionsAttached` update.
+        This is called from a Job when we send the `ActionsAttached` update.
         """
 
         if job.name in self.jobs:
@@ -198,8 +290,7 @@ class Build(Watchable, Watcher):
             # project settings previously!
             return
 
-        # some job was notified by this build and now
-        # says "hey i'm created now."
+        # store the job in the build.
         self.jobs[job.name] = job
 
         # put it into pending, even if it's actually finished.
@@ -207,19 +298,16 @@ class Build(Watchable, Watcher):
         # it into the right queue.
         self.jobs_pending.add(job)
 
-    def on_watch(self, watcher):
+    def on_watcher_registered(self, watcher):
         """
-        Registers a watcher object to this build.
+        Some observer was registered to this build, so we send
+        all previous updates to it.
+        """
 
-        The watcher's on_update() member method will be called for every
-        update that ever was and ever will be until unwatch() below is
-        called.
-        """
-        # send all previous updates to the watcher
         for update in self.updates:
             watcher.on_update(update)
 
-    def on_send_update(self, update, reconstruction=False):
+    def on_send_update(self, update, reconstruct=False):
         """ Called before this update is sent to all watchers. """
 
         # if the update is stored in the update list that
@@ -227,7 +315,7 @@ class Build(Watchable, Watcher):
         record = True
 
         # if reconstructing, we don't need to save anything to disk
-        store_to_disk = not reconstruction
+        store_to_disk = not reconstruct
 
         # don't serialize generated updates to disk
         # when we'll reconstruct from disk,
@@ -240,18 +328,12 @@ class Build(Watchable, Watcher):
             self.clone_url = update.clone_url
 
         elif isinstance(update, JobCreated):
-
-            # recreate all jobs that were active when the
-            # build ran.
-            if reconstruction and update.job_name not in self.jobs:
-
-                job = Job(self, self.project,
-                          update.job_name, update.vm_name)
-
-                # subscribe the job to build's updates.
-                # that way, the job will get the ActionsAttached update
-                # and the job will register at this build.
-                self.watch(job)
+            # recreate all missing jobs that were active
+            # when the build ran.
+            if reconstruct:
+                self.jobs_to_reconstruct.append(
+                    (update.job_name, update.vm_name)
+                )
 
         if record:
             self.updates.append(update)
@@ -334,6 +416,7 @@ class Build(Watchable, Watcher):
         """ no more jobs are pending  """
         if self.finished:
             # finish message already sent.
+            logging.warning("build %s finished multiple times, wtf?", self)
             return
 
         if self.queue is not None:

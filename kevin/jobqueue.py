@@ -47,18 +47,20 @@ class Queue:
         Called from where a new build was created and should now be run.
         """
 
-        logging.info("[queue] added build: [\x1b[33m%s\x1b[m] @ %s",
-                     build.commit_hash,
-                     build.clone_url)
-
         if build in self.pending_builds:
             return
 
-        self.pending_builds.add(build)
-        self.build_ids[build.commit_hash] = build
+        if build.requires_run():
+            logging.info("[queue] adding build: [\x1b[33m%s\x1b[m] @ %s",
+                         build.commit_hash,
+                         build.clone_url)
 
-        # send signal to build so it can notify its jobs to add themselves!
-        build.enqueue_actions(self)
+            self.pending_builds.add(build)
+            self.build_ids[build.commit_hash] = build
+
+            # the build shall now run.
+            # this is done by adding jobs to this queue.
+            build.run(self)
 
     def remove_build(self, build):
         """ Remove a finished build """

@@ -29,7 +29,7 @@ class BuildManager:
             newbuild = Build(project, commit_hash)
 
             # store it as known build?
-            if newbuild.completed is not None or create_new:
+            if newbuild.completed or create_new:
                 self.builds[cache_key] = newbuild
             else:
                 newbuild = None

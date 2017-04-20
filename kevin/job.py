@@ -9,6 +9,7 @@ import shutil
 import time as clock
 import traceback
 
+from .action import Action
 from .chantal import Chantal
 from .config import CFG
 from .falkvm import VMError
@@ -18,9 +19,8 @@ from .update import (Update, JobState, JobUpdate, StepState,
                      StdOut, OutputItem, QueueActions, JobCreated,
                      GeneratedUpdate, ActionsAttached, JobEmergencyAbort)
 from .util import recvcoroutine
-from .watcher import Watcher, Watchable
-from .service import Action
-
+from .watchable import Watchable
+from .watcher import Watcher
 
 
 class JobTimeoutError(Exception):
@@ -54,7 +54,10 @@ class JobAction(Action):
         self.descripton = cfg.get("description")
         self.vm_name = cfg["machine"]
 
-    def get_watcher(self, build):
+    def get_watcher(self, build, completed):
+        if completed:
+            return None
+
         return Job(build, self.project, self.job_name, self.vm_name)
 
 
@@ -121,15 +124,11 @@ class Job(Watcher, Watchable):
 
         # check if the job was completed.
         # this means we can do a reconstruction.
-        try:
-            self.completed = self.path.joinpath("_completed").stat().st_mtime
-        except FileNotFoundError:
-            pass
-
-        # create the output directory structure
         if not CFG.args.volatile:
-            if not self.path.is_dir():
-                self.path.mkdir(parents=True)
+            try:
+                self.completed = self.path.joinpath("_completed").stat().st_mtime
+            except FileNotFoundError:
+                pass
 
         # if this job is being reconstructed (-> it was completed once),
         # don't send the JobCreated update, as it triggered
@@ -140,35 +139,44 @@ class Job(Watcher, Watchable):
 
     def load_from_fs(self):
         """
-        reconstruct the job from the filesystem.
-        TODO: currently, the old job attempt is deleted if not finished.
-              maybe we wanna keep it.
+        Ensure the job is reconstructed from filesystem.
         """
 
-        # only reconstruct if we wanna use the local storage
         if CFG.args.volatile:
             return False
 
-        # load update list from file
-        if self.completed is not None:
+        if self.completed and not self.all_loaded:
             with self.path.joinpath("_updates").open() as updates_file:
                 for json_line in updates_file:
                     self.send_update(Update.construct(json_line),
                                      reconstruct=True)
 
+            logging.debug(f"reconstructed Job {id(self)} {self} from fs")
+
             # jup, we reconstructed.
+            self.all_loaded = True
             return True
-
         else:
-            # make sure that there are no remains
-            # of previous aborted jobs.
-            try:
-                shutil.rmtree(str(self.path))
-            except FileNotFoundError:
-                pass
-
-            # no, reconstruction failed.
             return False
+
+    def purge_fs(self):
+        """
+        Remove all the files from this build.
+        """
+
+        if CFG.args.volatile:
+            return False
+
+        # make sure that there are no remains
+        # of previous aborted jobs.
+        try:
+            shutil.rmtree(str(self.path))
+        except FileNotFoundError:
+            pass
+
+        # create the output directory structure
+        if not self.path.is_dir():
+            self.path.mkdir(parents=True)
 
     def __str__(self):
         return "%s.%s [\x1b[33m%s\x1b[m]" % (
@@ -233,17 +241,16 @@ class Job(Watcher, Watchable):
 
             # we are already attached to receive updates from a build
             # now, we subscribe the build to us so it gets our updates.
-            self.watch(self.build)
+            self.register_watcher(self.build)
 
         elif isinstance(update, QueueActions):
             if not self.all_loaded:
                 if self.completed:
                     # we can reconstruct as the _completed file exists.
-                    if not self.load_from_fs():
-                        raise Exception("Job could not be recreated!")
+                    self.load_from_fs()
 
-                    self.all_loaded = True
                 else:
+                    self.purge_fs()
                     # run the job by adding it to the processing queue
                     update.queue.add_job(self)
 
@@ -278,7 +285,7 @@ class Job(Watcher, Watchable):
                                    self.name, step_name, state, text,
                                    time=time))
 
-    def on_watch(self, watcher):
+    def on_watcher_registered(self, watcher):
         # send all previous job updates to the watcher
         for update in self.updates:
             watcher.on_update(update)

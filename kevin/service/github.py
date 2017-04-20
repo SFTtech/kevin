@@ -11,7 +11,7 @@ from hashlib import sha1
 
 import requests
 
-from . import Action
+from ..action import Action
 from ..config import CFG
 from ..httpd import HookHandler, HookTrigger
 from ..update import (BuildState, JobState,
@@ -153,8 +153,7 @@ class GitHubHook(HookTrigger):
         for repo in cfg["repos"].split(","):
             self.repos.append(repo.strip())
 
-        # pull request manager to detect
-        # build aborts
+        # pull request manager to detect build aborts
         self.pull_manager = GitHubPullManager(self.repos)
 
     def get_watchers(self):
@@ -176,7 +175,8 @@ class GitHubHookHandler(HookHandler):
     The configuration takes place in many GitHubHook instances.
     """
 
-    def initialize(self, build_manager, triggers):
+    def initialize(self, queue, build_manager, triggers):
+        self.queue = queue
         self.build_manager = build_manager
 
         # list of GitHubHooks that are can invoke this hook handler
@@ -364,8 +364,6 @@ class GitHubHookHandler(HookHandler):
         # the github push is a source for the build
         build.add_source(clone_url, repo_url, user, branch)
 
-        # TODO: this is called after the build reconstruction.
-        # -> the pull request update is sent after the finish notification
         if initial_updates:
             for update in initial_updates:
                 build.send_update(update)
@@ -375,7 +373,7 @@ class GitHubHookHandler(HookHandler):
             build.send_update(GitHubStatusURL(status_url))
 
         # add the build to the queue
-        self.application.queue.add_build(build)
+        self.queue.add_build(build)
 
 
 class GitHubStatus(Action):
@@ -391,7 +389,7 @@ class GitHubStatus(Action):
         super().__init__(cfg, project)
         self.authtoken = (cfg["user"], cfg["token"])
 
-    def get_watcher(self, build):
+    def get_watcher(self, build, completed):
         return GitHubBuildStatusUpdater(build, self)
 
 

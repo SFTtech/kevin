@@ -11,7 +11,7 @@ from tornado.platform.asyncio import AsyncIOMainLoop
 from tornado.queues import Queue
 
 from .config import CFG
-from .service import Trigger
+from .trigger import Trigger
 from .update import (
     JobCreated, JobUpdate, JobState,
     StdOut, BuildState, BuildSource
@@ -21,7 +21,7 @@ from .watcher import Watcher
 
 class HookTrigger(Trigger):
     """
-    Base class for a webhook trigger (e.g. the github thingy).
+    Base class for a webhook trigger (e.g. the "github notifies us" thingy).
     """
 
     def __init__(self, cfg, project):
@@ -93,6 +93,7 @@ class HTTPD:
 
         # this dict will be the kwargs of each urlhandler
         handler_args = {
+            "queue": queue,
             "build_manager": build_manager,
         }
 
@@ -123,8 +124,6 @@ class HTTPD:
 
         app = web.Application(handlers)
 
-        app.queue = queue
-
         # bind http server to tcp port
         self.server = httpserver.HTTPServer(app)
         self.server.listen(port=CFG.dyn_port, address=str(CFG.dyn_address))
@@ -140,7 +139,9 @@ class HTTPD:
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     """ Provides a job description stream via WebSocket """
 
-    def initialize(self, build_manager):
+    def initialize(self, queue, build_manager):
+        del queue  # unused
+
         self.build_manager = build_manager
         self.build = None
 
@@ -171,7 +172,10 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         # (except for JobState updates, which are treated by the filter above).
         self.filter_ = get_filter(self.get_parameter("filter"))
 
-        self.build.watch(self)
+        self.build.register_watcher(self)
+
+        # trigger the disk-load, if necessary
+        self.build.reconstruct_jobs(self.get_parameter("job"))
 
     def get_parameter(self, name, default=None):
         """
@@ -186,7 +190,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
     def on_close(self):
         if self.build is not None:
-            self.build.unwatch(self)
+            self.build.deregister_watcher(self)
 
     def on_message(self, message):
         # TODO: handle user messages
@@ -224,7 +228,9 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 class PlainStreamHandler(web.RequestHandler, Watcher):
     """ Provides the job stdout stream via plain HTTP GET """
 
-    def initialize(self, build_manager):
+    def initialize(self, queue, build_manager):
+        del queue  # unused
+
         self.build_manager = build_manager
         self.job = None
 
@@ -276,7 +282,10 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
         self.queue = Queue()
 
         # request the updates from the watched jobs
-        self.job.watch(self)
+        self.job.register_watcher(self)
+
+        # TODO: perform the socket write at the same time as the loading..
+        self.job.load_from_fs()
 
         # emit the updates and wait until no more are coming
         yield self.watch_job()
@@ -332,4 +341,4 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
     def on_finish(self):
         # TODO: only do this if we got a GET request.
         if self.job is not None:
-            self.job.unwatch(self)
+            self.job.deregister_watcher(self)

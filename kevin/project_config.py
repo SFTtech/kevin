@@ -6,8 +6,9 @@ from configparser import ConfigParser
 import logging
 import re
 
-from ..service import SERVICES
-from ..util import parse_size, parse_time
+from .service_meta import SERVICES
+from .service import import_all as import_all_services
+from .util import parse_size, parse_time
 
 
 class Config:
@@ -22,11 +23,6 @@ class Config:
     """
 
     def __init__(self, filename, project):
-
-        # trigger the class instanciation for all services
-        from ..service.github import GitHubHook
-        from ..job import Job
-
         # parse the project config file
         raw = ConfigParser()
         raw.read(filename)
@@ -34,6 +30,9 @@ class Config:
         self.services = list()
 
         current_section = None
+
+        # import the available services
+        import_all_services()
 
         try:
             # general project config in [project]
