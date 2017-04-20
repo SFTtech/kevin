@@ -86,10 +86,10 @@ def main():
 
     if connection == "ssh":
         host, port = location
-        falk = FalkSSH(host, port, user, key)
+        falk = FalkSSH("manage", host, port, user, key)
 
     elif connection == "unix":
-        falk = FalkSocket(location, user)
+        falk = FalkSocket("manage", location, user)
 
     else:
         raise Exception("unknown falk connection type: %s" % connection)
