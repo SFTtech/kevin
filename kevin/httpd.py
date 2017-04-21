@@ -144,6 +144,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
         self.build_manager = build_manager
         self.build = None
+        self.filter_ = None
 
     def open(self):
         project = CFG.projects[self.get_parameter("project")]
@@ -175,7 +176,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         self.build.register_watcher(self)
 
         # trigger the disk-load, if necessary
-        self.build.reconstruct_jobs(self.get_parameter("job"))
+        self.build.reconstruct_jobs(self.get_parameter("filter"))
 
     def get_parameter(self, name, default=None):
         """

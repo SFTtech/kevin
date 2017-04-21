@@ -168,21 +168,26 @@ class Build(Watchable, Watcher):
 
         # if a job preference was given, reconstruct it first.
         if preferred_job:
-            try:
-                # find the preferred job
-                pref_idx = self.jobs_to_reconstruct.index(preferred_job)
+            pref_idx = -1
+            # find the preferred job
+            for idx, (name, _) in enumerate(self.jobs_to_reconstruct):
+                if name == preferred_job:
+                    pref_idx = idx
+
+            if pref_idx >= 0:
                 jobs = list()
                 jobs.append(self.jobs_to_reconstruct[pref_idx])
 
-                for idx, job in self.jobs_to_reconstruct:
+                for idx, job in enumerate(self.jobs_to_reconstruct):
                     if idx == pref_idx:
                         continue
                     else:
                         jobs.append(job)
 
-            except ValueError:
+            else:
                 # requested job not in joblist.
-                pass
+                logging.debug("preferred job '%s' not found", preferred_job)
+                jobs = self.jobs_to_reconstruct
         else:
             jobs = self.jobs_to_reconstruct
 
