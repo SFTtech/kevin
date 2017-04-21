@@ -14,7 +14,7 @@ from .config import CFG
 from .trigger import Trigger
 from .update import (
     JobCreated, JobUpdate, JobState,
-    StdOut, BuildState, BuildSource
+    StdOut, BuildState, BuildSource, RequestError
 )
 from .watcher import Watcher
 
@@ -149,34 +149,40 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     def open(self):
         project = CFG.projects[self.get_parameter("project")]
         build_id = self.get_parameter("hash")
-        self.build = self.build_manager.get_build(project, build_id)
+        try:
+            self.build = self.build_manager.get_build(project, build_id)
 
-        if not self.build:
-            logging.warning(f"unknown build {build_id} "
-                            f"of {project} requested.")
-            # TODO: send not-found message.
+            if not self.build:
+                logging.warning(f"unknown build {build_id} "
+                                f"of {project} requested.")
+
+                self.send_error("Unknown build requested.")
+                return
+
+            def get_filter(filter_def):
+                """
+                Returns a filter function from the filter definition string.
+                """
+                if not filter_def:
+                    return lambda _: True
+                else:
+                    job_names = filter_def.split(",")
+                    return lambda job_name: job_name in job_names
+
+            # state_filter specifies which JobState updates to forward.
+            self.state_filter = get_filter(self.get_parameter("state_filter"))
+            # filter_ specifies which JobUpdate updates to forward.
+            # (except for JobState updates, which are treated by the filter above).
+            self.filter_ = get_filter(self.get_parameter("filter"))
+
+            self.build.register_watcher(self)
+
+            # trigger the disk-load, if necessary
+            self.build.reconstruct_jobs(self.get_parameter("filter"))
+
+        except Exception as exc:
+            self.send_error(f"Error: {exc}")
             return
-
-        def get_filter(filter_def):
-            """
-            Returns a filter function from the filter definition string.
-            """
-            if not filter_def:
-                return lambda _: True
-            else:
-                job_names = filter_def.split(",")
-                return lambda job_name: job_name in job_names
-
-        # state_filter specifies which JobState updates to forward.
-        self.state_filter = get_filter(self.get_parameter("state_filter"))
-        # filter_ specifies which JobUpdate updates to forward.
-        # (except for JobState updates, which are treated by the filter above).
-        self.filter_ = get_filter(self.get_parameter("filter"))
-
-        self.build.register_watcher(self)
-
-        # trigger the disk-load, if necessary
-        self.build.reconstruct_jobs(self.get_parameter("filter"))
 
     def get_parameter(self, name, default=None):
         """
@@ -188,6 +194,13 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             return default
         else:
             return parameter.decode()
+
+    def send_error(self, msg):
+        """
+        Send an error message to the websocket client.
+        """
+        msg = RequestError(msg)
+        self.write_message(msg.json())
 
     def on_close(self):
         if self.build is not None:

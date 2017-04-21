@@ -244,8 +244,27 @@ class Mandy {
         );
         this.ws = new WebSocket(wsURL, "mandy");
         this.ws.onmessage = (e) => { this.onMessage(e); };
+        this.ws.onerror = (e) => {
+            if (e.target.readyState === 3) {
+                this.error("Can't connect to Kevin.");
+            } else {
+                this.error("Websocket error.");
+            }
+        };
 
         window.my_global_startperf = window.performance.now();
+    }
+
+
+    /**
+     * Show an error message in the sidebar.
+     */
+    error(msg) {
+        this.buildStatus.data = "";
+        var errMsg = document.createElement("div");
+        errMsg.className = "errormessage";
+        errMsg.appendChild(document.createTextNode(msg));
+        this.sidebar.titleDiv.appendChild(errMsg);
     }
 
 
@@ -283,10 +302,6 @@ class Mandy {
             state = msg.state;
             text = msg.text;
             this.sidebar.jobUpdate(job_name, state, text);
-
-            if (msg.state === "success") {
-                var perf = window.performance.now();
-            }
         } else if (msg.class === "StepState") {
             var step_name = msg.step_name;
             state = msg.state;
@@ -303,6 +318,8 @@ class Mandy {
         } else if (msg.class === "BuildState") {
             document.getElementById("icon").href = "favicon-" + msg.state + ".png";
             this.buildStatus.data = msg.text;
+        } else if (msg.class == "RequestError") {
+            this.error(msg.text);
         } else {
             console.log("unknown update", msg);
         }

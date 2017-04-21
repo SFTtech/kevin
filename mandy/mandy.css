@@ -53,6 +53,11 @@ html, body {
     border-color: lightgray;
 }
 
+#sidebar .errormessage {
+    background-color: red;
+    margin-top: 10px;
+}
+
 #sidebar .job {
 }
 

@@ -265,3 +265,10 @@ class RegisterActions(GeneratedUpdate):
 
     def __init__(self):
         pass
+
+
+class RequestError(GeneratedUpdate):
+    """ Sent to a client if an error occured. """
+
+    def __init__(self, text):
+        self.text = text
