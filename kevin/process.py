@@ -96,10 +96,10 @@ class Process(AsyncWith):
 
         self.created = False
 
-        # future to track exit state.
+        # future to track force-exit exceptions.
         # this contains the exception if the program
         # was killed e.g. because of a timeout.
-        self.exited = self.loop.create_future()
+        self.killed = self.loop.create_future()
 
         pipe = subprocess.PIPE if pipes else None
         self.capture_data = pipes
@@ -150,9 +150,6 @@ class Process(AsyncWith):
 
         if not self.created:
             raise Exception("can't communicate as process was not yet created")
-
-        if self.exited.done():
-            raise Exception("process exited and no output is waiting")
 
         if not self.capture_data:
             raise Exception("pipes=False, but you wanted to communicate()")
@@ -244,23 +241,12 @@ class Process(AsyncWith):
         for callback in self.exit_callbacks:
             callback()
 
-        if not self.exited.done():
-            # process exited regularly!
-            self.exited.set_result(StopIteration)
-        else:
-            raise ProcessError("process exit called after "
-                               "process already exited with: "
-                               f"{self.exited.result()}")
-
     async def __aenter__(self):
         await self.create()
         return self
 
     async def __aexit__(self, exc, value, traceback):
         await self.pwn()
-
-        if not self.exited.done():
-            raise ProcessError("process still alive after exit")
 
 
 class SSHProcess(Process):
@@ -373,6 +359,8 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
     def process_exited(self):
         # process exit happens after all the pipes were lost.
 
+        logging.debug("Process %s exited", self.process)
+
         # send out remaining data to queue
         if self.buf:
             self.enqueue_data((1, bytes(self.buf)))
@@ -427,8 +415,8 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
         try:
             self.queue.put_nowait(data)
         except asyncio.QueueFull as exc:
-            if not self.process.exited.done():
-                self.process.exited.set_exception(exc)
+            if not self.process.killed.done():
+                self.process.killed.set_exception(exc)
 
 
 class ProcessIterator:
@@ -471,8 +459,8 @@ class ProcessIterator:
         line_output: it was the line-timeout that triggered.
         """
 
-        if not self.process.exited.done():
-            self.process.exited.set_exception(ProcTimeoutError(
+        if not self.process.killed.done():
+            self.process.killed.set_exception(ProcTimeoutError(
                 self.process.args,
                 self.run_timeout if was_global else self.output_timeout,
                 was_global,
@@ -515,7 +503,7 @@ class ProcessIterator:
             # or the queue gives us the next data item.
             # wait for the first of those events.
             done, pending = await asyncio.wait(
-                [self.process.protocol.queue.get(), self.process.exited],
+                [self.process.protocol.queue.get(), self.process.killed],
                 return_when=asyncio.FIRST_COMPLETED)
 
             # at least one of them is done now:
@@ -540,33 +528,12 @@ class ProcessIterator:
                 # fetch output from the process
                 entry = future.result()
 
-                # it can be stopiteration to indicate the last data chunk
-                # as the process exited on its own,
-                # or the exited future was fulfilled by a regular exit.
+                # The result is StopIteration to indicate that the process
+                # output stream ended.
                 if entry is StopIteration:
-                    if not self.process.exited.done():
-                        # we end up here if the self.process doesn't know
-                        # yet that it terminated.
-                        self.process.exited.set_result(entry)
-
-                    elif self.process.exited.result() is not StopIteration:
-                        raise ProcessError(
-                            "Inconsistency between output queue "
-                            "and process exit: "
-                            f"{self.process.exited.result()}"
-                        )
-
-                    # the process exited: self.process.exited.done().
-                    # yield remaining data.
-                    if not self.process.protocol.queue.empty():
-                        entry = self.process.protocol.queue.get_nowait()
-                        if entry is StopIteration:
-                            self.error_check()
-                            return
-                    else:
-                        # no more data, so stop iterating
-                        self.error_check()
-                        return
+                    # no more data, so stop iterating
+                    self.error_check()
+                    return
 
                 fdnr, data = entry
 
