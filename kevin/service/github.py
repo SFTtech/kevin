@@ -337,7 +337,7 @@ class GitHubHookHandler(HookHandler):
 
         pull = json_data["pull_request"]
         clone_url = pull["head"]["repo"]["clone_url"]
-        repo_url = pull["head"]["repo"]["html_url"]
+        repo_url = pull["html_url"]
         commit_sha = pull["head"]["sha"]
         branch = pull["head"]["label"]
 

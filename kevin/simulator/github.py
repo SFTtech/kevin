@@ -139,11 +139,11 @@ class GitHub(service.Service):
                 "head": {
                     "repo": {
                         "clone_url": repo,
-                        "html_url": repo,
                     },
                     "sha": head_commit,
                     "label": "lol:epic_update",
                 },
+                "html_url": repo,
                 "statuses_url": status_url,
             },
             "repository": {
