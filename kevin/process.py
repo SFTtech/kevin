@@ -85,12 +85,12 @@ class Process(AsyncWith):
     pipes: True=create pipes to the process, False=reuse your terminal
     loop: the event loop to run this process in
     linebuf_max: maximum size of the buffer for line chopping
-    line_cache: maximum number of entries in the line queue
+    queue_size: maximum number of entries in the output queue
     """
 
     def __init__(self, command, chop_lines=False, must_succeed=False,
                  pipes=True, loop=None,
-                 linebuf_max=(8 * 1024 ** 2), line_cache=128):
+                 linebuf_max=(8 * 1024 ** 2), queue_size=1024):
 
         self.loop = loop or asyncio.get_event_loop()
 
@@ -106,7 +106,7 @@ class Process(AsyncWith):
 
         self.proc = self.loop.subprocess_exec(
             lambda: WorkerInteraction(self, chop_lines,
-                                      linebuf_max, line_cache),
+                                      linebuf_max, queue_size),
             *command,
             stdin=pipe, stdout=pipe, stderr=pipe)
 
@@ -286,7 +286,7 @@ class SSHProcess(Process):
     def __init__(self, command, ssh_user, ssh_host, ssh_port, ssh_key=None,
                  timeout=INF, silence_timeout=INF, chop_lines=False,
                  must_succeed=False, pipes=True, options=None,
-                 loop=None, linebuf_max=(8 * 1024 ** 2), line_cache=128):
+                 loop=None, linebuf_max=(8 * 1024 ** 2), queue_size=1024):
 
         if not isinstance(command, (list, tuple)):
             raise Exception("invalid command: %r" % (command,))
@@ -306,7 +306,7 @@ class SSHProcess(Process):
         ] + list(command)
 
         super().__init__(ssh_cmd, chop_lines=chop_lines, loop=loop,
-                         linebuf_max=linebuf_max, line_cache=line_cache,
+                         linebuf_max=linebuf_max, queue_size=queue_size,
                          must_succeed=must_succeed, pipes=pipes)
 
         self.timeout = timeout
@@ -346,7 +346,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
     """
     Subprocess protocol specialization to allow output line buffering.
     """
-    def __init__(self, process, chop_lines, linebuf_max, line_cache=INF):
+    def __init__(self, process, chop_lines, linebuf_max, queue_size=INF):
         super().__init__()
         self.process = process
         self.buf = bytearray()
@@ -354,7 +354,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
         self.stdin = None
         self.linebuf_max = linebuf_max
         self.queue = asyncio.Queue(maxsize=(
-            line_cache if line_cache < INF else 0))
+            queue_size if queue_size < INF else 0))
         self.chop_lines = chop_lines
 
     def connection_made(self, transport):
@@ -483,6 +483,9 @@ class ProcessIterator:
         Yields tuples of (fd, data) where fd is one of
         {stdout_fileno, stderr_fileno}, and data is the bytes object
         that was written to that stream (may be a line if requested).
+
+        If the process times out or some error occurs,
+        this function will raise the appropriate exception.
         """
 
         while True:
@@ -523,6 +526,12 @@ class ProcessIterator:
                 if future.exception():
                     for future_pending in pending:
                         future_pending.cancel()
+
+                    for future_pending in pending:
+                        try:
+                            await future_pending
+                        except asyncio.CancelledError:
+                            pass
 
                     # kill the process before throwing the error!
                     await self.process.pwn()
