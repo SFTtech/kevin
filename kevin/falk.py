@@ -350,6 +350,10 @@ class FalkSocketStreamProtocol(asyncio.StreamReaderProtocol):
                          connect_callback)
         self.disconnect_callback = disconnect_callback
 
+    def eof_received(self):
+        # don't keep open
+        return False
+
     def connection_lost(self, exc):
         super().connection_lost(exc)
         self.disconnect_callback()
