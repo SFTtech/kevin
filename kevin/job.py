@@ -639,7 +639,7 @@ class Job(Watcher, Watchable):
                 raise ValueError("output size limit exceeded")
 
             pathobj = self.path.joinpath(path)
-            if pathobj.exists():
+            if pathobj.exists() and not CFG.args.volatile:
                 raise ValueError("duplicate output path: " + path)
 
             self.raw_remaining = size

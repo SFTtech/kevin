@@ -348,6 +348,10 @@ class Build(Watchable, Watcher):
         """
         Save an update to disk for later reconstruction.
         """
+
+        if CFG.args.volatile:
+            return
+
         # whitelist for stored build updates
         if not isinstance(update, (BuildSource, JobCreated)):
             return
