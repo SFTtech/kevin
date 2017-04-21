@@ -17,7 +17,7 @@ from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
                       ProcessError)
 from .update import (Update, JobState, JobUpdate, StepState,
                      StdOut, OutputItem, QueueActions, JobCreated,
-                     GeneratedUpdate, ActionsAttached, JobEmergencyAbort)
+                     GeneratedUpdate, JobEmergencyAbort, RegisterActions)
 from .util import recvcoroutine
 from .watchable import Watchable
 from .watcher import Watcher
@@ -70,7 +70,7 @@ class Job(Watcher, Watchable):
           not happen. for that, a "reset" must be implemented.
           The restart is not implemented either, though.
     """
-    def __init__(self, build, project, name, vm_name):
+    def __init__(self, build, project, name, vm_name, reconstructed=False):
         super().__init__()
 
         # the project and build this job is invoked by
@@ -130,10 +130,10 @@ class Job(Watcher, Watchable):
             except FileNotFoundError:
                 pass
 
-        # if this job is being reconstructed (-> it was completed once),
+        # if this job is being reconstructed,
         # don't send the JobCreated update, as it triggered
         # this reconstruction, otherwise we'd inf-loop.
-        if not self.completed:
+        if not reconstructed:
             # tell the our watchers that this job is now created
             self.send_update(JobCreated(self.name, self.vm_name))
 
@@ -145,8 +145,13 @@ class Job(Watcher, Watchable):
         if CFG.args.volatile:
             return False
 
-        if self.completed and not self.all_loaded:
-            with self.path.joinpath("_updates").open() as updates_file:
+        updates_file = self.path.joinpath("_updates")
+
+        if not updates_file.is_file():
+            return False
+
+        if not self.all_loaded:
+            with updates_file.open() as updates_file:
                 for json_line in updates_file:
                     self.send_update(Update.construct(json_line),
                                      reconstruct=True)
@@ -155,9 +160,8 @@ class Job(Watcher, Watchable):
 
             # jup, we reconstructed.
             self.all_loaded = True
-            return True
-        else:
-            return False
+
+        return True
 
     def purge_fs(self):
         """
@@ -199,8 +203,9 @@ class Job(Watcher, Watchable):
         # when reconstructing, the update just came from the file
         fs_save = not reconstruct
 
-        if not reconstruct and self.completed is not None:
-            raise Exception("job sending update after being completed.")
+        if not reconstruct and self.completed:
+            raise Exception("job wants to send update "
+                            f"after being completed: {update}")
 
         if isinstance(update, JobUpdate):
             # run the job-update hook.
@@ -235,13 +240,8 @@ class Job(Watcher, Watchable):
         That means normally: the Build notifies this Job.
         """
 
-        if isinstance(update, ActionsAttached):
-            # tell the build that we're an assigned job.
-            self.build.register_job(self)
-
-            # we are already attached to receive updates from a build
-            # now, we subscribe the build to us so it gets our updates.
-            self.register_watcher(self.build)
+        if isinstance(update, RegisterActions):
+            self.register_to_build()
 
         elif isinstance(update, QueueActions):
             if not self.all_loaded:
@@ -291,14 +291,25 @@ class Job(Watcher, Watchable):
             watcher.on_update(update)
 
         # and send stop if this job is finished
-        if self.completed is not None:
+        if self.completed:
             watcher.on_update(StopIteration)
+
+    def register_to_build(self):
+        """
+        Register this job to its build.
+        """
+        # tell the build that we're an assigned job.
+        self.build.register_job(self)
+
+        # we are already attached to receive updates from a build
+        # now, we subscribe the build to us so it gets our updates.
+        self.register_watcher(self.build)
 
     async def run(self, job_manager):
         """ Attempts to build the job. """
 
         try:
-            if self.completed is not None:
+            if self.completed:
                 raise Exception("tried to run a completed job!")
 
             # falk contact

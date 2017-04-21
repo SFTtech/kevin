@@ -13,7 +13,7 @@ from .config import CFG
 from .job import Job
 from .project import Project
 from .update import (BuildState, BuildSource, QueueActions, JobState,
-                     JobCreated, JobUpdate, ActionsAttached,
+                     JobCreated, JobUpdate, RegisterActions,
                      Update, GeneratedUpdate, JobEmergencyAbort)
 from .watchable import Watchable
 from .watcher import Watcher
@@ -106,25 +106,21 @@ class Build(Watchable, Watcher):
             self.commit_hash
         )
 
-        # load previous state
-        if not CFG.args.volatile:
-            try:
-                # check if the build was completed already.
-                self.completed = self.path.joinpath("_completed").stat().st_mtime
-            except FileNotFoundError:
-                pass
+        # skip loading disk state if requested
+        if CFG.args.volatile:
+            return
 
-        # add jobs and other actions defined by the project.
-        # some of the actions may be skipped if the build is completed already.
-        self.project.attach_actions(self, self.completed)
+        try:
+            # check if the build was completed already.
+            self.completed = self.path.joinpath("_completed").stat().st_mtime
+        except FileNotFoundError:
+            pass
 
-        # tell all watchers (e.g. jobs) that they were attached,
-        # and may now register themselves at this build.s
-        self.send_update(ActionsAttached())
+        self.load_from_fs()
 
-        if not CFG.args.volatile:
-            # try to load job data, or purge the folder.
-            self.load_or_purge_fs()
+        if not self.path.is_dir():
+            self.path.mkdir(parents=True)
+
 
     def load_from_fs(self):
         """
@@ -132,18 +128,20 @@ class Build(Watchable, Watcher):
         """
 
         if CFG.args.volatile:
-            return False
+            return
 
-        if self.completed and not self.all_loaded:
-            with self.path.joinpath("_updates").open() as updates_file:
+        updates_file = self.path.joinpath("_updates")
+
+        if not updates_file.is_file():
+            return
+
+        if not self.all_loaded:
+            with updates_file.open() as updates_file:
                 for json_line in updates_file:
                     self.send_update(Update.construct(json_line),
                                      reconstruct=True)
 
                 self.all_loaded = True
-            return True
-
-        return False
 
     def purge_fs(self):
         """
@@ -153,33 +151,15 @@ class Build(Watchable, Watcher):
         if CFG.args.volatile:
             return
 
-        # make sure that there are no remains
-        # of a previously aborted build.
         try:
             shutil.rmtree(str(self.path))
         except FileNotFoundError:
             pass
 
-        # create the output folder
         if not self.path.is_dir():
             self.path.mkdir(parents=True)
 
-    def load_or_purge_fs(self):
-        """
-        Recreate the build from the filesystem.
-        If this is not possible, purge the output directory.
-        """
-
-        if not self.completed:
-            self.purge_fs()
-
-        elif not self.all_loaded:
-            if not self.load_from_fs():
-                raise Exception("could not load build from disk!")
-
-        else:
-            # nothing to do, all is loaded.
-            pass
+        self.all_loaded = False
 
     def reconstruct_jobs(self, preferred_job=None):
         """
@@ -210,12 +190,10 @@ class Build(Watchable, Watcher):
             if job_name in self.jobs:
                 raise Exception("Job to reconstruct is already registered")
 
-            job = Job(self, self.project, job_name, vm_name)
+            job = Job(self, self.project, job_name, vm_name, reconstructed=True)
 
-            # subscribe the job to build's updates.
-            # that way, the job will get the ActionsAttached update
-            # and the job will register at this build.
-            self.register_watcher(job)
+            # bypass the `RegisterActions`-message and register directly
+            job.register_to_build()
 
             # reconstruct this job
             if not job.load_from_fs():
@@ -267,9 +245,26 @@ class Build(Watchable, Watcher):
             # TODO send more fine-grained build progress states
             self.set_state("waiting", "enqueued")
 
-        elif self.all_loaded:
-            # attach jobs that were once active
+        # prepare the output folder
+        if not self.completed:
+            self.purge_fs()
+
+            # restore updates like the build sources
+            # to the file storage.
+            for update in self.updates:
+                self.save_update(update)
+
+        if self.all_loaded:
+            # create and attach jobs that were once active
             self.reconstruct_jobs()
+
+        # add jobs and other actions defined by the project.
+        # some of the actions may be skipped if the build is completed already.
+        self.project.attach_actions(self, self.completed)
+
+        # tell all watchers (e.g. jobs) that they were attached,
+        # and may now register themselves at this build.
+        self.send_update(RegisterActions())
 
         # notify all watchers (e.g. jobs) that they should run.
         # jobs use this as the signal to reconstruct themselves,
@@ -281,7 +276,7 @@ class Build(Watchable, Watcher):
         """
         Registers a job that is run for this build.
 
-        This is called from a Job when we send the `ActionsAttached` update.
+        This is called from a Job when we send the `RegisterActions` update.
         """
 
         if job.name in self.jobs:
@@ -342,6 +337,12 @@ class Build(Watchable, Watcher):
             # don't write the update to the job storage
             return
 
+        self.save_update(update)
+
+    def save_update(self, update):
+        """
+        Save an update to disk for later reconstruction.
+        """
         # whitelist for stored build updates
         if not isinstance(update, (BuildSource, JobCreated)):
             return

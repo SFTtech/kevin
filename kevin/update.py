@@ -260,8 +260,8 @@ class QueueActions(GeneratedUpdate):
         self.project = project
 
 
-class ActionsAttached(GeneratedUpdate):
-    """ All actions of the project were attached to the build. """
+class RegisterActions(GeneratedUpdate):
+    """ Actions of a project shall now register at the build. """
 
     def __init__(self):
         pass
