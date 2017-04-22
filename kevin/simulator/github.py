@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import pathlib
 import requests
 import traceback
@@ -83,8 +84,8 @@ class GitHub(service.Service):
         print("listening on port %s:%d" % (self.listen, self.port))
         self.app.listen(self.port, address=str(self.listen))
 
-        # submit web hook
-        webhook = self.loop.create_task(self.submit_web_hook())
+        # perform the request
+        webhook = self.loop.create_task(self.request())
 
         try:
             self.loop.run_forever()
@@ -97,6 +98,16 @@ class GitHub(service.Service):
         self.loop.stop()
         self.loop.run_forever()
         self.loop.close()
+
+    async def request(self):
+        """
+        Perform the requests to simulate this pull.
+        """
+        try:
+            await self.submit_web_hook()
+
+        except Exception:
+            logging.exception("simulated pull request failed")
 
     async def submit_web_hook(self):
         """
