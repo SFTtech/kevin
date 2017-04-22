@@ -34,6 +34,9 @@ class Falk(ABC):
         # used for the reconnect mechanism in JobManager.
         self.active = True
 
+        # there may only be one query to a falk at a time
+        self.query_lock = asyncio.Lock()
+
     @abstractmethod
     async def create(self):
         """ create the falk connection """
@@ -102,15 +105,16 @@ class Falk(ABC):
     async def query(self, msg=None):
         """ Send some message to falk and retrieve the answer message."""
         ret = None
-        async for answer in self.send(msg, self.proto_mode):
-            if isinstance(answer, Error):
-                raise FalkError("falk query failed: got %s" % answer)
+        async with self.query_lock:
+            async for answer in self.send(msg, self.proto_mode):
+                if isinstance(answer, Error):
+                    raise FalkError("falk query failed: got %s" % answer)
 
-            if not ret:
-                ret = answer
-                continue
+                if not ret:
+                    ret = answer
+                    continue
 
-            raise Exception("more than one answer message!")
+                raise Exception("more than one answer message!")
         return ret
 
     @abstractmethod
