@@ -146,6 +146,13 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         self.build = None
         self.filter_ = None
 
+    def select_subprotocol(self, subprotocols):
+        # sync this with mandy.js and other websocket clients
+        preferred = "mandy_v0"
+        if preferred not in subprotocols:
+            return None
+        return preferred
+
     def open(self):
         project = CFG.projects[self.get_parameter("project")]
         build_id = self.get_parameter("hash")

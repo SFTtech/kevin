@@ -242,7 +242,7 @@ class Mandy {
             "&filter=" +
             jobName
         );
-        this.ws = new WebSocket(wsURL, "mandy");
+        this.ws = new WebSocket(wsURL, "mandy_v0");
         this.ws.onmessage = (e) => { this.onMessage(e); };
         this.ws.onerror = (e) => {
             if (e.target.readyState === 3) {
