@@ -31,6 +31,7 @@ def log_setup(setting, default=1):
 
     logging.basicConfig(level=level, format="[%(asctime)s] %(message)s")
     logging.error("loglevel: %s", logging.getLevelName(level))
+    logging.captureWarnings(True)
 
 
 def clamp(number, smallest, largest):
@@ -214,8 +215,8 @@ def parse_connection_entry(name, entry, cfglocation=None, require_key=True,
         return user, connection, location, None
 
     formats = {
-        "ssh": (("ssh://user@host:port = ssh-rsa blabla"
-                 "or ~/.ssh/known_hosts"),
+        "ssh": (("ssh://user@host:port = ssh-rsa vmfingerprint "
+                 "(or ~/.ssh/known_hosts)"),
                 re.compile(r"ssh://(.+)@(.+):(\d+)\s*(=\s*(.*))?"),
                 parse_ssh),
 
