@@ -102,6 +102,7 @@ class HTTPD:
         urlhandlers = dict()
         urlhandlers[("/", PlainStreamHandler)] = None
         urlhandlers[("/ws", WebSocketHandler)] = None
+        urlhandlers[("/robots.txt", RobotsHandler)] = None
 
         urlhandlers.update(external_handlers)
 
@@ -363,3 +364,15 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
         # TODO: only do this if we got a GET request.
         if self.job is not None:
             self.job.deregister_watcher(self)
+
+
+class RobotsHandler(web.RequestHandler):
+    """ Serves a robots.txt that disallows all indexing. """
+
+    def initialize(self, queue, build_manager):
+        del queue
+        del build_manager
+
+    def get(self):
+        self.set_header("Content-Type", "text/plain")
+        self.write("User-agent: *\nDisallow: /\n")
