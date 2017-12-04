@@ -80,14 +80,13 @@ def build_job(args):
         timer = time()
         stdout("\n\x1b[36;1m[%s]\x1b[m\n" % step.name)
 
-
         try:
             step_env = base_env.copy()
             step_env.update(step.env)
 
             # execute commands
             for command in step.commands:
-                run_command(command, step_env)
+                run_command(command, step_env, step.cwd)
 
             # then, transfer output files
             for output in step.outputs:

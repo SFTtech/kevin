@@ -8,7 +8,7 @@ import os
 from .msg import stdout
 
 
-def run_command(cmd, env):
+def run_command(cmd, env, cwd=None):
     """
     Prints the command name, then runs it.
     Throws RuntimeError on retval != 0.
@@ -22,7 +22,14 @@ def run_command(cmd, env):
         raise OSError("could not fork")
 
     if child_pid == 0:
-        # we're the child; launch the subprocess here.
+        # we're the child
+
+        # enter a custom work dir
+        if cwd:
+            tgt = os.path.expanduser(os.path.expandvars(cwd))
+            os.chdir(tgt)
+
+        # launch the subprocess here.
         os.execve("/bin/sh", ["sh", "-c", cmd], env)
         # we only reach this point if the execve has failed
         print("\x1b[31;1mcould not execve\x1b[m")

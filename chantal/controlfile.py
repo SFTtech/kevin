@@ -140,6 +140,7 @@ class Step:
         self.skip = False
         self.outputs = []
         self.env = {}
+        self.cwd = None
 
     def parse_line(self, line, lineno, all_outputs):
         """ Parses one line that was written as part of the section. """
@@ -213,6 +214,9 @@ class Step:
 
         elif key == "trigger":
             raise NotImplementedError("TODO: success triggers (e.g. badge)")
+
+        elif key == "cwd":
+            self.cwd = val
 
         else:
             raise ParseError(lineno, "Unknown key: " + key)

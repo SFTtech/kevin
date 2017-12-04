@@ -1,6 +1,13 @@
 # example control file
 # syntax similar to makefiles
 
+# * each step can depend on other steps
+# * it can have optional settings like cwd or env variables
+# * the step consists of one or more commands
+# * after all commands of a step, output files can be saved
+#
+# EXAMPLE:
+#
 # stepname: other-stepname other-stepname-that-must-suceed-before bla bla
 #     - optional rule setup stuff, e.g.:
 #     - env: variable=value mom="really fat"  # set environment variables
@@ -8,10 +15,16 @@
 #     - skip                                  # skip this step
 #     - skip  (? if job == "some_jobname" ?)  # skip only if jobname matches
 #     - output: "some/file/thats/copied/out/to/static/output/folder"
-#     - output: "or/some/directory/to/send"
+#     - output: "or/some/directory/to/send/"
+#     - cwd: "~/dir/to/run/the/commands/in/"
+#
+#     # then, the step commands follow:
 #     echo "some command executed in sh"
 #     echo "if one command fails, the step will fail"
 #     echo "it fails when returncode != 0"
+#
+#     cd somewhere/ && echo "each line is in its own shell!"
+#     echo "so the following command is no longer in 'somewhere/'"
 
 # the steps are executed in order.
 # any step with no more pending dependencies is executed.
