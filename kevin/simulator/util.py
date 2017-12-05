@@ -21,16 +21,22 @@ def get_hash(repo):
         )
 
         line = None
-        while not (line and "HEAD" in line):
+        head_hash = None
+        # find the "HEAD" output line
+        while not line or "HEAD" not in line:
             data = yield from proc.stdout.readline()
             if not data:
                 break
             line = data.decode('utf8').rstrip()
 
-        if "HEAD" in line:
+        retval = yield from proc.wait()
+
+        if retval != 0:
+            raise Exception("failed to determine HEAD hash in '%s'" % repo)
+
+        if line and "HEAD" in line:
             head_hash = line.split()[0]
 
-        yield from proc.wait()
         return head_hash
 
     return repo_query(repo)
