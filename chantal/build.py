@@ -16,7 +16,7 @@ from .msg import (
     output_file as msg_output_file,
     raw_msg
 )
-from .util import FatalBuildError, run_command
+from .util import FatalBuildError, run_command, CommandError
 
 
 def build_job(args):
@@ -29,24 +29,31 @@ def build_job(args):
         "GCC_COLORS": "yes"
     })
 
-    job_state("running", "cloning repo")
+    if args.clone_location:
+        job_state("running", "cloning repo")
 
-    shallow = ("--depth %d " % args.shallow) if args.shallow > 0 else ""
+        if args.clone_depth > 0:
+            shallow = ("--depth %d " % args.clone_depth)
+        else:
+            shallow = ""
 
-    run_command("git clone " + shallow +
-                shlex.quote(args.clone_url) +
-                " " + args.folder, base_env)
-    os.chdir(args.folder)
-    run_command("git checkout -q " + args.commit_sha, base_env)
+        run_command("git clone " + shallow +
+                    shlex.quote(args.clone_location) +
+                    " " + args.work_location, base_env)
+
+    os.chdir(args.work_location)
+
+    if args.treeish:
+        run_command("git checkout -q " + args.treeish, base_env)
 
     try:
-        with open(args.desc_file) as controlfile:
+        with open(args.filename) as controlfile:
             steps = parse_control_file(controlfile.read(), args)
     except FileNotFoundError:
         raise FatalBuildError(
-            "no kevin config file named '%s' was found" % (args.desc_file))
+            "no kevin config file named '%s' was found" % (args.filename))
     except ParseError as exc:
-        raise FatalBuildError("%s:%d: %s" % (args.desc_file, exc.args[0],
+        raise FatalBuildError("%s:%d: %s" % (args.filename, exc.args[0],
                                              exc.args[1]))
 
     for step in steps:
@@ -92,8 +99,8 @@ def build_job(args):
             for output in step.outputs:
                 output_item(output)
 
-        except RuntimeError as exc:
-            # failure in step.
+        except CommandError as exc:
+            # failure in step command.
             step_state(step, "failure", str(exc.args[0]))
 
             if not step.hidden:

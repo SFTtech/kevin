@@ -8,10 +8,17 @@ import os
 from .msg import stdout
 
 
+class CommandError(Exception):
+    """
+    Raised when a command to be executed fails.
+    """
+    pass
+
+
 def run_command(cmd, env, cwd=None):
     """
     Prints the command name, then runs it.
-    Throws RuntimeError on retval != 0.
+    Throws CommandError on retval != 0.
 
     Env is the environment variables that are passed.
     """
@@ -50,7 +57,7 @@ def run_command(cmd, env, cwd=None):
 
     if retval != 0:
         stdout("\x1b[31;1mcommand returned %d\x1b[m\n" % retval)
-        raise RuntimeError("command failed: %s [%d]" % (cmd, retval))
+        raise CommandError("command failed: %s [%d]" % (cmd, retval))
 
 
 class FatalBuildError(Exception):

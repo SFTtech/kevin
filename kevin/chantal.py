@@ -191,9 +191,9 @@ class Chantal(AsyncWith):
 
         return self.exec_remote(
             ("python3", "-u", "-m", "chantal",
-             job.build.clone_url,
-             job.build.commit_hash,
-             job.build.project.cfg.job_desc_file,
+             "--clone", job.build.clone_url,
+             "--checkout", job.build.commit_hash,
+             "--desc-file", job.build.project.cfg.job_desc_file,
              job.name),
             timeout=job.build.project.cfg.job_timeout,
             silence_timeout=job.build.project.cfg.job_silence_timeout,
