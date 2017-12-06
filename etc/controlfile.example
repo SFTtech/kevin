@@ -14,8 +14,11 @@
 #     - hidden                                # hide that rule from all output
 #     - skip                                  # skip this step
 #     - skip  (? if job == "some_jobname" ?)  # skip only if jobname matches
-#     - output: "some/file/thats/copied/out/to/static/output/folder"
-#     - output: "or/some/directory/to/send/"
+#
+#     # there can be one or more output file declarations.
+#     # those also support the if-conditionals
+#     - output: "some/file/to/save/in/static/output/folder" as "output_name"
+#     - output: "or/some/directory/to/send/" as "output_dir_name"
 #     - cwd: "~/dir/to/run/the/commands/in/"
 #
 #     # then, the step commands follow:
@@ -39,7 +42,8 @@ tamale:
 
 sudo:
 	- hidden
-	sudo echo "i got root!"
+	- output: "/tmp/produced_file" as "root_result"
+	sudo echo "i got root!" | tee /tmp/produced_file
 	echo "running on whitespaceOS"  (? if job == "whitespaceOS" ?)
 
 cpuinfo: tamale sudo

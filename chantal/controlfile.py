@@ -136,11 +136,11 @@ class Step:
         self.commands = []
 
         # the various attributes that may be set in header lines.
-        self.hidden = False
-        self.skip = False
-        self.outputs = []
-        self.env = {}
-        self.cwd = None
+        self.hidden = False  # hide the step from step list
+        self.skip = False    # don't perform the step
+        self.outputs = []    # (inpath, outpath) for files to store
+        self.env = {}        # key-value for step environment variables
+        self.cwd = None      # directory to cd to for the whole step
 
     def parse_line(self, line, lineno, all_outputs):
         """ Parses one line that was written as part of the section. """
@@ -181,24 +181,52 @@ class Step:
             setattr(self, key, True)
 
         elif key == "output":
+            # val is something like "input/file/name" as "outputname"
             if not val:
-                raise ParseError(lineno, "output filename is empty.")
+                raise ParseError(lineno, "empty output definition.")
 
-            if val[0] in {'_', '.'}:
+            try:
+                output_cfg = shlex.split(val)
+            except ValueError as exc:
+                raise ParseError(lineno, "failed to parse: %s" % exc)
+
+            if len(output_cfg) not in (1,3):
+                raise ParseError(
+                    lineno,
+                    "output definition must be one of "
+                    "'filename' or 'filename as outputname'"
+                )
+
+            if len(output_cfg) == 3:
+                alias_hint = ""
+                output_source, _, output_dest = output_cfg
+            else:
+                alias_hint = ", use the 'as' statement?"
+                output_source = output_dest = output_cfg[0]
+
+            if output_dest[0] in ('_', '.'):
                 raise ParseError(lineno,
-                                 "output filename starts with . or _: %s" % val)
+                                 "output destination filename "
+                                 "starts with . or _: %s" % output_dest)
 
-            if '/' in val:
-                raise ParseError(lineno, "'/' in output filename: %s" % val)
+            if '/' in output_dest:
+                raise ParseError(lineno,
+                                 "'/' in output destination%s: "
+                                 "%s" % (alias_hint, output_dest))
 
-            if not val or not val.isprintable() or not val[0].isalpha():
-                raise ParseError(lineno, "Illegal output filename: %s" % val)
+            if (not output_dest or
+                not output_dest.isprintable() or
+                not output_dest[0].isalpha()):
 
-            if val in all_outputs:
+                raise ParseError(lineno,
+                                 "Illegal output destination "
+                                 "filename: %s" % output_dest)
+
+            if output_dest in all_outputs:
                 raise ParseError(lineno, "Duplicate filename: %s" % val)
 
-            all_outputs.add(val)
-            self.outputs.append(val)
+            all_outputs.add(output_dest)
+            self.outputs.append((output_source, output_dest))
 
         elif key == "env":
             # env: variable=value mom="really fat"
@@ -216,7 +244,13 @@ class Step:
             raise NotImplementedError("TODO: success triggers (e.g. badge)")
 
         elif key == "cwd":
-            self.cwd = val
+            custom_cwd = shlex.split(val)
+            if not custom_cwd or len(custom_cwd) != 1:
+                raise ParseError(lineno,
+                                 "invalid workdir definition: "
+                                 "%s" % (val,))
+
+            self.cwd = custom_cwd[0]
 
         else:
             raise ParseError(lineno, "Unknown key: " + key)

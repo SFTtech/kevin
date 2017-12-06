@@ -19,6 +19,13 @@ from .msg import (
 from .util import FatalBuildError, run_command, CommandError
 
 
+class OutputError(Exception):
+    """
+    Raised when a file output fails.
+    """
+    pass
+
+
 def build_job(args):
     """
     Main entry point for building a job.
@@ -84,6 +91,7 @@ def build_job(args):
 
         if step.commands or step.outputs:
             step_state(step, "running", "running")
+
         timer = time()
         stdout("\n\x1b[36;1m[%s]\x1b[m\n" % step.name)
 
@@ -96,10 +104,10 @@ def build_job(args):
                 run_command(command, step_env, step.cwd)
 
             # then, transfer output files
-            for output in step.outputs:
-                output_item(output)
+            for output_src, output_dst in step.outputs:
+                output_item(output_src, output_dst)
 
-        except CommandError as exc:
+        except (CommandError, OutputError) as exc:
             # failure in step command.
             step_state(step, "failure", str(exc.args[0]))
 
@@ -120,19 +128,22 @@ def build_job(args):
         job_state("success", "completed")
 
 
-def output_item(name):
+def output_item(source_name, output_name):
     """
     Outputs one output item, as listed in the config.
     """
-    path = pathlib.Path(name)
-    if path.is_file():
-        output_file(path, path.name)
-    elif path.is_dir():
-        output_dir(path, path.name)
-    else:
-        raise RuntimeError("non-existing output: " + str(path))
+    source_path = pathlib.Path(source_name)
 
-    msg_output_item(path.name)
+    # announce file or dir transfer
+    if source_path.is_file():
+        output_file(source_path, output_name)
+    elif source_path.is_dir():
+        output_dir(source_path, output_name)
+    else:
+        raise OutputError("non-existing output: %s" % source_path)
+
+    # finalize the file transfer
+    msg_output_item(output_name)
 
 
 def output_file(path, targetpath):
@@ -142,10 +153,13 @@ def output_file(path, targetpath):
     """
     size = path.stat().st_size
     with path.open('rb') as fileobj:
+        # change to binary mode
         msg_output_file(targetpath, size)
+
         remaining = size
-        while remaining:
-            chunksize = min(remaining, 8388608)  # read max 8MiB at once
+        while remaining > 0:
+            # read max 8MiB at once
+            chunksize = min(remaining, 8 * 1024**2)
             data = fileobj.read(chunksize)
             if not data:
                 # the file size has changed... but we promised to deliver!
