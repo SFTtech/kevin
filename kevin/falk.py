@@ -300,10 +300,10 @@ class FalkSocket(Falk):
         try:
             (self.transport,
              self.protocol) = await self.loop.create_unix_connection(
-                lambda: FalkSocketStreamProtocol(
-                    connection_made,
-                    self.connection_lost
-                ), self.path)
+                 lambda: FalkSocketStreamProtocol(
+                     connection_made,
+                     self.connection_lost
+                 ), self.path)
 
         except FileNotFoundError:
             raise FileNotFoundError(
