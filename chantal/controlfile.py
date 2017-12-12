@@ -56,6 +56,9 @@ def preprocess_lines(data, args):
 
             try:
                 condition_env["lineno"] = lineno
+                # yes, we eval the condition expression.
+                # the user has code execution anyway.
+                # pylint: disable=eval-used
                 condition_result = eval(condition, condition_env)
             except Exception as exc:
                 raise ParseError(
@@ -190,7 +193,7 @@ class Step:
             except ValueError as exc:
                 raise ParseError(lineno, "failed to parse: %s" % exc)
 
-            if len(output_cfg) not in (1,3):
+            if len(output_cfg) not in (1, 3):
                 raise ParseError(
                     lineno,
                     "output definition must be one of "
@@ -215,8 +218,8 @@ class Step:
                                  "%s" % (alias_hint, output_dest))
 
             if (not output_dest or
-                not output_dest.isprintable() or
-                not output_dest[0].isalpha()):
+                    not output_dest.isprintable() or
+                    not output_dest[0].isalpha()):
 
                 raise ParseError(lineno,
                                  "Illegal output destination "

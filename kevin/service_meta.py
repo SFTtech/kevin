@@ -49,9 +49,10 @@ class Service(metaclass=ServiceMeta):
         pass
 
     def __init__(self, cfg, project):
-        from .project import Project
-        if not isinstance(project, Project):
-            raise TypeError("project has invalid type '%s'" % (type(project)))
+        """
+        project must be a project.Project.
+        """
+        del cfg  # currently unused. subclasses use it, though.
         self.project = project
 
     def get_project(self):

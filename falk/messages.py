@@ -5,7 +5,7 @@ Falk interaction message definitions
 import json
 import shlex
 
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 from enum import Enum
 
 
@@ -188,6 +188,7 @@ class Message(metaclass=MessageMeta):
         Parse plain-text arguments for the given message class
         Returns the constructed object for that class.
         """
+        del argv, argvk
         raise ProtoNotImplementedError(
             "'%s' text parsing not implemented" % cls.__name__)
 
@@ -206,8 +207,6 @@ class Request(Message):
     """
     Plain request message, to be inherited from.
     """
-    def __init__(self):
-        pass
 
     @classmethod
     def parse_args(cls, argv, argvk):
@@ -219,6 +218,7 @@ class RequestID(Message):
     Request with one optional arg, to be inherited from.
     """
     def __init__(self, run_id=None):
+        super().__init__()
         self.run_id = int(run_id) if run_id is not None else None
 
     @classmethod
@@ -230,7 +230,7 @@ class RequestID(Message):
             if run_id is not None:
                 run_id = int(run_id)
         except IndexError:
-            raise ValueError("usage: %s <run_id>" % self.cmd()) from None
+            raise ValueError("usage: %s <run_id>" % cls.cmd()) from None
 
         return cls(run_id)
 
@@ -241,6 +241,7 @@ class Version(Message):
     """
 
     def __init__(self, version):
+        super().__init__()
         self.version = int(version)
 
 
@@ -250,11 +251,15 @@ class Mode(Message):
     """
 
     def __init__(self, mode):
+        super().__init__()
         self.check_mode(mode)
         self.mode = mode
 
     @staticmethod
     def check_mode(mode):
+        """
+        Verify if the requested protocol mode is known.
+        """
         if mode not in ("json", "text"):
             raise ValueError("invalid mode %s" % mode)
         return True
@@ -276,6 +281,7 @@ class Error(Message):
     """
 
     def __init__(self, msg=""):
+        super().__init__()
         self.msg = msg
 
     @classmethod
@@ -296,6 +302,7 @@ class OK(Message):
     """
 
     def __init__(self, msg=""):
+        super().__init__()
         self.msg = msg
 
     @classmethod
@@ -315,6 +322,7 @@ class Login(Message):
     User identification message
     """
     def __init__(self, name, source):
+        super().__init__()
         self.name = name
         self.source = source
 
@@ -336,6 +344,7 @@ class Welcome(Message):
     Welcome message for a peer.
     """
     def __init__(self, msg, name):
+        super().__init__()
         self.msg = msg
         self.name = name
 
@@ -362,6 +371,9 @@ class HelpText(Message):
     Help response.
     """
     def __init__(self, text=""):
+        del text
+        super().__init__()
+
         self.text = "\n".join([
             "",
             "falk shell",
@@ -400,6 +412,7 @@ class MachineList(Message):
     machines = [(vm_id, (typename, name)), ...]
     """
     def __init__(self, machines):
+        super().__init__()
         self.machines = dict(machines)
 
 
@@ -409,6 +422,7 @@ class Select(Message):
     and you'll get an RunID answer.
     """
     def __init__(self, name):
+        super().__init__()
         if not isinstance(name, str):
             raise ValueError(f"invalid vm name: {name}")
         self.name = name
@@ -418,7 +432,7 @@ class Select(Message):
         try:
             name = argvk.get("name") or argv[0]
         except IndexError:
-            raise ValueError("usage: %s <machine_name>" % self.cmd()) from None
+            raise ValueError("usage: %s <machine_name>" % cls.cmd()) from None
 
         return cls(name)
 
@@ -429,6 +443,7 @@ class RunID(Message):
     """
 
     def __init__(self, run_id):
+        super().__init__()
         self.run_id = int(run_id)
 
 
@@ -439,6 +454,7 @@ class Prepare(Message):
     i.e. not on a temporary disk image.
     """
     def __init__(self, run_id=None, manage=False):
+        super().__init__()
         self.run_id = int(run_id) if run_id is not None else None
         self.manage = manage
 
@@ -489,6 +505,7 @@ class VMStatus(Message):
     Shows status information about a selected VM.
     """
     def __init__(self, run_id, running, ssh_user, ssh_host, ssh_port, ssh_key):
+        super().__init__()
         self.run_id = int(run_id)
         self.running = running
         self.ssh_user = ssh_user

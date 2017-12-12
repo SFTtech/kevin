@@ -2,8 +2,6 @@
 Project handling routines.
 """
 
-from configparser import ConfigParser
-
 from .action import Action
 from .project_config import Config
 from .trigger import Trigger

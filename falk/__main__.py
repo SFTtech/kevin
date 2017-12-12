@@ -75,10 +75,6 @@ def main():
         proto_task = loop.create_task(proto.process_messages())
         proto_tasks.add(proto_task)
 
-        def conn_finished(fut):
-            """ remove the task from the pending list """
-            proto_tasks.remove(proto_task)
-
         proto_task.add_done_callback(
             lambda fut: proto_tasks.remove(proto_task))
 

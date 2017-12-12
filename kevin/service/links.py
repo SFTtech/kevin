@@ -2,7 +2,7 @@
 Symlink management for the build.
 """
 
-from ..service import Action
+from ..action import Action
 
 
 class BranchSymlink(Action):

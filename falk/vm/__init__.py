@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 # container class name -> class mapping
+# it's populated by the metaclass below,
+# which is triggered by the imports at the end of this file.
 CONTAINERS = dict()
 
 

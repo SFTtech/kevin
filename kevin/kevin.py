@@ -2,9 +2,6 @@
 Main Queue and Falk management entity.
 """
 
-import asyncio
-import logging
-
 from .build_manager import BuildManager
 from .httpd import HTTPD
 from .job_manager import JobManager

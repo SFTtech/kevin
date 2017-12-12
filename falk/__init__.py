@@ -24,7 +24,7 @@ class Falk:
 
         # contains all used ssh ports
         # hostname -> used ports
-        self.used_ports = defaultdict(lambda: set())
+        self.used_ports = defaultdict(set)
 
     def register_free_port(self, hostname):
         """

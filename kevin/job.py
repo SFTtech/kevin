@@ -13,8 +13,7 @@ from .action import Action
 from .chantal import Chantal
 from .config import CFG
 from .falkvm import VMError
-from .process import (ProcTimeoutError, LineReadError, ProcessFailed,
-                      ProcessError)
+from .process import (ProcTimeoutError, ProcessFailed, ProcessError)
 from .update import (Update, JobState, JobUpdate, StepState,
                      StdOut, OutputItem, QueueActions, JobCreated,
                      GeneratedUpdate, JobEmergencyAbort, RegisterActions)
@@ -381,14 +380,6 @@ class Job(Watcher, Watchable):
 
             self.error("Process failed%s" % error)
 
-        except ProcessError as exc:
-            logging.error("[job] \x1b[31;1mCommunication failure:"
-                          "\x1b[m %s", self)
-
-            logging.exception("This was kinda unexpected...")
-
-            self.error("SSH Process communication error")
-
         except ProcTimeoutError as exc:
             if exc.was_global:
                 silence = "Took"
@@ -403,6 +394,14 @@ class Job(Watcher, Watchable):
 
             self.error("Process %s took > %.02fs." % (exc.cmd[0],
                                                       exc.timeout))
+
+        except ProcessError as exc:
+            logging.error("[job] \x1b[31;1mCommunication failure:"
+                          "\x1b[m %s", self)
+
+            logging.exception("This was kinda unexpected...")
+
+            self.error("SSH Process communication error")
 
         except JobTimeoutError as exc:
 

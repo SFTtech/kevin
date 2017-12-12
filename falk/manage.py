@@ -14,17 +14,20 @@ from kevin.util import parse_connection_entry, log_setup
 
 
 async def spawn_shell(falk, vm_id, volatile, command):
+    """
+    Spawns an interactive shell with falk.
+    """
 
     logging.debug("connecting to falk...")
     await falk.create()
 
-    logging.debug("looking up machine '%s'..." % vm_id)
+    logging.debug("looking up machine '%s'...", vm_id)
     vm = await falk.create_vm(vm_id)
 
     if vm is None:
         raise Exception("vm '%s' was not found on falk '%s'. "
                         "available:\n%s" % (
-                            vm_id, falk, await self.get_vms()))
+                            vm_id, falk, await falk.get_vms()))
 
     manage = not volatile
     logging.debug("preparing and launching machine (manage=%s)..." % manage)

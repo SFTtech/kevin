@@ -10,7 +10,6 @@ import traceback
 from . import messages
 from .config import CFG
 from .messages import ProtoType
-from .vm import CONTAINERS
 
 
 class FalkProto(asyncio.Protocol):
@@ -38,6 +37,7 @@ class FalkProto(asyncio.Protocol):
         # falk user identification
         self.user = None
         self.ip = None
+        self.source = None
 
         # containers running in this session
         # contains {handle_id: vmname, ...}
@@ -57,6 +57,10 @@ class FalkProto(asyncio.Protocol):
 
         # is the connection still alive?
         self.disconnected = self.loop.create_future()
+
+        # transport and connection tracking
+        self.connected = False
+        self.transport = None
 
     def connection_made(self, transport):
         self.connected = True
@@ -128,7 +132,7 @@ class FalkProto(asyncio.Protocol):
         logs something for this connection
         """
 
-        logging.log(level, "[\x1b[1m%3d\x1b[m] %s" % (self.conn_id, msg))
+        logging.log(level, "[\x1b[1m%3d\x1b[m] %s", self.conn_id, msg)
 
     def check_version(self, msg):
         """
@@ -281,7 +285,7 @@ class FalkProto(asyncio.Protocol):
             vercheck = self.check_version(msg)
             if vercheck is not None:
                 answer = messages.Error("failed: %s" % vercheck)
-                self.log(err)
+                self.log(answer)
 
         elif isinstance(msg, messages.Mode):
             # send the answer in current mode

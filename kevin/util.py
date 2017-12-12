@@ -147,11 +147,11 @@ class SSHKnownHostFile:
                 "-o", "UserKnownHostsFile=/dev/null",
                 "-o", "StrictHostKeyChecking=no",
             ]
-        else:
-            return [
-                "-o", "UserKnownHostsFile=%s" % self.tmpfile.name,
-                "-o", "StrictHostKeyChecking=yes",
-            ]
+
+        return [
+            "-o", "UserKnownHostsFile=%s" % self.tmpfile.name,
+            "-o", "StrictHostKeyChecking=yes",
+        ]
 
     def __enter__(self):
         self.create()

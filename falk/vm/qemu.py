@@ -83,7 +83,7 @@ class QEMU(Container):
         if self.running_image is None:
             raise RuntimeError("runimage was not prepared!")
 
-        logging.debug("VM will listen on port %d" % self.ssh_port)
+        logging.debug("VM will listen on port %d", self.ssh_port)
 
         command = []
         for part in shlex.split(self.cfg.command):

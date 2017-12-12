@@ -20,8 +20,8 @@ class Custom(Container):
         self.process = None
 
     @classmethod
-    def config(cls, name, cfgdata):
-        cfg = ContainerConfig(name, cfgdata)
+    def config(cls, machine_id, cfgdata, cfgpath):
+        cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
 
         cfg.prepare = cfgdata["prepare"]
         cfg.launch = cfgdata["launch"]
@@ -34,7 +34,7 @@ class Custom(Container):
 
         command = shlex.split(self.cfg.prepare)
         if self.manage:
-             command.append("--manage")
+            command.append("--manage")
 
         if subprocess.call(command) != 0:
             raise RuntimeError("could not prepare container")
@@ -66,7 +66,7 @@ class Custom(Container):
     def cleanup(self):
         command = shlex.split(self.cfg.cleanup)
         if self.manage:
-             command.append("--manage")
+            command.append("--manage")
 
         if subprocess.call(command) != 0:
             raise RuntimeError("could not clean up container")

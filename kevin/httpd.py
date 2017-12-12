@@ -24,9 +24,6 @@ class HookTrigger(Trigger):
     Base class for a webhook trigger (e.g. the "github notifies us" thingy).
     """
 
-    def __init__(self, cfg, project):
-        super().__init__(cfg, project)
-
     @abstractmethod
     def get_handler(self):
         """
@@ -71,6 +68,9 @@ class HookHandler(web.RequestHandler):
 
     def post(self):
         raise NotImplementedError()
+
+    def data_received(self, chunk):
+        del chunk
 
 
 class HTTPD:
@@ -173,9 +173,9 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
                 """
                 if not filter_def:
                     return lambda _: True
-                else:
-                    job_names = filter_def.split(",")
-                    return lambda job_name: job_name in job_names
+
+                job_names = filter_def.split(",")
+                return lambda job_name: job_name in job_names
 
             # state_filter specifies which JobState updates to forward.
             self.state_filter = get_filter(self.get_parameter("state_filter"))
@@ -365,6 +365,9 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
         if self.job is not None:
             self.job.deregister_watcher(self)
 
+    def data_received(self, chunk):
+        del chunk
+
 
 class RobotsHandler(web.RequestHandler):
     """ Serves a robots.txt that disallows all indexing. """
@@ -376,3 +379,6 @@ class RobotsHandler(web.RequestHandler):
     def get(self):
         self.set_header("Content-Type", "text/plain")
         self.write("User-agent: *\nDisallow: /\n")
+
+    def data_received(self, chunk):
+        del chunk

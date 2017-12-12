@@ -5,6 +5,7 @@ subprocess utility functions and classes.
 import asyncio
 import asyncio.streams
 import logging
+import signal
 import subprocess
 import sys
 
@@ -16,10 +17,10 @@ class ProcessError(subprocess.SubprocessError):
     Generic process error.
     """
     def __init__(self, msg):
-        self.msg = msg
+        super().__init__(msg)
 
     def __str__(self):
-        return f"Process failed: {self.msg}"
+        return f"Process failed: {self}"
 
 
 class LineReadError(ProcessError):
@@ -212,9 +213,9 @@ class Process(AsyncWith):
             self.kill()
             return await self.wait()
 
-    def send_signal(self, signal):
+    def send_signal(self, sig):
         """ send a signal to the process """
-        self.transport.send_signal(signal)
+        self.transport.send_signal(sig)
 
     def terminate(self):
         """ send sigterm to the process """
@@ -234,7 +235,7 @@ class Process(AsyncWith):
 
         self.exit_callbacks.append(callback)
 
-    def _exited(self):
+    def fire_exit_callbacks(self):
         """
         Called from the protocol when the process exited.
         """
@@ -353,7 +354,10 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
                                           loop=asyncio.get_event_loop())
 
     def pipe_connection_lost(self, fdnr, exc):
-        # the given fd is no longer connected.
+        """
+        the given fd is no longer connected.
+        """
+        del exc
         self.transport.get_pipe_transport(fdnr).close()
 
     def process_exited(self):
@@ -369,7 +373,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
         # mark the end-of-stream
         self.enqueue_data(StopIteration)
         self.transport.close()
-        self.process._exited()
+        self.process.fire_exit_callbacks()
 
     async def write(self, data):
         """
@@ -599,24 +603,26 @@ async def test_coro(output_timeout, timeout):
                        chop_lines=True) as proc:
 
         try:
-            logging.info("proc: %s" % proc.args)
+            logging.info("proc: %s", proc.args)
 
             async for fdn, line in proc.communicate(
-                b"10\n", output_timeout=output_timeout, timeout=timeout,
-                linecount=4):
+                    b"10\n", output_timeout=output_timeout,
+                    timeout=timeout,
+                    linecount=4):
 
-                logging.info("1st: %d %s" % (fdn, line))
+                logging.info("1st: %d %s", fdn, line)
 
             async for fdn, line in proc.communicate(
-                output_timeout=output_timeout, timeout=timeout,
-                linecount=2):
+                    output_timeout=output_timeout,
+                    timeout=timeout,
+                    linecount=2):
 
-                logging.info("2nd: %d %s" % (fdn, line))
+                logging.info("2nd: %d %s", fdn, line)
 
             async for fdn, line in proc.communicate(output_timeout=1,
                                                     timeout=2):
 
-                logging.info("last: %d %s" % (fdn, line))
+                logging.info("last: %d %s", fdn, line)
 
 
         except ProcTimeoutError as exc:
@@ -646,7 +652,7 @@ def test():
     except Exception as exc:
         import traceback
         traceback.print_exc()
-        logging.info("fail: %s" % exc)
+        logging.info("fail: %s", exc)
 
     loop.stop()
     loop.run_forever()

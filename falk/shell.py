@@ -17,7 +17,7 @@ from enum import Enum
 
 from .protocol import FalkProto
 from .config import CFG
-from .messages import Error, Login, ProtoType
+from .messages import Login
 
 
 
@@ -133,7 +133,7 @@ def main():
 
     # process events
     # TODO: use asyncio, but it's rather complicated for this use case.
-    while len(sel.get_map().keys()) > 0:
+    while sel.get_map().keys():
         events = sel.select()
         for event, mask in events:
             while True:

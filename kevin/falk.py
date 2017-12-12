@@ -311,7 +311,7 @@ class FalkSocket(Falk):
                 "'%s' missing" % self.path) from None
         except ConnectionRefusedError:
             raise FalkError("falk socket doesn't accept connections "
-                            "at '%s'" % (self.path)) from None
+                            f"at '{self.path}'") from None
 
         await established
 

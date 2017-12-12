@@ -34,6 +34,23 @@ STATE_TRANSLATION = {
 }
 
 
+def verify_secret(blob, headers, secret):
+    """
+    verify the github hmac signature with our shared secret.
+    """
+
+    localsignature = hmac.new(secret, blob, sha1)
+    goodsig = 'sha1=' + localsignature.hexdigest()
+    msgsig = headers.get("X-Hub-Signature")
+    if not msgsig:
+        raise ValueError("message doesn't have a signature.")
+
+    if hmac.compare_digest(msgsig, goodsig):
+        return True
+
+    return False
+
+
 class GitHubStatusURL(GeneratedUpdate):
     """ transmit the github status url to be set """
 
@@ -215,7 +232,7 @@ class GitHubHookHandler(HookHandler):
             for trigger in self.triggers:
                 if repo_name in trigger.repos:
 
-                    if self.verify_secret(blob, headers, trigger.hooksecret):
+                    if verify_secret(blob, headers, trigger.hooksecret):
                         project = trigger.get_project()
                         break
                     else:
@@ -281,22 +298,6 @@ class GitHubHookHandler(HookHandler):
             self.write(b"OK")
 
         self.finish()
-
-    def verify_secret(self, blob, headers, secret):
-        """
-        verify the hmac signature with our shared secret.
-        """
-
-        localsignature = hmac.new(secret, blob, sha1)
-        goodsig = 'sha1=' + localsignature.hexdigest()
-        msgsig = headers.get("X-Hub-Signature")
-        if not msgsig:
-            raise ValueError("message doesn't have a signature.")
-
-        if not hmac.compare_digest(msgsig, goodsig):
-            return False
-        else:
-            return True
 
     def handle_push(self, project, json_data):
         """

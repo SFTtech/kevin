@@ -27,8 +27,8 @@ class Chantal(AsyncWith):
         """ return if the vm ssh connection was successful once. """
         if self.ssh_worked.done():
             return self.ssh_worked.result()
-        else:
-            return False
+
+        return False
 
     async def create(self):
         """ create and prepare the machine """

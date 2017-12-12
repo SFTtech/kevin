@@ -12,6 +12,9 @@ class Config:
     def __init__(self):
         self.control_socket = None
         self.name = None
+        self.control_socket_permissions = None
+        self.control_socket_group = None
+        self.ssh_port_range = (None, None)
 
         # machinename -> machineconfig
         # config created by Container.config()
