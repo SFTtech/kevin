@@ -40,7 +40,7 @@ setup(
             "etc/tmpfiles.d/kevin.conf",
         ]),
         ("/etc/kevin", [
-            "etc/controlfile.example",
+            "etc/kevinfile.example",
             "etc/kevin.conf.example",
             "etc/falk.conf.example",
         ]),

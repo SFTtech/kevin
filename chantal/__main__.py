@@ -20,8 +20,8 @@ def main():
     """
     try:
         cmd = argparse.ArgumentParser(
-            description=("clone a repo and process the .kevin "
-                         "description file. ")
+            description=("clone a repo and process the kevinfile with"
+                         "build instructions. ")
         )
 
         cmd.add_argument("--clone", dest="clone_location",
@@ -30,7 +30,7 @@ def main():
         cmd.add_argument("--checkout", dest="treeish",
                          help=("Treeish (branch, hash, ...) to check out "
                                "after clone. If not given, just clone."))
-        cmd.add_argument("--desc-file", dest="filename", default=".kevin",
+        cmd.add_argument("--desc-file", dest="filename", default="kevinfile",
                          help=("Filename of the control file ('%(default)s') "
                                "within the repo folder"))
         cmd.add_argument("job",

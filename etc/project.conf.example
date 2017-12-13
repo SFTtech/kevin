@@ -7,7 +7,7 @@ name = murrica-freedom-simulator-9001
 job_timeout = 10m
 job_silence_timeout = 5min
 job_max_output = 100MiB
-job_desc_file = .kevin
+job_desc_file = kevinfile   # name for the in-repo control file
 
 # now follow a list of triggers/actions
 # to register the same trigger/action multiple times with different
@@ -30,14 +30,15 @@ token = tokentokentokenbaby
 
 [job.0]
 # invokes a container launch
-name = GNU-debian-hurd
+name = GNU-debian-hurd     # this name is passed to chantal!
 description = launch the vm and give me freedom
 machine = name-which-the-job-requests-from-falk
-# use a different file for this job. default: use project setting.
-#job_desc_file = .kevin-hurd
+# use a different control file for this job.
+# default otherwise: use project setting.
+#job_desc_file = kevin/hurdbuild
 
 [job.1]
 # another job, triggered by the same webhook.
-name = whitespaceOS
+name = whitespaceOS        # this name is also passed to chantal!
 description = brainfuck based emulator running haiku
 machine = haiku

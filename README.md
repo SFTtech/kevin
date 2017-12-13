@@ -22,14 +22,14 @@ Requires [Python >=3.6](https://www.python.org/),
 
 * Your running `kevin` daemon is notified by a github webhook.
 * It spawns a temporary VM for the job.
-* The repo is cloned and the build/test steps in `.kevin` are executed.
+* The repo is cloned and the build/test steps in `kevinfile` are executed.
 * Progress can be viewed live via website, github, `curl` or websocket API.
 * Results are instantly reported to github.
 
 
 ### Features
 
-* Makefile-like [control file `.kevin`](etc/controlfile.example)
+* Makefile-like [control file (`kevinfile`)](etc/kevinfile.example)
   * Directly specify command dependencies of your build
   * Report the step results and timing back to github
 
