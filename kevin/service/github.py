@@ -320,15 +320,16 @@ class GitHubHookHandler(HookHandler):
 
         # first, see if the hook contains commit updates
         action = json_data["action"]
-        if action in {"labeled", "unlabeled", "assigned",
-                      "unassigned", "reopened", "closed"}:
-            # ignore those.
-            return
-        elif action in {"opened", "synchronize"}:
+        if action in {"opened", "synchronize"}:
             # needs a build, let's continue
             pass
+        elif action in {"labeled", "unlabeled", "assigned",
+                        "unassigned", "reopened", "closed"}:
+            # ignore those.
+            return
         else:
-            raise ValueError("unknown pull_request action '%s'" % action)
+            logging.warning("unknown pull_request action '%s'" % action)
+            return
 
         # select all kinds of metadata.
         user = json_data["sender"]["login"]
