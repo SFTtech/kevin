@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name="kevin",
-    version="0.2",
+    version="0.3",
     description="Self-hostable continuous integration toolkit",
     long_description=(
         "Components for running a continuous integration service "
