@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 from distutils.core import setup
+import os
+import glob
+
 
 setup(
     name="kevin",
@@ -22,8 +25,6 @@ setup(
     license='AGPL3+',
     packages=[
         "kevin",
-        "kevin.action",
-        "kevin.project",
         "kevin.service",
         "kevin.simulator",
         "chantal",
@@ -47,6 +48,8 @@ setup(
         ("/etc/kevin/projects", [
             "etc/project.conf.example",
         ]),
+        ("/usr/share/webapps/mandy",
+         glob.glob(os.path.join(os.path.dirname(__file__), "mandy/*"))),
     ],
     platforms=[
         'Linux',
