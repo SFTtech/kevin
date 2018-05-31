@@ -7,7 +7,7 @@ import glob
 
 setup(
     name="kevin",
-    version="0.3",
+    version="0.4",
     description="Self-hostable continuous integration toolkit",
     long_description=(
         "Components for running a continuous integration service "
@@ -35,7 +35,6 @@ setup(
         ("/usr/lib/systemd/system/", [
             "etc/kevin.service",
             "etc/falk.service",
-            "etc/chantal.service",
         ]),
         ("/usr/lib/tmpfiles.d", [
             "etc/tmpfiles.d/kevin.conf",
