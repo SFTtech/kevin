@@ -32,5 +32,13 @@ base_image = /path/to/permanent/diskimage.qcow2
 # the path will be suffixed with .someid for each parallel VM run
 overlay_image = /tmp/kevin-vm-tmp.img
 
-# invocation
-command = qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -smp 2 -m 2G -drive file={IMAGENAME},if=virtio,format=qcow2 -balloon virtio -nographic -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:{SSHPORT}-:22
+# invocation: 2 CPUs, 2G RAM, no display
+command = qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -smp 2 -m 2G -drive file={IMAGENAME},if=virtio,format=qcow2 -device virtio-balloon -display none -net nic,model=virtio -net user,hostfwd=tcp:127.0.0.1:{SSHPORT}-:22 -object rng-random,id=rng0,filename=/dev/urandom -device virtio-rng-pci,rng=rng0
+# folder sharing from host to VM:
+#   QEMU:          -virtfs local,path=/shared/host/path/maybe/for/ccache,mount_tag=yourtag,security_model=mapped-xattr,id=p9net0
+#   fstab in VM:   yourtag /wherever 9p trans=virtio,version=9p2000.L 0 0
+# remote desktop:
+#   QEMU:          -vnc 127.0.0.1:1    instead of -display none
+#   then use a vncclient to connect to port 5901
+#   (maybe forward the port to your machine with `ssh -L 12345:localhost:5901 youuser@falkhost`,
+#    then connect with a vncviewer: e.g. `vinagre localhost:12345`)
