@@ -63,7 +63,8 @@ def main():
                      help="don't start the VM in management mode")
     cmd.add_argument("falk_id",
                      help=("falk connection information: "
-                           "unix://user@socket or ssh://user@host:port"))
+                           "unix://socketpath, unix://user@socket "
+                           "or ssh://user@host:port"))
     cmd.add_argument("vm_id", help="machine identification")
     cmd.add_argument("command", nargs="*",
                      help="command to execute. default: shell.")

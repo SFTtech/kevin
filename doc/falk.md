@@ -14,7 +14,7 @@ The `falk.manage` helper boots the machine in management mode
 and opens an ssh shell in it.
 
 ``` bash
-python -m falk.manage unix://mom@/run/kevin/falk my-vm-id $optional-command
+python -m falk.manage unix:///run/kevin/falk my-vm-id $optional-command
 ```
 
 It uses the exact same access kevin would use,

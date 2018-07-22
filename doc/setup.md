@@ -195,7 +195,7 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
   * Run `kevin` with `python3 -m kevin`
   * Run `falk` with `python3 -m falk`
 * After setup, [manage a container](falk.md#managing-vms) with `python3 -m falk.manage`
-  * For example: `python3 -m falk.manage unix://me@/run/kevin/falk your_vm_id`
+  * For example: `python3 -m falk.manage unix:///run/kevin/falk your_vm_id`
 
 * We recommend to first test with a dummy repository that just contains a simple `kevinfile`, instead of the "real" project.
 * Test without `github`: Try using the [Kevin Simulator](simulator.md)
