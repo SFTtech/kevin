@@ -55,7 +55,7 @@ class ContainerConfig:
                 if value:
                     logging.warning("[vm] \x1b[33mwarning\x1b[m: "
                                     "'%s' uses deprecated option 'ssh_key', "
-                                    "which is now called 'ssh_known_host_key",
+                                    "which is now called 'ssh_known_host_key'",
                                     self.machine_id)
 
             if value:
