@@ -189,6 +189,13 @@ class Container(metaclass=ContainerMeta):
         pass
 
     @abstractmethod
+    async def wait_for_shutdown(self, timeout=60):
+        """
+        Sleep for a maximum of `timeout` until the container terminates.
+        """
+        pass
+
+    @abstractmethod
     async def terminate(self):
         """ Terminate the container if it doesn't shutdown on its own """
         pass

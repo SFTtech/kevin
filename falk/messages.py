@@ -514,6 +514,15 @@ class VMStatus(Message):
         self.ssh_known_host_key = ssh_known_host_key
 
 
+class ShutdownWait(RequestID):
+    """
+    Wait until the VM exits on its own.
+    """
+    def __init__(self, run_id, timeout):
+        super().__init__(run_id)
+        self.timeout = timeout
+
+
 class Terminate(RequestID):
     """
     Kill the VM.

@@ -160,8 +160,13 @@ class FalkVM(Container):
                     self.ssh_host,
                     self.ssh_port)], timeout)
 
-    async def wait_for_shutdown(self, timeout=60):
+    async def wait_for_shutdown(self, timeout=20):
         """
         Request from falk so he tells us when the machine is dead.
         """
-        raise NotImplementedError()
+        msg = await self.falk.query(messages.ShutdownWait(run_id=self.run_id,
+                                                          timeout=timeout))
+        if not isinstance(msg, messages.OK):
+            raise VMError(f"Failed to wait for shutdown: {msg.msg}")
+
+        return msg

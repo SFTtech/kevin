@@ -386,5 +386,13 @@ class FalkProto(asyncio.Protocol):
             elif isinstance(msg, messages.Exit):
                 self.close()
 
+            elif isinstance(msg, messages.ShutdownWait):
+                self.log(f"waiting {msg.timeout}s for machine shutdown..",
+                         level=logging.DEBUG)
+                success = await self.get_machine(msg.run_id).\
+                          wait_for_shutdown(msg.timeout)
+                if not success:
+                    answer = messages.Error("shutdown-wait timed out")
+
         self.log("answer: %s" % answer, level=logging.DEBUG)
         return answer, force_mode

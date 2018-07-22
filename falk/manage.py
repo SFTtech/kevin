@@ -37,6 +37,10 @@ async def spawn_shell(falk, vm_id, volatile, command):
     logging.debug("VM launched, waiting for ssh...")
     await vm.wait_for_ssh_port()
 
+    if manage:
+        logging.warning("please shut down the VM gracefully "
+                        "to avoid data loss (=> `sudo poweroff`)")
+
     # ssh into the machine, force tty allocation
     async with SSHProcess(command,
                           vm.ssh_user, vm.ssh_host,
@@ -44,11 +48,8 @@ async def spawn_shell(falk, vm_id, volatile, command):
                           options=["-t"]) as proc:
         ret = await proc.wait()
 
-    # dirty hardcode to wait for vm shutdown
-    # otherwise, disks may not be synced.
-    # let falk tell us when the vm dies.
-    # TODO: await vm.wait_for_shutdown(30)
-    await asyncio.sleep(5)
+    # wait 30 maximum for the machine to exit gracefully
+    await vm.wait_for_shutdown(30)
 
     await vm.terminate()
     await vm.cleanup()

@@ -2,6 +2,7 @@
 qemu virtual machines.
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -63,8 +64,19 @@ class QEMU(Container):
                 "-f", "qcow2",
                 str(self.running_image),
             ]
-            if subprocess.call(command) != 0:
-                raise RuntimeError("could not create overlay image")
+
+            proc = await asyncio.create_subprocess_exec(*command)
+
+            try:
+                ret = await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError("timeout when creating "
+                                   "overlay image") from exc
+
+            if ret != 0:
+                raise RuntimeError(f"could not create overlay image: "
+                                   f"qemu-img returned {ret}")
+
         else:
             # TODO: even in management mode, create a cow image,
             #       but in the end merge it back into a new image and
@@ -75,7 +87,7 @@ class QEMU(Container):
 
             # TODO: disallow multiple management connections at once.
 
-            logging.warning("VM launching in management mode!")
+            logging.info("QEMU VM launching in management mode!")
             # to manage, use the base image to run
             self.running_image = str(self.cfg.base_image)
 
@@ -91,24 +103,53 @@ class QEMU(Container):
             part = part.replace("{SSHPORT}", str(self.ssh_port))
             command.append(part)
 
-        self.process = subprocess.Popen(command, stdin=subprocess.PIPE)
+        self.process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=subprocess.PIPE,
+            stdout=None,
+            stderr=None
+        )
         self.process.stdin.close()
 
     async def is_running(self):
         if self.process:
-            running = self.process.poll() is None
+            running = self.process.returncode is None
         else:
             running = False
 
         return running
 
+    async def wait_for_shutdown(self, timeout):
+        if not self.process:
+            return
+
+        try:
+            await asyncio.wait_for(self.process.wait(), timeout)
+            return True
+
+        except asyncio.TimeoutError:
+            logging.warning("shutdown wait timed out.")
+            return False
+
     async def terminate(self):
-        if self.process:
+        if not self.process:
+            return
+
+        if self.process.returncode is not None:
+            return
+
+        try:
+            self.process.terminate()
+            await asyncio.wait_for(self.process.wait(), timeout=10)
+
+        except asyncio.TimeoutError:
             self.process.kill()
-            self.process.wait()
+            await self.process.wait()
+
+        self.process = None
 
     async def cleanup(self):
-        if not (self.manage or self.running_image is None):
+        if not self.manage and self.running_image is not None:
             try:
                 os.unlink(str(self.running_image))
             except FileNotFoundError:

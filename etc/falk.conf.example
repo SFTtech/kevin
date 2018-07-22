@@ -51,3 +51,7 @@ command = qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -smp 2 -m 2G 
 #   then use a vncclient to connect to port 5901
 #   (maybe forward the port to your machine with `ssh -L 12345:localhost:5901 youruser@falkhost`,
 #    then connect with a vncviewer: e.g. `vinagre localhost:12345`)
+
+
+#[some-other-vm-id]
+#... definitions for another vm, just like the ones below [some-random-vm-id]
