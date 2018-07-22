@@ -244,6 +244,7 @@ class Job(Watcher, Watchable):
 
         elif isinstance(update, QueueActions):
             if not self.all_loaded:
+
                 if self.completed:
                     # we can reconstruct as the _completed file exists.
                     self.load_from_fs()
@@ -252,6 +253,7 @@ class Job(Watcher, Watchable):
                     self.purge_fs()
                     # run the job by adding it to the processing queue
                     update.queue.add_job(self)
+                    self.set_state("waiting", "enqueued")
 
     def step_update(self, update):
         """ apply a step update to this job. """
