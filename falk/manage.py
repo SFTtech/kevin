@@ -40,7 +40,7 @@ async def spawn_shell(falk, vm_id, volatile, command):
     # ssh into the machine, force tty allocation
     async with SSHProcess(command,
                           vm.ssh_user, vm.ssh_host,
-                          vm.ssh_port, vm.ssh_key, pipes=False,
+                          vm.ssh_port, vm.ssh_known_host_key, pipes=False,
                           options=["-t"]) as proc:
         ret = await proc.wait()
 

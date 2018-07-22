@@ -43,7 +43,7 @@ class Chantal(AsyncWith):
 
         with SSHKnownHostFile(self.machine.ssh_host,
                               self.machine.ssh_port,
-                              self.machine.ssh_key) as hostfile:
+                              self.machine.ssh_known_host_key) as hostfile:
             command = [
                 "scp",
                 "-P", str(self.machine.ssh_port),
@@ -72,7 +72,7 @@ class Chantal(AsyncWith):
 
         with SSHKnownHostFile(self.machine.ssh_host,
                               self.machine.ssh_port,
-                              self.machine.ssh_key) as hostfile:
+                              self.machine.ssh_known_host_key) as hostfile:
             command = [
                 "scp", "-q",
                 "-P", str(self.machine.ssh_port),
@@ -97,7 +97,7 @@ class Chantal(AsyncWith):
 
         return SSHProcess(remote_command,
                           self.machine.ssh_user, self.machine.ssh_host,
-                          self.machine.ssh_port, self.machine.ssh_key,
+                          self.machine.ssh_port, self.machine.ssh_known_host_key,
                           timeout=timeout,
                           silence_timeout=silence_timeout,
                           must_succeed=must_succeed)

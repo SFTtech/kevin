@@ -192,14 +192,14 @@ class FalkSSH(Falk):
     we're then in a falk-shell to control the falk instance.
     """
     def __init__(self, name,
-                 ssh_host, ssh_port, ssh_user, ssh_key,
+                 ssh_host, ssh_port, ssh_user, ssh_known_host_key,
                  loop=None):
         super().__init__(name)
 
         self.ssh_host = ssh_host
         self.ssh_port = ssh_port
         self.ssh_user = ssh_user
-        self.ssh_key = ssh_key
+        self.ssh_known_host_key = ssh_known_host_key
 
         self.ssh_process = None
 
@@ -210,7 +210,7 @@ class FalkSSH(Falk):
             # connect to the falk host via ssh
 
             self.ssh_process = SSHProcess([], self.ssh_user, self.ssh_host,
-                                          self.ssh_port, self.ssh_key,
+                                          self.ssh_port, self.ssh_known_host_key,
                                           must_succeed=True,
                                           chop_lines=True,
                                           loop=self.loop)

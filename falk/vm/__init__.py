@@ -4,6 +4,7 @@ VM management functionality
 
 from abc import ABCMeta, abstractmethod
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -42,48 +43,65 @@ class ContainerConfig:
         # standard keys that exist for every machine.
         # more config options are specified in each container type,
         # e.g. Qemu, Xen, ...
-        for key in ("name", "ssh_user", "ssh_host", "ssh_port", "ssh_key"):
+        for key in ("name", "ssh_user", "ssh_host", "ssh_port",
+                    "ssh_known_host_key"):
 
-            # test if the key is in the file
-            if key in cfg:
+            value = cfg.get(key)
 
+            # legacy compatibility:
+            # ssh_known_host_key was named ssh_key before.
+            if key == "ssh_known_host_key" and not value:
+                value = cfg.get("ssh_key")
+                if value:
+                    logging.warning("[vm] \x1b[33mwarning\x1b[m: "
+                                    "'%s' uses deprecated option 'ssh_key', "
+                                    "which is now called 'ssh_known_host_key",
+                                    self.machine_id)
+
+            if value:
                 # ssh key loading:
-                if key == "ssh_key":
+                if key == "ssh_known_host_key":
                     # it's either the key directly or a file
-                    sshkey_entry = cfg[key]
-                    if sshkey_entry.startswith("ssh-"):
+                    if value.startswith("ssh-"):
                         # it's directly stored
-                        self.ssh_key = sshkey_entry
+                        self.ssh_known_host_key = value
                     else:
                         # it's given as path to public key storage file
-                        path = Path(sshkey_entry)
+                        path = Path(os.path.expanduser(value))
 
                         # determine location relative to the falk.conf
                         if not path.is_absolute():
                             path = cfgpath / path
 
                         with open(str(path)) as keyfile:
-                            self.ssh_key = keyfile.read().strip()
+                            self.ssh_known_host_key = keyfile.read().strip()
 
                 # simply copy the value from the config:
                 else:
-                    setattr(self, key, cfg[key])
+                    setattr(self, key, value)
 
                 continue
 
-            elif key == "ssh_host":
+            # else, the value is not set, so we set defaults.
+
+            if key == "ssh_host":
                 # if host is not specified, assume the falk localhost
+                logging.warning("[vm] \x1b[33mwarning\x1b[m: "
+                                "'%s' has no host specified, "
+                                "assuming localhost",
+                                self.machine_id)
                 self.ssh_host = "localhost"
 
             elif key == "ssh_port":
+                # fallback to default port, i.e. 22
                 self.ssh_port = None
 
-            elif key == "ssh_key":
+            elif key == "ssh_known_host_key":
                 logging.warning("[vm] \x1b[33mwarning\x1b[m: "
                                 "'%s' doesn't have ssh-key configured, "
                                 "making key check impossible!",
                                 self.machine_id)
-                self.ssh_key = None
+                self.ssh_known_host_key = None
 
             elif key == "name":
                 # if no name to "match" for is given, use the unique id.
@@ -112,7 +130,7 @@ class Container(metaclass=ContainerMeta):
         self.cfg = cfg
         self.ssh_user = self.cfg.ssh_user
         self.ssh_host = self.cfg.ssh_host
-        self.ssh_key = self.cfg.ssh_key
+        self.ssh_known_host_key = self.cfg.ssh_known_host_key
         self.ssh_port = self.cfg.ssh_port
 
         if self.ssh_port is None:
@@ -160,7 +178,7 @@ class Container(metaclass=ContainerMeta):
             "ssh_user": self.ssh_user,
             "ssh_host": self.ssh_host,
             "ssh_port": self.ssh_port,
-            "ssh_key": self.ssh_key,
+            "ssh_known_host_key": self.ssh_known_host_key,
         }
 
     @abstractmethod

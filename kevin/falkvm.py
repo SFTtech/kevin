@@ -133,7 +133,7 @@ class FalkVM(Container):
                                       self.ssh_user,
                                       self.ssh_host,
                                       self.ssh_port,
-                                      self.ssh_key) as proc:
+                                      self.ssh_known_host_key) as proc:
 
                     try:
                         ret = await proc.wait_for(try_timeout)
@@ -151,9 +151,9 @@ class FalkVM(Container):
                 logging.debug("\x1b[31mTIMEOUT\x1b[m")
                 if raw_acquired:
                     logging.info("TCP connection established, but no SSH.")
-                    if self.ssh_key is not None:
+                    if self.ssh_known_host_key is not None:
                         logging.info(" Are you sure the ssh key is correct?")
-                        logging.info(" -> %s", self.ssh_key)
+                        logging.info(" -> %s", self.ssh_known_host_key)
 
                 raise ProcTimeoutError(["ssh", "%s@%s:%s" % (
                     self.ssh_user,

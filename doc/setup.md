@@ -194,7 +194,7 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 * Non-daemon launch
   * Run `kevin` with `python3 -m kevin`
   * Run `falk` with `python3 -m falk`
-* [Manage a container](falk.md#managing-vms) with `python3 -m falk.manage`
+* After setup, [manage a container](falk.md#managing-vms) with `python3 -m falk.manage`
   * For example: `python3 -m falk.manage unix://me@/run/kevin/falk your_vm_id`
 
 * We recommend to first test with a dummy repository that just contains a simple `kevinfile`, instead of the "real" project.

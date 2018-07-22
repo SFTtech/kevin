@@ -7,6 +7,11 @@ control_socket_permissions = 770
 #control_socket_group = kevin
 
 # range of ports where VMs will listen for SSH
+# when the vm is spawned, it selects a port from this range.
+# when you don't have VMs, specify the port where to connect to here.
+# (can be set to [22,22] to only use port 22)
+#
+# the selected port is passed below as {SSHPORT} to the incovation.
 vm_ports = [7888,8000]
 
 
@@ -16,20 +21,24 @@ vm_ports = [7888,8000]
 # VM name, which is requested by a job of some project.
 name = machine-which-the-job-requests
 
-# VM type, see falk/vm/ for supported backends
+# VM type, see falk/vm/ for supported backends.
 type = qemu
 
 # user used for ssh login
 ssh_user = chantal
 
-# public key of the VM so we can verify we connected to the right one
-ssh_key = ssh-ed25519 MY /etc/ssh/ssh_host_ed25519_key.pub CONTENT
+# public key of the VM so we can verify we connected to the right one.
+# you can either specify the ssh public key of the vm (ssh-rsa AAAAB3Nza... or
+#                                                      ecdsa-sha2-nistp256 AAAAE2..., etc)
+# or a path to the public key file or known hosts file (~/.ssh/known_hosts)
+# comment out to disable host key verification.
+ssh_known_host_key = ssh-ed25519 AAAAAB3Nza_THE_/etc/ssh/ssh_host_ed25519_key.pub_CONTENT
 
-# image that you created
+# VM image that you created, is used to create working copies from.
 base_image = /path/to/permanent/diskimage.qcow2
 
-# image that will be stored for copy-on-write data
-# the path will be suffixed with .someid for each parallel VM run
+# VM image file name that will be stored for copy-on-write data.
+# This path will be suffixed with ".someid" for each parallel VM run
 overlay_image = /tmp/kevin-vm-tmp.img
 
 # invocation: 2 CPUs, 2G RAM, no display
@@ -40,5 +49,5 @@ command = qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -smp 2 -m 2G 
 # remote desktop:
 #   QEMU:          -vnc 127.0.0.1:1    instead of -display none
 #   then use a vncclient to connect to port 5901
-#   (maybe forward the port to your machine with `ssh -L 12345:localhost:5901 youuser@falkhost`,
+#   (maybe forward the port to your machine with `ssh -L 12345:localhost:5901 youruser@falkhost`,
 #    then connect with a vncviewer: e.g. `vinagre localhost:12345`)

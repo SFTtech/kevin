@@ -260,7 +260,7 @@ class SSHProcess(Process):
     Use it as an async context manager or be sure to call cleanup()
     after using, else the tempfile will remain in /tmp.
 
-    if ssh_key is None, don't do fingerprint checking!
+    if ssh_known_host_key is None, don't do fingerprint checking!
 
     timeout: max runtime of the process for an output() call
     silence_timeout: max silence time of the process for an output() call
@@ -270,7 +270,7 @@ class SSHProcess(Process):
     options: additional ssh option list
     """
 
-    def __init__(self, command, ssh_user, ssh_host, ssh_port, ssh_key=None,
+    def __init__(self, command, ssh_user, ssh_host, ssh_port, ssh_known_host_key=None,
                  timeout=INF, silence_timeout=INF, chop_lines=False,
                  must_succeed=False, pipes=True, options=None,
                  loop=None, linebuf_max=(8 * 1024 ** 2), queue_size=1024):
@@ -278,7 +278,7 @@ class SSHProcess(Process):
         if not isinstance(command, (list, tuple)):
             raise Exception("invalid command: %r" % (command,))
 
-        self.ssh_hash = SSHKnownHostFile(ssh_host, ssh_port, ssh_key)
+        self.ssh_hash = SSHKnownHostFile(ssh_host, ssh_port, ssh_known_host_key)
         self.ssh_hash.create()
 
         if options is None:

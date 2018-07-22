@@ -48,7 +48,7 @@ class Config:
             if mat:
                 # port range
                 lower, upper = int(mat.group(1)), int(mat.group(2))
-                if not lower < upper:
+                if not lower <= upper:
                     raise ValueError("invalid port range (>): [%d,%d]" % (
                         lower, upper))
                 self.ssh_port_range = lower, upper
