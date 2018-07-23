@@ -61,21 +61,19 @@ class ContainerConfig:
             if value:
                 # ssh key loading:
                 if key == "ssh_known_host_key":
-                    # it's either the key directly or a file
-                    if value.startswith("ssh-"):
-                        # it's directly stored
-                        self.ssh_known_host_key = value
-                    else:
-                        # it's given as path to public key storage file
-                        path = Path(os.path.expanduser(value))
-
+                    # either the key is a file, or a line from the known hosts file.
+                    path = Path(os.path.expanduser(value))
+                    print(path)
+                    if path.is_file():
                         # determine location relative to the falk.conf
                         if not path.is_absolute():
                             path = cfgpath / path
 
                         with open(str(path)) as keyfile:
                             self.ssh_known_host_key = keyfile.read().strip()
-
+                    else:
+                        # it's directly stored
+                        self.ssh_known_host_key = value
                 # simply copy the value from the config:
                 else:
                     setattr(self, key, value)
@@ -207,4 +205,4 @@ class Container(metaclass=ContainerMeta):
 
 
 # force class definitions too fill CONTAINERS dict
-from . import qemu, xen, docker, lxc, clearlinux, nspawn, rkt
+from . import qemu, xen, docker, lxc, clearlinux, nspawn, rkt, custom

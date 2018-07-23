@@ -29,7 +29,7 @@ class Custom(Container):
 
         return cfg
 
-    def prepare(self, manage=False):
+    async def prepare(self, manage=False):
         self.manage = manage
 
         command = shlex.split(self.cfg.prepare)
@@ -39,8 +39,8 @@ class Custom(Container):
         if subprocess.call(command) != 0:
             raise RuntimeError("could not prepare container")
 
-    def launch(self):
-        command = shlex.split(self.cfg.launch) + [self.ssh_port]
+    async def launch(self):
+        command = shlex.split(self.cfg.launch)# + [self.ssh_port]
 
         self.process = subprocess.Popen(
             command, stdin=subprocess.PIPE,
@@ -50,7 +50,7 @@ class Custom(Container):
 
         self.process.stdin.close()
 
-    def is_running(self):
+    async def is_running(self):
         if self.process:
             running = self.process.poll() is None
         else:
@@ -58,15 +58,18 @@ class Custom(Container):
 
         return running
 
-    def terminate(self):
+    async def terminate(self):
         if self.process:
             self.process.kill()
             self.process.wait()
 
-    def cleanup(self):
+    async def cleanup(self):
         command = shlex.split(self.cfg.cleanup)
         if self.manage:
             command.append("--manage")
 
         if subprocess.call(command) != 0:
             raise RuntimeError("could not clean up container")
+
+    async def wait_for_shutdown(self, timeout):
+        return False
