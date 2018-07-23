@@ -1,5 +1,5 @@
 """
-qemu virtual machines.
+Wraps a QEMU virtual machine.
 """
 
 import asyncio
@@ -95,7 +95,8 @@ class QEMU(Container):
         if self.running_image is None:
             raise RuntimeError("runimage was not prepared!")
 
-        logging.debug("VM will listen on port %d", self.ssh_port)
+        logging.debug("Launching VM which shall listen "
+                      "on ssh port %d", self.ssh_port)
 
         command = []
         for part in shlex.split(self.cfg.command):
@@ -113,11 +114,9 @@ class QEMU(Container):
 
     async def is_running(self):
         if self.process:
-            running = self.process.returncode is None
-        else:
-            running = False
+            return self.process.returncode is None
 
-        return running
+        return False
 
     async def wait_for_shutdown(self, timeout):
         if not self.process:

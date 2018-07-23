@@ -40,11 +40,26 @@ class ContainerConfig:
         self.machine_id = machine_id
         self.cfgpath = cfgpath
 
+        config_keys = ("name", "ssh_user", "ssh_host", "ssh_port",
+                       "ssh_known_host_key", "ssh_known_host_key_file")
+
+        # set all config keys to None.
+        for key in config_keys:
+            setattr(self, key, None)
+
+        # matches an /etc/ssh/ssh_host*_key.pub file
+        # and ~/.ssh/known_hosts line
+        # so that we can just extract the key.
+        host_key_entry = (r"(?:.*)((?:ssh|ecdsa)-[^ ]+) "
+                          r"([^\b@\. ]+) *(.*\b)?")
+
+        host_key_pattern = re.compile(host_key_entry)
+
+
         # standard keys that exist for every machine.
         # more config options are specified in each container type,
         # e.g. Qemu, Xen, ...
-        for key in ("name", "ssh_user", "ssh_host", "ssh_port",
-                    "ssh_known_host_key"):
+        for key in config_keys:
 
             value = cfg.get(key)
 
@@ -58,56 +73,81 @@ class ContainerConfig:
                                     "which is now called 'ssh_known_host_key'",
                                     self.machine_id)
 
-            if value:
-                # ssh key loading:
-                if key == "ssh_known_host_key":
-                    # either the key is a file, or a line from the known hosts file.
-                    path = Path(os.path.expanduser(value))
-                    print(path)
-                    if path.is_file():
-                        # determine location relative to the falk.conf
-                        if not path.is_absolute():
-                            path = cfgpath / path
-
-                        with open(str(path)) as keyfile:
-                            self.ssh_known_host_key = keyfile.read().strip()
-                    else:
-                        # it's directly stored
-                        self.ssh_known_host_key = value
-                # simply copy the value from the config:
-                else:
-                    setattr(self, key, value)
-
+            if not value:
                 continue
 
-            # else, the value is not set, so we set defaults.
+            # ssh key loading:
+            if key == "ssn_known_host_key":
+                match = host_key_pattern.match(entry, value)
+                if not match:
+                    raise ValueError("malformed ssh_known_host_key entry: "
+                                     "%s" % value)
 
-            if key == "ssh_host":
-                # if host is not specified, assume the falk localhost
-                logging.warning("[vm] \x1b[33mwarning\x1b[m: "
-                                "'%s' has no host specified, "
-                                "assuming localhost",
-                                self.machine_id)
-                self.ssh_host = "localhost"
+                # use sanitized value
+                value = " ".join(match.groups())
 
-            elif key == "ssh_port":
-                # fallback to default port, i.e. 22
-                self.ssh_port = None
+            if key == "ssh_known_host_key_file":
+                if getattr(self, "ssh_known_host_key", None):
+                    raise Exception("'ssh_known_host_key' already set, "
+                                    "you can't set "
+                                    "'ssh_known_host_key_file' then")
 
-            elif key == "ssh_known_host_key":
-                logging.warning("[vm] \x1b[33mwarning\x1b[m: "
-                                "'%s' doesn't have ssh-key configured, "
-                                "making key check impossible!",
-                                self.machine_id)
-                self.ssh_known_host_key = None
+                # either the key is a file, or a line from the known hosts file.
+                path = Path(os.path.expanduser(value))
 
-            elif key == "name":
-                # if no name to "match" for is given, use the unique id.
-                self.name = machine_id
+                # determine location relative to the falk.conf
+                if not path.is_absolute():
+                    path = cfgpath / path
+
+                if not path.is_file():
+                    raise FileNotFoundError("known_host_key_file: %s" % path)
+
+                with path.open() as keyfile:
+                    known_hosts = keyfile.read().strip()
+
+                    for line in known_hosts.split("\n"):
+                        if not line.strip():
+                            continue
+
+                        match = host_key_pattern.match(entry, line)
+
+                        if not match:
+                            raise ValueError(
+                                "wrong known_host_key_file format, "
+                                "expected contents from a "
+                                "/etc/ssh/ssh_host_*_key.pub file."
+                            )
+
+                        # craft entry as ssh-... KEYKEYKEY hostname
+                        self.ssh_known_host_key = " ".join(match.groups())
 
             else:
-                raise KeyError("%s config is missing %s=" % (
-                    self.name, key))
+                # simply copy the value from the config:
+                setattr(self, key, value)
+
+        # set default values for missing entries
+        if not self.ssh_host:
+            # if host is not specified, assume the falk localhost
+            logging.warning("[vm] \x1b[33mwarning\x1b[m: "
+                            "'%s' has no ssh_host specified, "
+                            "assuming localhost",
+                            self.machine_id)
+            self.ssh_host = "localhost"
+
+
+        if not self.ssh_known_host_key:
+            logging.warning("[vm] \x1b[33mwarning\x1b[m: "
+                            "'%s' doesn't have ssh-key configured, "
+                            "thus I won't do a key verification!",
+                            self.machine_id)
+            self.ssh_known_host_key = None
+
+        if not self.name:
+            # if no name to "match" for is given, use the unique id.
+            self.name = machine_id
+
+        if not self.ssh_user:
+            raise KeyError("[%s] config is missing 'ssh_user'" % (self.name))
 
 
 class Container(metaclass=ContainerMeta):

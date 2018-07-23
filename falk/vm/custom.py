@@ -2,6 +2,9 @@
 Custom container, just shell scripts are invoked.
 """
 
+import asyncio
+import logging
+import os
 import shlex
 import subprocess
 
@@ -32,44 +35,89 @@ class Custom(Container):
     async def prepare(self, manage=False):
         self.manage = manage
 
-        command = shlex.split(self.cfg.prepare)
-        if self.manage:
-            command.append("--manage")
+        prepare_env = os.environ.copy()
+        prepare_env["FALK_MANAGE"] = "true" if self.manage else ""
 
-        if subprocess.call(command) != 0:
-            raise RuntimeError("could not prepare container")
+        command = shlex.split(self.cfg.prepare)
+        proc = await asyncio.create_subprocess_exec(*command, env=prepare_env)
+
+        try:
+            ret = await asyncio.wait_for(proc.wait(), timeout=60)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError("timeout waiting for "
+                               "container preparation") from exc
+
+        if ret != 0:
+            raise RuntimeError(f"could not prepare container: returned {ret}")
 
     async def launch(self):
-        command = shlex.split(self.cfg.launch)# + [self.ssh_port]
+        logging.debug("Launching container which shall listen "
+                      "on ssh port %d", self.ssh_port)
 
-        self.process = subprocess.Popen(
-            command, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+        launch_env = os.environ.copy()
+        launch_env["FALK_SSH_PORT"] = str(self.ssh_port)
+        launch_env["FALK_MANAGE"] = "true" if self.manage else ""
+
+        command = []
+        for part in shlex.split(self.cfg.launch):
+            part = part.replace("{SSHPORT}", str(self.ssh_port))
+            command.append(part)
+
+        self.process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=subprocess.PIPE,
+            stdout=None,
+            stderr=None,
+            env=launch_env
         )
-
         self.process.stdin.close()
 
     async def is_running(self):
         if self.process:
-            running = self.process.poll() is None
-        else:
-            running = False
+            return self.process.returncode is None
 
-        return running
+        return False
+
+    async def wait_for_shutdown(self, timeout):
+        if not self.process:
+            return
+
+        try:
+            await asyncio.wait_for(self.process.wait(), timeout)
+            return True
+
+        except asyncio.TimeoutError:
+            logging.warning("shutdown wait timed out.")
+            return False
 
     async def terminate(self):
-        if self.process:
+        if not self.process:
+            return
+
+        if self.process.returncode is not None:
+            return
+
+        try:
+            self.process.terminate()
+            await asyncio.wait_for(self.process.wait(), timeout=10)
+
+        except asyncio.TimeoutError:
             self.process.kill()
-            self.process.wait()
+            await self.process.wait()
+
+        self.process = None
 
     async def cleanup(self):
         command = shlex.split(self.cfg.cleanup)
-        if self.manage:
-            command.append("--manage")
+        cleanup_env = os.environ.copy()
+        cleanup_env["FALK_MANAGE"] = "true" if self.manage else ""
 
-        if subprocess.call(command) != 0:
-            raise RuntimeError("could not clean up container")
+        proc = await asyncio.create_subprocess_exec(*command, env=cleanup_env)
 
-    async def wait_for_shutdown(self, timeout):
-        return False
+        try:
+            ret = await asyncio.wait_for(proc.wait(), timeout=60)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError("timeout cleaning up container") from exc
+
+        if ret != 0:
+            raise RuntimeError(f"could not clean up container: {ret}")

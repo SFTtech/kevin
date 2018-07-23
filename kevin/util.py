@@ -133,20 +133,25 @@ class SSHKnownHostFile:
         if self.key is not None:
             self.tmpfile.close()
 
+    def empty(self):
+        """
+        Return true if there is no key stored,
+        i.e. no host key verification is performed because the key was None
+        """
+        return self.key is None
+
     def get_options(self):
         """ Return the ssh options to use this temporary known hosts file """
 
-        if not self.tmpfile:
-            raise Exception("you need to use a context for sshhostfile")
-
         if self.key is None:
-            logging.warning("Connecting to '%s:%s' without key verification",
-                            self.host, self.port)
-
             return [
                 "-o", "UserKnownHostsFile=/dev/null",
                 "-o", "StrictHostKeyChecking=no",
             ]
+
+        if not self.tmpfile:
+            raise Exception("SSHKnownHostFile::create() not called "
+                            "or not SSHKnownHostFile not used 'with'")
 
         return [
             "-o", "UserKnownHostsFile=%s" % self.tmpfile.name,

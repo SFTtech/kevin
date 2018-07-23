@@ -278,6 +278,8 @@ class SSHProcess(Process):
         if not isinstance(command, (list, tuple)):
             raise Exception("invalid command: %r" % (command,))
 
+        # generates a temporary known_hosts file
+        # for ssh host key verification.
         self.ssh_hash = SSHKnownHostFile(ssh_host, ssh_port, ssh_known_host_key)
         self.ssh_hash.create()
 

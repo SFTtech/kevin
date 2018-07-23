@@ -1,5 +1,6 @@
+###############################################################################
 # configuration for a falk vm provider
-
+###############################################################################
 [falk]
 name = test-falk
 control_socket = /run/kevin/falk
@@ -15,6 +16,7 @@ control_socket_permissions = 770
 vm_ports = [7888,8000]
 
 
+###############################################################################
 # this is a VM provided by this falk:
 [some-random-vm-id]
 
@@ -27,12 +29,20 @@ type = qemu
 # user used for ssh login
 ssh_user = chantal
 
-# public key of the VM so we can verify we connected to the right one.
-# you can either specify the ssh public key of the vm (ssh-rsa AAAAB3Nza... or
-#                                                      ecdsa-sha2-nistp256 AAAAE2..., etc)
-# or a path to the public key file or known hosts file (~/.ssh/known_hosts)
-# comment out to disable host key verification.
-ssh_known_host_key = ssh-ed25519 AAAAAB3Nza_THE_/etc/ssh/ssh_host_ed25519_key.pub_CONTENT
+# host used by kevin to connect to.
+# special value: "localhost" => kevin connects to falk machine
+ssh_host = localhost
+
+# public key of the VM's ssh server so we can verify we connected to the right one.
+# you can either:
+#   * specify the ssh server public key of the vm directly
+#     (ssh-rsa AAAAB3Nza... or ecdsa-sha2-nistp256 AAAAE2..., etc)
+#   * provide a path to the public key file or known hosts file
+#     (~/.ssh/known_hosts, /etc/ssh/ssh_*_key.pub)
+#
+# comment out both to disable host key verification.
+ssh_known_host_key = ssh-ed25519 AAAAAB3Nza_The_VM's_/etc/ssh/ssh_host_ed25519_key.pub_CONTENT
+#ssh_known_host_key_file = /some/mountpoint/of/vm/etc/ssh/ssh_host_ed25519_key.pub
 
 # VM image that you created, is used to create working copies from.
 base_image = /path/to/permanent/diskimage.qcow2
@@ -53,5 +63,28 @@ command = qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -smp 2 -m 2G 
 #    then connect with a vncviewer: e.g. `vinagre localhost:12345`)
 
 
+###############################################################################
+# another container definition, provided by this falk:
+[custom-commands]
+
+name = machine-name-for-job
+type = custom
+
+# when kevin connects to container via ssh, he uses this user
+ssh_user = chantal
+
+# kevin's ssh connects to this host.
+# special value: "localhost" => kevin connects to falk machine
+ssh_host = localhost
+
+# custom commands for container control.
+# when the launch command terminates, the container is assumed to be shut down.
+# see falk/vm/custom.py for implementation.
+prepare = sh -c 'echo preparing manage=$FALK_MANAGE'
+launch = sh -c 'echo launching manage=$FALK_MANAGE; nc -lp $FALK_SSH_PORT'
+cleanup = echo "cleaning up"
+
+
+###############################################################################
 #[some-other-vm-id]
-#... definitions for another vm, just like the ones below [some-random-vm-id]
+#... definitions for another vm, just like the ones under [some-random-vm-id] or [custom-commands]
