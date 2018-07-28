@@ -7,7 +7,7 @@ import glob
 
 setup(
     name="kevin",
-    version="0.4",
+    version="0.5",
     description="Self-hostable continuous integration toolkit",
     long_description=(
         "Components for running a continuous integration service "
