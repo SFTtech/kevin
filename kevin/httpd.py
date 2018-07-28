@@ -3,12 +3,11 @@ Web server to receive WebHook notifications from GitHub,
 and provide them in a job queue.
 """
 
+import asyncio
 from abc import abstractmethod
 import logging
 
-from tornado import websocket, web, gen, httpserver
-from tornado.platform.asyncio import AsyncIOMainLoop
-from tornado.queues import Queue
+from tornado import websocket, web, httpserver
 
 from .config import CFG
 from .trigger import Trigger
@@ -63,10 +62,10 @@ class HookHandler(web.RequestHandler):
         """
         raise NotImplementedError()
 
-    def get(self):
+    async def get(self):
         raise NotImplementedError()
 
-    def post(self):
+    async def post(self):
         raise NotImplementedError()
 
     def data_received(self, chunk):
@@ -87,9 +86,6 @@ class HTTPD:
         build_manager: build_manager.BuildManager for caching
                        and restoring buils from disk.
         """
-
-        # use the main asyncio loop to run tornado
-        AsyncIOMainLoop().install()
 
         # this dict will be the kwargs of each urlhandler
         handler_args = {
@@ -133,8 +129,8 @@ class HTTPD:
         """
         Stop listening for http requests
         """
+        # TODO: when tornado's HTTPServer::stop is async, await it
         self.server.stop()
-        # TODO: await the stop, but maybe tornado doesn't even support that
 
 
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
@@ -154,11 +150,11 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             return None
         return preferred
 
-    def open(self):
+    async def open(self):
         project = CFG.projects[self.get_parameter("project")]
         build_id = self.get_parameter("hash")
         try:
-            self.build = self.build_manager.get_build(project, build_id)
+            self.build = await self.build_manager.get_build(project, build_id)
 
             if not self.build:
                 logging.warning(f"unknown build {build_id} "
@@ -183,10 +179,10 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             # (except for JobState updates, which are treated by the filter above).
             self.filter_ = get_filter(self.get_parameter("filter"))
 
-            self.build.register_watcher(self)
+            await self.build.register_watcher(self)
 
             # trigger the disk-load, if necessary
-            self.build.reconstruct_jobs(self.get_parameter("filter"))
+            await self.build.reconstruct_jobs(self.get_parameter("filter"))
 
         except Exception as exc:
             self.send_error(f"Error: {exc}")
@@ -214,11 +210,11 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         if self.build is not None:
             self.build.deregister_watcher(self)
 
-    def on_message(self, message):
+    async def on_message(self, message):
         # TODO: handle user messages
         pass
 
-    def on_update(self, update):
+    async def on_update(self, update):
         """
         Called by the watched build when an update arrives.
         """
@@ -256,9 +252,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
         self.build_manager = build_manager
         self.job = None
 
-    @gen.coroutine
-    def get(self):
-
+    async def get(self):
         try:
             project_name = self.request.query_arguments["project"][0]
         except (KeyError, IndexError):
@@ -288,7 +282,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
             self.write(b"unknown project requested\n")
             return
 
-        build = self.build_manager.get_build(project, build_id)
+        build = await self.build_manager.get_build(project, build_id)
         if not build:
             self.write(("no such build: project %s [%s]\n" % (
                 project_name, build_id)).encode())
@@ -301,25 +295,25 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
             return
 
         # the message queue to be sent to the http client
-        self.queue = Queue()
+        self.queue = asyncio.Queue()
 
         # request the updates from the watched jobs
-        self.job.register_watcher(self)
+        await self.job.register_watcher(self)
 
-        # TODO: perform the socket write at the same time as the loading..
-        self.job.load_from_fs()
+        # load the job from the filesystem and
+        # emit the updates until no more are coming
+        await asyncio.gather(
+            self.job.load_from_fs(),
+            self.watch_job()
+        )
 
-        # emit the updates and wait until no more are coming
-        yield self.watch_job()
-
-    @gen.coroutine
-    def watch_job(self):
+    async def watch_job(self):
         """ Process updates and send them to the client """
 
         self.set_header("Content-Type", "text/plain")
 
         while True:
-            update = yield self.queue.get()
+            update = await self.queue.get()
 
             if update is StopIteration:
                 break
@@ -348,20 +342,19 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
                          (update.text)).encode()
                     )
 
-            yield self.flush()
+            await self.flush()
 
         return self.finish()
 
-    def on_update(self, update):
+    async def on_update(self, update):
         """ Put a message to the stream queue """
-        self.queue.put(update)
+        await self.queue.put(update)
 
     def on_connection_close(self):
         """ Add a connection-end marker to the queue """
-        self.on_update(StopIteration)
+        self.queue.put_nowait(StopIteration)
 
     def on_finish(self):
-        # TODO: only do this if we got a GET request.
         if self.job is not None:
             self.job.deregister_watcher(self)
 

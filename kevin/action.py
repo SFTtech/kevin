@@ -17,7 +17,7 @@ class Action(Service):
         super().__init__(cfg, project)
 
     @abstractmethod
-    def get_watcher(self, build, completed):
+    async def get_watcher(self, build, completed):
         """
         Return a watcher object which is then registered for build updates.
         """

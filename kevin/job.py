@@ -17,7 +17,6 @@ from .process import (ProcTimeoutError, ProcessFailed, ProcessError)
 from .update import (Update, JobState, JobUpdate, StepState,
                      StdOut, OutputItem, QueueActions, JobCreated,
                      GeneratedUpdate, JobEmergencyAbort, RegisterActions)
-from .util import recvcoroutine
 from .watchable import Watchable
 from .watcher import Watcher
 
@@ -53,11 +52,13 @@ class JobAction(Action):
         self.descripton = cfg.get("description")
         self.vm_name = cfg["machine"]
 
-    def get_watcher(self, build, completed):
+    async def get_watcher(self, build, completed):
         if completed:
             return None
 
-        return Job(build, self.project, self.job_name, self.vm_name)
+        new_job = Job(build, self.project, self.job_name, self.vm_name)
+        await new_job.send_creation_notification()
+        return new_job
 
 
 class Job(Watcher, Watchable):
@@ -69,7 +70,7 @@ class Job(Watcher, Watchable):
           not happen. for that, a "reset" must be implemented.
           The restart is not implemented either, though.
     """
-    def __init__(self, build, project, name, vm_name, reconstructed=False):
+    def __init__(self, build, project, name, vm_name):
         super().__init__()
 
         # the project and build this job is invoked by
@@ -129,14 +130,13 @@ class Job(Watcher, Watchable):
             except FileNotFoundError:
                 pass
 
-        # if this job is being reconstructed,
-        # don't send the JobCreated update, as it triggered
-        # this reconstruction, otherwise we'd inf-loop.
-        if not reconstructed:
-            # tell the our watchers that this job is now created
-            self.send_update(JobCreated(self.name, self.vm_name))
+    async def send_creation_notification(self):
+        """
+        Tell the our watchers that this job is was created
+        """
+        await self.send_update(JobCreated(self.name, self.vm_name))
 
-    def load_from_fs(self):
+    async def load_from_fs(self):
         """
         Ensure the job is reconstructed from filesystem.
         """
@@ -152,8 +152,8 @@ class Job(Watcher, Watchable):
         if not self.all_loaded:
             with updates_file.open() as updates_file:
                 for json_line in updates_file:
-                    self.send_update(Update.construct(json_line),
-                                     reconstruct=True)
+                    await self.send_update(Update.construct(json_line),
+                                           reconstruct=True)
 
             logging.debug(f"reconstructed Job {id(self)} {self} from fs")
 
@@ -231,7 +231,7 @@ class Job(Watcher, Watchable):
         with self.path.joinpath("_updates").open("a") as ufile:
             ufile.write(update.json() + "\n")
 
-    def on_update(self, update):
+    async def on_update(self, update):
         """
         When this job receives updates from any of its watched
         watchables, the update is processed here.
@@ -240,20 +240,20 @@ class Job(Watcher, Watchable):
         """
 
         if isinstance(update, RegisterActions):
-            self.register_to_build()
+            await self.register_to_build()
 
         elif isinstance(update, QueueActions):
             if not self.all_loaded:
 
                 if self.completed:
                     # we can reconstruct as the _completed file exists.
-                    self.load_from_fs()
+                    await self.load_from_fs()
 
                 else:
                     self.purge_fs()
                     # run the job by adding it to the processing queue
-                    update.queue.add_job(self)
-                    self.set_state("waiting", "enqueued")
+                    await update.queue.add_job(self)
+                    await self.set_state("waiting", "enqueued")
 
     def step_update(self, update):
         """ apply a step update to this job. """
@@ -274,28 +274,28 @@ class Job(Watcher, Watchable):
                 self.step_numbers[update.step_name] = len(self.step_numbers)
             update.step_number = self.step_numbers[update.step_name]
 
-    def set_state(self, state, text, time=None):
+    async def set_state(self, state, text, time=None):
         """ set the job state information """
-        self.send_update(JobState(self.project.name, self.build.commit_hash,
-                                  self.name, state, text, time))
+        await self.send_update(JobState(self.project.name, self.build.commit_hash,
+                                        self.name, state, text, time))
 
 
-    def set_step_state(self, step_name, state, text, time=None):
+    async def set_step_state(self, step_name, state, text, time=None):
         """ send a StepState update. """
-        self.send_update(StepState(self.project.name, self.build.commit_hash,
-                                   self.name, step_name, state, text,
-                                   time=time))
+        await self.send_update(StepState(self.project.name, self.build.commit_hash,
+                                         self.name, step_name, state, text,
+                                         time=time))
 
-    def on_watcher_registered(self, watcher):
+    async def on_watcher_registered(self, watcher):
         # send all previous job updates to the watcher
         for update in self.updates:
-            watcher.on_update(update)
+            await watcher.on_update(update)
 
         # and send stop if this job is finished
         if self.completed:
-            watcher.on_update(StopIteration)
+            await watcher.on_update(StopIteration)
 
-    def register_to_build(self):
+    async def register_to_build(self):
         """
         Register this job to its build.
         """
@@ -304,7 +304,7 @@ class Job(Watcher, Watchable):
 
         # we are already attached to receive updates from a build
         # now, we subscribe the build to us so it gets our updates.
-        self.register_watcher(self.build)
+        await self.register_watcher(self.build)
 
     async def run(self, job_manager):
         """ Attempts to build the job. """
@@ -314,7 +314,7 @@ class Job(Watcher, Watchable):
                 raise Exception("tried to run a completed job!")
 
             # falk contact
-            self.set_state("waiting", "requesting machine")
+            await self.set_state("waiting", "requesting machine")
 
             # figure out which machine to run the job on
             machine = await asyncio.wait_for(
@@ -323,7 +323,7 @@ class Job(Watcher, Watchable):
             )
 
             # machine was acquired, now boot it.
-            self.set_state("waiting", "booting machine")
+            await self.set_state("waiting", "booting machine")
 
             async with Chantal(machine) as chantal:
 
@@ -335,6 +335,8 @@ class Job(Watcher, Watchable):
 
                 # create control message parser sink
                 control_handler = self.control_handler()
+                # advance to the first yield
+                await control_handler.asend(None)
 
                 error_messages = bytearray()
                 try:
@@ -345,7 +347,7 @@ class Job(Watcher, Watchable):
                         async for stream_id, data in run.output():
                             if stream_id == 1:
                                 # control message stream chunk
-                                control_handler.send(data)
+                                await control_handler.asend(data)
                             else:
                                 error_messages += data
 
@@ -361,12 +363,12 @@ class Job(Watcher, Watchable):
                 if error_messages:
                     error_messages = error_messages.decode(errors='replace')
                     logging.error("[job] \x1b[31;1mChantal failed\x1b[m\n%s", error_messages)
-                    self.error("Chantal failed; stdout: %s" %
-                               error_messages.replace("\n", ", "))
+                    await self.error("Chantal failed; stdout: %s" %
+                                     error_messages.replace("\n", ", "))
 
         except asyncio.CancelledError:
             logging.info("\x1b[31;1mJob aborted:\x1b[m %s", self)
-            self.error("Job cancelled")
+            await self.error("Job cancelled")
             raise
 
         except (ProcessFailed, asyncio.TimeoutError) as exc:
@@ -380,7 +382,7 @@ class Job(Watcher, Watchable):
             logging.error("[job] \x1b[31;1mProcess %s:\x1b[m %s:\n%s",
                           what, self, exc)
 
-            self.error("Process failed%s" % error)
+            await self.error("Process failed%s" % error)
 
         except ProcTimeoutError as exc:
             if exc.was_global:
@@ -394,8 +396,8 @@ class Job(Watcher, Watchable):
                           "of %.2fs.\x1b[m", silence, exc.timeout)
             traceback.print_exc()
 
-            self.error("Process %s took > %.02fs." % (exc.cmd[0],
-                                                      exc.timeout))
+            await self.error("Process %s took > %.02fs." % (exc.cmd[0],
+                                                            exc.timeout))
 
         except ProcessError as exc:
             logging.error("[job] \x1b[31;1mCommunication failure:"
@@ -403,7 +405,7 @@ class Job(Watcher, Watchable):
 
             logging.exception("This was kinda unexpected...")
 
-            self.error("SSH Process communication error")
+            await self.error("SSH Process communication error")
 
         except JobTimeoutError as exc:
 
@@ -414,10 +416,10 @@ class Job(Watcher, Watchable):
                               "of %.2fs.\x1b[m", exc.timeout)
 
                 if self.current_step:
-                    self.set_step_state(self.current_step, "error",
-                                        "Timeout!")
+                    await self.set_step_state(self.current_step, "error",
+                                              "Timeout!")
 
-                self.error("Job took > %.02fs." % (exc.timeout))
+                await self.error("Job took > %.02fs." % (exc.timeout))
 
             # or too long to provide a message?
             else:
@@ -427,13 +429,13 @@ class Job(Watcher, Watchable):
 
                 # a specific step is responsible:
                 if self.current_step:
-                    self.set_step_state(self.current_step, "error",
-                                        "Silence for > %.02fs." % (
-                                            exc.timeout))
-                    self.error("Silence Timeout!")
+                    await self.set_step_state(self.current_step, "error",
+                                              "Silence for > %.02fs." % (
+                                                  exc.timeout))
+                    await self.error("Silence Timeout!")
                 else:
                     # bad step is unknown:
-                    self.error("Silence for > %.2fs!" % (exc.timeout))
+                    await self.error("Silence for > %.2fs!" % (exc.timeout))
 
         except VMError as exc:
             logging.error("\x1b[31;1mMachine action failed\x1b[m "
@@ -443,7 +445,7 @@ class Job(Watcher, Watchable):
                           self.build.commit_hash)
             traceback.print_exc()
 
-            self.error("VM Error: %s" % (exc))
+            await self.error("VM Error: %s" % (exc))
 
         except Exception as exc:
             logging.error("\x1b[31;1mexception in Job.run()\x1b[m "
@@ -455,7 +457,7 @@ class Job(Watcher, Watchable):
 
             try:
                 # make sure the job dies
-                self.error("Job.run(): %r" % (exc))
+                await self.error("Job.run(): %r" % (exc))
             except Exception as exc:
                 # we end up here if the error update can not be sent,
                 # because one of our watchers has a programming error.
@@ -468,7 +470,7 @@ class Job(Watcher, Watchable):
 
                 try:
                     # make sure the job really really dies
-                    self.send_update(
+                    await self.send_update(
                         JobEmergencyAbort(
                             self.project.name,
                             self.build.commit_hash,
@@ -485,8 +487,8 @@ class Job(Watcher, Watchable):
         finally:
             # error the leftover steps
             for step in list(self.pending_steps):
-                self.set_step_state(step, 'error',
-                                    'step result was not reported')
+                await self.set_step_state(step, 'error',
+                                          'step result was not reported')
 
             # the job is completed!
             self.completed = clock.time()
@@ -496,21 +498,20 @@ class Job(Watcher, Watchable):
                 # the job is now officially completed
                 self.path.joinpath("_completed").touch()
 
-            self.send_update(StopIteration)
+            await self.send_update(StopIteration)
 
-    def error(self, text):
+    async def error(self, text):
         """
         Produces an 'error' JobState and an 'error' StepState for all
         steps that are currently pending.
         """
         while self.pending_steps:
             step = self.pending_steps.pop()
-            self.set_step_state(step, "error", "build has errored")
+            await self.set_step_state(step, "error", "build has errored")
 
-        self.set_state("error", text)
+        await self.set_state("error", text)
 
-    @recvcoroutine
-    def control_handler(self):
+    async def control_handler(self):
         """
         Coroutine that receives control data chunks via yield, and
         interprets them.
@@ -559,11 +560,11 @@ class Job(Watcher, Watchable):
             # after the newline may be raw data or the next control message
             msg = data[:newline + 1].decode().strip()
             if msg:
-                self.control_message(msg)
+                await self.control_message(msg)
 
             del data[:newline + 1]
 
-    def control_message(self, msg):
+    async def control_message(self, msg):
         """
         control message parser, chantal sends state through this channel.
         """
@@ -573,14 +574,14 @@ class Job(Watcher, Watchable):
         cmd = msg["cmd"]
 
         if cmd == 'job-state':
-            self.set_state(msg["state"], msg["text"])
+            await self.set_state(msg["state"], msg["text"])
 
         elif cmd == 'step-state':
             self.current_step = msg["step"]
-            self.set_step_state(msg["step"], msg["state"], msg["text"])
+            await self.set_step_state(msg["step"], msg["state"], msg["text"])
 
         elif cmd == 'stdout':
-            self.send_update(StdOut(
+            await self.send_update(StdOut(
                 self.name,
                 msg["text"]
             ))
@@ -597,7 +598,7 @@ class Job(Watcher, Watchable):
                     "expected: " + self.current_output_item.name
                 )
 
-            self.send_update(self.current_output_item)
+            await self.send_update(self.current_output_item)
             self.current_output_item = None
 
         # file or folder transfer is announced

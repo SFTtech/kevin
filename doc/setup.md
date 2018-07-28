@@ -79,8 +79,8 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 
 - Install
   - `python >=3.6`
-  - `tornado`
-  - `requests`
+  - `tornado >=5.1`
+  - `aiohttp >=2.0`
 - Create user `kevin` (you can, of course, change that)
   - Add `kevin` to group `kvm`
   - Create `/etc/kevin/kevin.conf` from [`kevin.conf.example`](/etc/kevin.conf.example)

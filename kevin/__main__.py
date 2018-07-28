@@ -53,7 +53,7 @@ def main():
     # pass commandline args
     CFG.set_cmdargs(args)
 
-    logging.error("\x1b[1;32mKevin CI starting...\x1b[m")
+    logging.error("\x1b[1;32mKevin CI running...\x1b[m")
 
     try:
         kevin = Kevin(loop, config=CFG)

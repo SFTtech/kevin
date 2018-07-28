@@ -9,7 +9,7 @@ import hmac
 import logging
 from hashlib import sha1
 
-import requests
+import aiohttp
 
 from ..action import Action
 from ..config import CFG
@@ -17,10 +17,6 @@ from ..httpd import HookHandler, HookTrigger
 from ..update import (BuildState, JobState,
                       StepState, GeneratedUpdate, QueueActions)
 from ..watcher import Watcher
-
-# silence the library log messages
-logging.getLogger("requests").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 # translation lookup-table for kevin states -> github states
@@ -84,7 +80,7 @@ class GitHubPullManager(Watcher):
         # (project, repo, pull_id) -> (build_id, queue)
         self.running_pull_builds = dict()
 
-    def on_update(self, update):
+    async def on_update(self, update):
         if isinstance(update, GitHubPullRequest):
             # new pull request information that may cause an abort.
             key = (update.project_name, update.repo, update.pull_id)
@@ -199,12 +195,12 @@ class GitHubHookHandler(HookHandler):
         # list of GitHubHooks that are can invoke this hook handler
         self.triggers = triggers
 
-    def get(self):
+    async def get(self):
         self.write(b"Expected a JSON-formatted POST request.\n")
         self.set_status(400)
-        self.finish()
+        await self.finish()
 
-    def post(self):
+    async def post(self):
         logging.info("[github] \x1b[34mGot webhook from %s\x1b[m",
                      self.request.remote_ip)
         blob = self.request.body
@@ -262,10 +258,10 @@ class GitHubHookHandler(HookHandler):
 
             # dispatch by event type
             if event == "pull_request":
-                self.handle_pull_request(project, json_data)
+                await self.handle_pull_request(project, json_data)
 
             elif event == "push":
-                self.handle_push(project, json_data)
+                await self.handle_push(project, json_data)
 
             elif event == "fork":
                 user = json_data["sender"]["login"]
@@ -297,9 +293,9 @@ class GitHubHookHandler(HookHandler):
         else:
             self.write(b"OK")
 
-        self.finish()
+        await self.finish()
 
-    def handle_push(self, project, json_data):
+    async def handle_push(self, project, json_data):
         """
         github push webhook parser.
         """
@@ -310,10 +306,10 @@ class GitHubHookHandler(HookHandler):
         user = json_data["pusher"]["name"]
         branch = json_data["ref"]        # e.g. "refs/heads/master"
 
-        self.create_build(project, commit_sha, clone_url, repo_url, user,
-                          branch, status_url=None)
+        await self.create_build(project, commit_sha, clone_url, repo_url, user,
+                                branch, status_url=None)
 
-    def handle_pull_request(self, project, json_data):
+    async def handle_pull_request(self, project, json_data):
         """
         github pull_request webhook parser.
         """
@@ -349,11 +345,11 @@ class GitHubHookHandler(HookHandler):
             GitHubPullRequest(project.name, repo_name, pull_id, commit_sha),
         ]
 
-        self.create_build(project, commit_sha, clone_url, repo_url, user,
-                          branch, status_update_url, updates)
+        await self.create_build(project, commit_sha, clone_url, repo_url, user,
+                                branch, status_update_url, updates)
 
-    def create_build(self, project, commit_sha, clone_url, repo_url, user,
-                     branch, status_url=None, initial_updates=None):
+    async def create_build(self, project, commit_sha, clone_url, repo_url, user,
+                           branch, status_url=None, initial_updates=None):
         """
         Create a new build for this commit hash.
         This commit may already exist, so a existing Build is retrieved.
@@ -361,21 +357,21 @@ class GitHubHookHandler(HookHandler):
 
         # this creates a new build, or, if the commit hash is already known,
         # reuses a known build
-        build = self.build_manager.new_build(project, commit_sha)
+        build = await self.build_manager.new_build(project, commit_sha)
 
         # the github push is a source for the build
-        build.add_source(clone_url, repo_url, user, branch)
+        await build.add_source(clone_url, repo_url, user, branch)
 
         if initial_updates:
             for update in initial_updates:
-                build.send_update(update)
+                await build.send_update(update)
 
         if status_url:
             # notify actions that this status url would like to have updates.
-            build.send_update(GitHubStatusURL(status_url))
+            await build.send_update(GitHubStatusURL(status_url))
 
         # add the build to the queue
-        self.queue.add_build(build)
+        await self.queue.add_build(build)
 
 
 class GitHubStatus(Action):
@@ -389,9 +385,10 @@ class GitHubStatus(Action):
 
     def __init__(self, cfg, project):
         super().__init__(cfg, project)
-        self.authtoken = (cfg["user"], cfg["token"])
+        self.auth_user = cfg["user"]
+        self.auth_pass = cfg["token"]
 
-    def get_watcher(self, build, completed):
+    async def get_watcher(self, build, completed):
         return GitHubBuildStatusUpdater(build, self)
 
 
@@ -415,7 +412,7 @@ class GitHubBuildStatusUpdater(Watcher):
         # updates that we received.
         self.known_updates = list()
 
-    def on_update(self, update):
+    async def on_update(self, update):
         """
         Translates the update to a JSON GitHub status update request
 
@@ -434,7 +431,7 @@ class GitHubBuildStatusUpdater(Watcher):
 
             # send all previous updates to that url.
             for old_update in self.known_updates:
-                self.github_notify(old_update, url=newurl)
+                await self.github_notify(old_update, url=newurl)
 
             return
 
@@ -442,9 +439,9 @@ class GitHubBuildStatusUpdater(Watcher):
         self.known_updates.append(update)
 
         # then actually notify github.
-        self.github_notify(update)
+        await self.github_notify(update)
 
-    def github_notify(self, update, url=None):
+    async def github_notify(self, update, url=None):
         """ prepare sending an update to github. """
 
         if not (url or self.status_update_urls):
@@ -498,31 +495,30 @@ class GitHubBuildStatusUpdater(Watcher):
 
         if not url:
             for destination in self.status_update_urls:
-                self.github_send_status(data, destination)
+                await self.github_send_status(data, destination)
         else:
-            self.github_send_status(data, url)
+            await self.github_send_status(data, url)
 
-    def github_send_status(self, data, url):
+    async def github_send_status(self, data, url):
         """ send a single github status update """
 
         try:
             # TODO: select authtoken based on url!
+            authinfo = aiohttp.BasicAuth(self.cfg.auth_user, self.cfg.auth_pass)
 
-            # TODO: make async!
-            # req = lambda: requests.post(url, data, auth=self.cfg.authtoken)
-            # reply = await loop.run_in_executor(None, req)
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=data, auth=authinfo) as resp:
+                    reply = resp
 
-            reply = requests.post(url, data, auth=self.cfg.authtoken)
-
-        except requests.exceptions.ConnectionError as exc:
+        except aiohttp.ClientConnectionError as exc:
             # TODO: schedule this request for resubmission
             logging.warning("[github] Failed status connection to '%s': %s",
                             url, exc)
             reply = None
 
-        if reply is not None and not reply.ok:
+        if reply is not None and reply.status != 200:
             if "status" in reply.headers:
-                replytext = reply.headers["status"] + '\n' + reply.text
+                replytext = reply.headers["status"] + '\n' + (await reply.text())
                 logging.warning("[github] status update request rejected "
                                 "by github: %s", replytext)
             else:

@@ -116,13 +116,7 @@ class Build(Watchable, Watcher):
         except FileNotFoundError:
             pass
 
-        self.load_from_fs()
-
-        if not self.path.is_dir():
-            self.path.mkdir(parents=True)
-
-
-    def load_from_fs(self):
+    async def load_from_fs(self):
         """
         Reconstruct this build from updates stored on disk.
         """
@@ -138,8 +132,8 @@ class Build(Watchable, Watcher):
         if not self.all_loaded:
             with updates_file.open() as updates_file:
                 for json_line in updates_file:
-                    self.send_update(Update.construct(json_line),
-                                     reconstruct=True)
+                    await self.send_update(Update.construct(json_line),
+                                           reconstruct=True)
 
                 self.all_loaded = True
 
@@ -156,12 +150,9 @@ class Build(Watchable, Watcher):
         except FileNotFoundError:
             pass
 
-        if not self.path.is_dir():
-            self.path.mkdir(parents=True)
-
         self.all_loaded = False
 
-    def reconstruct_jobs(self, preferred_job=None):
+    async def reconstruct_jobs(self, preferred_job=None):
         """
         Reconstruct previously active jobs.
         """
@@ -195,24 +186,25 @@ class Build(Watchable, Watcher):
             if job_name in self.jobs:
                 raise Exception("Job to reconstruct is already registered")
 
-            job = Job(self, self.project, job_name, vm_name, reconstructed=True)
+            job = Job(self, self.project, job_name, vm_name)
 
             # bypass the `RegisterActions`-message and register directly
-            job.register_to_build()
+            await job.register_to_build()
 
             # reconstruct this job
-            if not job.load_from_fs():
+            job_reconstructed = await job.load_from_fs()
+            if not job_reconstructed:
                 raise Exception("job could not be reconstructed")
 
         self.jobs_to_reconstruct.clear()
 
-    def set_state(self, state, text, timestamp=None):
+    async def set_state(self, state, text, timestamp=None):
         """ set this build state """
-        self.send_update(BuildState(self.project.name, self.commit_hash,
-                                    state, text, timestamp))
+        await self.send_update(BuildState(self.project.name, self.commit_hash,
+                                          state, text, timestamp))
 
-    def add_source(self, clone_url, repo_url=None, user=None, branch=None,
-                   comment=None):
+    async def add_source(self, clone_url, repo_url=None, user=None, branch=None,
+                         comment=None):
         """
         Store the build source settings, namely the repo url.
         """
@@ -221,7 +213,7 @@ class Build(Watchable, Watcher):
             if source.repo_url == repo_url:
                 return
 
-        self.send_update(BuildSource(
+        await self.send_update(BuildSource(
             clone_url=clone_url,   # Where to clone the repo from
             repo_url=repo_url,     # Website of the repo
             author=user,           # User that triggered the build
@@ -237,7 +229,7 @@ class Build(Watchable, Watcher):
         return (not self.completed or
                 self.jobs_to_reconstruct)
 
-    def run(self, queue):
+    async def run(self, queue):
         """
         The actions of this build must now add themselves
         to the given queue.
@@ -248,7 +240,7 @@ class Build(Watchable, Watcher):
 
         if self.completed is None:
             # TODO send more fine-grained build progress states
-            self.set_state("waiting", "enqueued")
+            await self.set_state("waiting", "enqueued")
 
         # prepare the output folder
         if not self.completed:
@@ -261,21 +253,21 @@ class Build(Watchable, Watcher):
 
         if self.all_loaded:
             # create and attach jobs that were once active
-            self.reconstruct_jobs()
+            await self.reconstruct_jobs()
 
         # add jobs and other actions defined by the project.
         # some of the actions may be skipped if the build is completed already.
-        self.project.attach_actions(self, self.completed)
+        await self.project.attach_actions(self, self.completed)
 
         # tell all watchers (e.g. jobs) that they were attached,
         # and may now register themselves at this build.
-        self.send_update(RegisterActions())
+        await self.send_update(RegisterActions())
 
         # notify all watchers (e.g. jobs) that they should run.
         # jobs use this as the signal to reconstruct themselves,
         # or, if they're "new" jobs, to enqueue their execution.
-        self.send_update(QueueActions(self.commit_hash, queue,
-                                      self.project.name))
+        await self.send_update(QueueActions(self.commit_hash, queue,
+                                            self.project.name))
 
     def register_job(self, job):
         """
@@ -298,14 +290,14 @@ class Build(Watchable, Watcher):
         # it into the right queue.
         self.jobs_pending.add(job)
 
-    def on_watcher_registered(self, watcher):
+    async def on_watcher_registered(self, watcher):
         """
         Some observer was registered to this build, so we send
         all previous updates to it.
         """
 
         for update in self.updates:
-            watcher.on_update(update)
+            await watcher.on_update(update)
 
     def on_send_update(self, update, reconstruct=False):
         """ Called before this update is sent to all watchers. """
@@ -356,12 +348,15 @@ class Build(Watchable, Watcher):
         if not isinstance(update, (BuildSource, JobCreated)):
             return
 
+        if not self.path.is_dir():
+            self.path.mkdir(parents=True)
+
         # append this update to the build updates file
         # TODO perf: don't open _updates on each update!
         with self.path.joinpath("_updates").open("a") as ufile:
             ufile.write(update.json() + "\n")
 
-    def on_update(self, update):
+    async def on_update(self, update):
         """
         Received message from somewhere,
         now relay it to watchers that may want to see it.
@@ -387,7 +382,7 @@ class Build(Watchable, Watcher):
         # send the update e.g. to mandy
         if distribute:
             # exclude jobs from receiving the update
-            self.send_update(
+            await self.send_update(
                 update,
                 lambda subscriber: isinstance(subscriber, Job)
             )
@@ -420,9 +415,9 @@ class Build(Watchable, Watcher):
                 pass
 
             if not self.jobs_pending:
-                self.finish()
+                await self.finish()
 
-    def finish(self):
+    async def finish(self):
         """ no more jobs are pending  """
         if self.finished:
             # finish message already sent.
@@ -439,7 +434,7 @@ class Build(Watchable, Watcher):
             # TODO: we may wanna have allowed-to-fail jobs.
             if self.jobs_succeeded == set(self.jobs.values()):
                 count = len(self.jobs)
-                self.set_state("success", "%d job%s succeeded" % (
+                await self.set_state("success", "%d job%s succeeded" % (
                     count, "s" if count > 1 else ""))
 
             else:
@@ -448,13 +443,13 @@ class Build(Watchable, Watcher):
                 if self.jobs_errored:
                     # one or more jobs errored.
                     count = len(self.jobs_errored)
-                    self.set_state("error", "%d job%s errored" % (
+                    await self.set_state("error", "%d job%s errored" % (
                         count, "s" if count > 1 else ""))
 
                 else:
                     # one or more jobs failed.
                     count = len(self.jobs)
-                    self.set_state("failure", "%d/%d job%s failed" % (
+                    await self.set_state("failure", "%d/%d job%s failed" % (
                         count - len(self.jobs_succeeded),
                         count, "s" if count > 1 else ""))
         finally:

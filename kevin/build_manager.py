@@ -14,7 +14,7 @@ class BuildManager:
         # stores known builds by (project, hash) -> build
         self.builds = dict()
 
-    def new_build(self, project, commit_hash, create_new=True):
+    async def new_build(self, project, commit_hash, create_new=True):
         """
         Create a new build or return it from the cache.
         """
@@ -28,6 +28,9 @@ class BuildManager:
             # this tries loading from filesystem
             newbuild = Build(project, commit_hash)
 
+            # try loading from filesystem
+            await newbuild.load_from_fs()
+
             # store it as known build?
             if newbuild.completed or create_new:
                 self.builds[cache_key] = newbuild
@@ -36,10 +39,10 @@ class BuildManager:
 
             return newbuild
 
-    def get_build(self, project, commit_hash):
+    async def get_build(self, project, commit_hash):
         """
         Return an existing build from the cache.
         Return None if it coultn't be found.
         """
 
-        return self.new_build(project, commit_hash, create_new=False)
+        return await self.new_build(project, commit_hash, create_new=False)

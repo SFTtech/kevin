@@ -11,7 +11,7 @@ class Watcher:
     each update will be supplied to the watcher then.
     """
 
-    def on_update(self, update):
+    async def on_update(self, update):
         """
         Process the update here.
         """

@@ -14,7 +14,7 @@ class Watchable:
     def __init__(self):
         self.watchers = set()
 
-    def register_watcher(self, watcher):
+    async def register_watcher(self, watcher):
         """
         Register a watcher object,
         which gets updates sent by send_update(update).
@@ -24,9 +24,9 @@ class Watchable:
             raise Exception("invalid watcher type: %s" % type(watcher))
 
         self.watchers.add(watcher)
-        self.on_watcher_registered(watcher)
+        await self.on_watcher_registered(watcher)
 
-    def on_watcher_registered(self, watcher):
+    async def on_watcher_registered(self, watcher):
         """
         Custom actions when a watcher subscribes for receiving new updates
         """
@@ -40,7 +40,7 @@ class Watchable:
         """ Custom actions when a watcher unsubscribes """
         pass
 
-    def send_update(self, update, exclude=False, **kwargs):
+    async def send_update(self, update, exclude=False, **kwargs):
         """
         Send an update to all registered watchers
         Exclude: callable that can exclude subscribers from
@@ -52,10 +52,8 @@ class Watchable:
             if exclude and exclude(watcher):
                 continue
 
-            watcher.on_update(update)
+            await watcher.on_update(update)
 
     def on_send_update(self, update, **kwargs):
         """ Called when an update is about to be sent """
         pass
-
-

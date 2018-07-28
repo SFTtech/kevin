@@ -41,7 +41,7 @@ class Queue:
         # keep processing jobs
         self.processing = loop.create_task(self.process_jobs())
 
-    def add_build(self, build):
+    async def add_build(self, build):
         """
         Add a build to be processed.
         Called from where a new build was created and should now be run.
@@ -60,7 +60,7 @@ class Queue:
 
             # the build shall now run.
             # this is done by adding jobs to this queue.
-            build.run(self)
+            await build.run(self)
 
     def remove_build(self, build):
         """ Remove a finished build """
@@ -82,7 +82,7 @@ class Queue:
         #       we can't reuse the build then!
         return commit_hash in self.build_ids.keys()
 
-    def add_job(self, job):
+    async def add_job(self, job):
         """ Add a job to the queue """
 
         if job.completed:
@@ -94,7 +94,7 @@ class Queue:
             self.job_queue.put_nowait(job)
 
         except asyncio.QueueFull:
-            job.error("overloaded; job was dropped.")
+            await job.error("overloaded; job was dropped.")
 
     async def process_jobs(self):
         """ process jobs from the queue forever """

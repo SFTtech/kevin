@@ -42,7 +42,7 @@ class Project:
         """ Add actions manually as they may be created by e.g. triggers. """
         self.watchers.extend(watchers)
 
-    def attach_actions(self, build, completed):
+    async def attach_actions(self, build, completed):
         """
         Register all actions defined in this project
         so they receives updates from the build.
@@ -50,13 +50,13 @@ class Project:
         should not be attached then.
         """
         for action in self.actions:
-            watcher = action.get_watcher(build, completed)
+            watcher = await action.get_watcher(build, completed)
             if watcher:
-                build.register_watcher(watcher)
+                await build.register_watcher(watcher)
 
         # attach additional watchers which were created by some trigger.
         for watcher in self.watchers:
-            build.register_watcher(watcher)
+            await build.register_watcher(watcher)
 
     def __str__(self):
         return f"<Project name={self.name}>"

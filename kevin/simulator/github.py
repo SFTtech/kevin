@@ -221,7 +221,9 @@ class UpdateHandler(web.RequestHandler):
 
             auth = base64.decodebytes(auth_header[6:]).decode().split(":", 2)
 
-            authtok = self.cfg.projects[self.project].actions[0].authtoken
+            authcfg = self.cfg.projects[self.project].actions[0]
+            authtok = (authcfg.auth_user, authcfg.auth_pass)
+
             if tuple(auth) != authtok:
                 print("wrong auth tried: %s" % (auth,))
                 print("expected: %s" % (authtok,))

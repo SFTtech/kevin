@@ -15,7 +15,7 @@ Kevin can create doc files, bundle software, run tests, make screenshots,
 end world hunger, calculate the last digits of pi: all in a custom container.
 
 Requires [Python >=3.6](https://www.python.org/),
-[tornado](http://www.tornadoweb.org/) and [qemu](http://qemu-project.org).
+[tornado >=5.1](http://www.tornadoweb.org/) and [qemu](http://qemu-project.org).
 
 
 ### How?

@@ -39,20 +39,6 @@ def clamp(number, smallest, largest):
     return max(smallest, min(number, largest))
 
 
-def recvcoroutine(func):
-    """
-    Utility decorator for (receiving) coroutines.
-    Advances execution until first data can be fed in.
-    """
-    def inner(*args, **kwargs):
-        """ @coroutine wrapper """
-        coro = func(*args, **kwargs)
-        next(coro)
-        return coro
-
-    return inner
-
-
 # prefix to factor ** x map
 SIZESUFFIX_POWER = {
     "": 0,
