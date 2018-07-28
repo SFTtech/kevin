@@ -198,7 +198,7 @@ class GitHubHookHandler(HookHandler):
     async def get(self):
         self.write(b"Expected a JSON-formatted POST request.\n")
         self.set_status(400)
-        await self.finish()
+        self.finish()
 
     async def post(self):
         logging.info("[github] \x1b[34mGot webhook from %s\x1b[m",
@@ -293,7 +293,7 @@ class GitHubHookHandler(HookHandler):
         else:
             self.write(b"OK")
 
-        await self.finish()
+        self.finish()
 
     async def handle_push(self, project, json_data):
         """
