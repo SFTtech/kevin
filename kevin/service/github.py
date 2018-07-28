@@ -504,22 +504,24 @@ class GitHubBuildStatusUpdater(Watcher):
 
         try:
             # TODO: select authtoken based on url!
-            authinfo = aiohttp.BasicAuth(self.cfg.auth_user, self.cfg.auth_pass)
+            authinfo = aiohttp.BasicAuth(self.cfg.auth_user,
+                                         self.cfg.auth_pass)
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data, auth=authinfo) as resp:
-                    reply = resp
+                async with session.post(url, data=data, auth=authinfo) as reply:
+                    if 200 <= reply.status < 300:
+                        logging.debug("[github] update delivered successfully:"
+                                      " %s" % reply.status)
+                    elif "status" in reply.headers:
+                        logging.warning("[github] status update request "
+                                        "rejected by github: %s\n%s",
+                                        reply.headers["status"],
+                                        await reply.text())
+                    else:
+                        logging.warning("[github] update failed but "
+                                        "no reason given")
 
         except aiohttp.ClientConnectionError as exc:
             # TODO: schedule this request for resubmission
             logging.warning("[github] Failed status connection to '%s': %s",
                             url, exc)
-            reply = None
-
-        if reply is not None and reply.status != 200:
-            if "status" in reply.headers:
-                replytext = reply.headers["status"] + '\n' + (await reply.text())
-                logging.warning("[github] status update request rejected "
-                                "by github: %s", replytext)
-            else:
-                logging.warning("[github] reply status: no data given.")
