@@ -67,14 +67,14 @@ class Queue:
         del self.build_ids[build.commit_hash]
         self.pending_builds.remove(build)
 
-    def abort_build(self, build_id):
+    async def abort_build(self, build_id):
         """ Abort a running build by aborting all pending jobs """
 
         build = self.build_ids.get(build_id)
 
         if build:
             if not build.completed:
-                build.abort()
+                await build.abort()
 
     def is_pending(self, commit_hash):
         """ Test if a commit hash is currently being built """
@@ -126,8 +126,8 @@ class Queue:
             # wait for jobs to complete if there are too many running
             # this can be done very dynamically in the future.
             if len(self.jobs) >= self.max_running or self.cancelled:
-                logging.warning("[queue] runlimit of %d reached, "
-                                "waiting for completion...", self.max_running)
+                logging.info("[queue] runlimit of %d reached, "
+                             "waiting for completion...", self.max_running)
 
                 # wait until a "slot" is available, then the next job
                 # can be processed.
@@ -175,7 +175,7 @@ class Queue:
                      to_cancel,
                      "s" if to_cancel > 1 else "")
 
-    def cancel_job(self, job):
+    async def cancel_job(self, job):
         """ cancel the given job by accessing its future """
 
         if job not in self.jobs:

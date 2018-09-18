@@ -118,7 +118,7 @@ class GitHubPullManager(Watcher):
 
                 else:
                     # abort it
-                    queue.abort_build(build_id)
+                    await queue.abort_build(build_id)
 
                 # and store the new build id for that pull request
                 self.running_pull_builds[key] = (update.commit_hash, None)

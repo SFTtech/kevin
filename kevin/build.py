@@ -459,7 +459,7 @@ class Build(Watchable, Watcher):
             self.completed = time.time()
             self.finished = True
 
-    def abort(self):
+    async def abort(self):
         """ Abort this build """
 
         if self.finished:
@@ -467,6 +467,6 @@ class Build(Watchable, Watcher):
 
         if self.queue is not None:
             for job in self.jobs_pending.copy():
-                self.queue.cancel_job(job)
+                await self.queue.cancel_job(job)
 
-        self.finish()
+        await self.finish()
