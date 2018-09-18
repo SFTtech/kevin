@@ -3,6 +3,8 @@ This is the base for Kevin's message bus.
 A watchable can be watched by a watcher.
 """
 
+import asyncio
+
 from .watcher import Watcher
 
 
@@ -13,6 +15,7 @@ class Watchable:
 
     def __init__(self):
         self.watchers = set()
+        self.watchers_lock = asyncio.Lock()
 
     async def register_watcher(self, watcher):
         """
@@ -23,7 +26,9 @@ class Watchable:
         if not isinstance(watcher, Watcher):
             raise Exception("invalid watcher type: %s" % type(watcher))
 
-        self.watchers.add(watcher)
+        with self.watchers_lock:
+            self.watchers.add(watcher)
+
         await self.on_watcher_registered(watcher)
 
     async def on_watcher_registered(self, watcher):
@@ -34,7 +39,8 @@ class Watchable:
 
     def deregister_watcher(self, watcher):
         """ Un-subscribe a watcher from the notification list """
-        self.watchers.remove(watcher)
+        with self.watchers_lock:
+            self.watchers.remove(watcher)
 
     def on_watcher_deregistered(self, watcher):
         """ Custom actions when a watcher unsubscribes """
@@ -48,11 +54,12 @@ class Watchable:
         """
         self.on_send_update(update, **kwargs)
 
-        for watcher in self.watchers:
-            if exclude and exclude(watcher):
-                continue
+        with self.watchers_lock:
+            for watcher in self.watchers:
+                if exclude and exclude(watcher):
+                    continue
 
-            await watcher.on_update(update)
+                await watcher.on_update(update)
 
     def on_send_update(self, update, **kwargs):
         """ Called when an update is about to be sent """
