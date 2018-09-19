@@ -26,7 +26,7 @@ class Watchable:
         if not isinstance(watcher, Watcher):
             raise Exception("invalid watcher type: %s" % type(watcher))
 
-        with self.watchers_lock:
+        async with self.watchers_lock:
             self.watchers.add(watcher)
 
         await self.on_watcher_registered(watcher)
@@ -39,7 +39,7 @@ class Watchable:
 
     def deregister_watcher(self, watcher):
         """ Un-subscribe a watcher from the notification list """
-        with self.watchers_lock:
+        async with self.watchers_lock:
             self.watchers.remove(watcher)
 
     def on_watcher_deregistered(self, watcher):
@@ -54,7 +54,7 @@ class Watchable:
         """
         self.on_send_update(update, **kwargs)
 
-        with self.watchers_lock:
+        async with self.watchers_lock:
             for watcher in self.watchers:
                 if exclude and exclude(watcher):
                     continue
