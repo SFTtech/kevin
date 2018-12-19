@@ -33,7 +33,7 @@ def main():
 
     args = cmd.parse_args()
 
-    CFG.load(args.config, shell=True)
+    CFG.load(args.config, args.config_folder, shell=True)
 
     user = args.user
     peer = (os.environ.get("SSH_CLIENT") or "local").split()[0]

@@ -23,6 +23,8 @@ def main():
 
     cmd.add_argument("-c", "--config", default="/etc/kevin/falk.conf",
                      help="file name of the configuration to use.")
+    cmd.add_argument("-f", "--config-folder", default="/etc/kevin/falk.d",
+                     help="path to the configuration folder.")
     cmd.add_argument("-d", "--debug", action="store_true",
                      help="enable asyncio debugging")
     cmd.add_argument("-v", "--verbose", action="count", default=0,
@@ -42,7 +44,7 @@ def main():
     loop.set_debug(args.debug)
 
     # parse config
-    CFG.load(args.config)
+    CFG.load(args.config, args.config_folder)
 
     try:
         os.unlink(CFG.control_socket)

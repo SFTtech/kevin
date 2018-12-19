@@ -105,11 +105,7 @@ class Process(AsyncWith):
         pipe = subprocess.PIPE if pipes else None
         self.capture_data = pipes
 
-        self.proc = self.loop.subprocess_exec(
-            lambda: WorkerInteraction(self, chop_lines,
-                                      linebuf_max, queue_size),
-            *command,
-            stdin=pipe, stdout=pipe, stderr=pipe)
+        self.proc = self._prepare(chop_lines, linebuf_max, queue_size, command)
 
         self.args = command
         self.chop_lines = chop_lines
@@ -119,6 +115,13 @@ class Process(AsyncWith):
         self.protocol = None
 
         self.exit_callbacks = list()
+
+    def _prepare(self, chop_lines, linebuf_max, queue_size, command):
+        return self.loop.subprocess_exec(
+            lambda: WorkerInteraction(self, chop_lines,
+                                      linebuf_max, queue_size),
+            *command,
+            stdin=pipe, stdout=pipe, stderr=pipe)
 
     async def create(self):
         """ Launch the process """
@@ -287,7 +290,8 @@ class SSHProcess(Process):
             options = []
 
         ssh_cmd = [
-            "ssh", "-q",
+            #"ssh", "-q",
+            "ssh",
         ] + self.ssh_hash.get_options() + options + [
             "-p", str(ssh_port),
             ssh_user + "@" + ssh_host,

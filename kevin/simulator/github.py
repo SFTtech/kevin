@@ -29,6 +29,7 @@ class GitHub(service.Service):
     def __init__(self, args):
         super().__init__(args)
 
+        self.statusurl = args.statusurl
         # url where to push updates to.
         self.status_handler = "/%s" % args.statuspath
         self.repo_handler = "/repo"
@@ -38,6 +39,8 @@ class GitHub(service.Service):
     @classmethod
     def argparser(cls, subparsers):
         cli = subparsers.add_parser("github", help="simulate github")
+        cli.add_argument("--statusurl", default=None,
+                         help="public status url this simulator can be joined")
         cli.add_argument("--statuspath", default="statusupdate",
                          help="url component where status updates are sent")
         cli.add_argument("--pull-id", type=int, default=1337,
@@ -51,7 +54,7 @@ class GitHub(service.Service):
         self.loop = asyncio.get_event_loop()
         AsyncIOMainLoop().install()
 
-        print("Creating simulated server...")
+        logging.info("Creating simulated server...")
 
         # create server
         handlers = [
@@ -62,10 +65,10 @@ class GitHub(service.Service):
         # add http server to serve a local repo to qemu
         if self.local_repo and pathlib.Path(self.repo).is_dir():
             if not pathlib.Path(self.repo).joinpath("HEAD").is_file():
-                print("\x1b[33;1m%r doesn't look like a .git folder!\x1b[m" %
+                logging.error("\x1b[33;1m%r doesn't look like a .git folder!\x1b[m" %
                       self.repo)
 
-            print("Serving '%s' on 'http://%s:%d%s/'" % (
+            logging.info("Serving '%s' on 'http://%s:%d%s/'" % (
                 self.repo,
                 self.listen,
                 self.port,
@@ -81,16 +84,18 @@ class GitHub(service.Service):
                                                self.repo_handler)
 
         self.app = web.Application(handlers)
-        print("listening on port %s:%d" % (self.listen, self.port))
+        logging.info("listening on port %s:%d" % (self.listen, self.port))
         self.app.listen(self.port, address=str(self.listen))
 
         # perform the request
+        logging.info("add submit web hook task to the event loop")
         webhook = self.loop.create_task(self.request())
 
+        logging.info("running the event loop...")
         try:
             self.loop.run_forever()
         except KeyboardInterrupt:
-            print("exiting...")
+            logging.info("exiting...")
 
         if not webhook.done():
             webhook.cancel()
@@ -114,15 +119,33 @@ class GitHub(service.Service):
         create the webhook to kevin to trigger it.
         """
 
-        if isinstance(self.listen, ipaddress.IPv6Address):
-            ip = "[%s]" % (self.listen)
-        else:
-            ip = str(self.listen)
+        try:
+            logging.info("submitting web hook...")
+            if self.statusurl is None:
+                logging.debug("submitting web hook... 1")
+                if isinstance(self.listen, ipaddress.IPv6Address):
+                    logging.debug("submitting web hook... 2")
+                    ip = "[%s]" % (self.listen)
+                    logging.debug("submitting web hook... 3")
+                else:
+                    logging.debug("submitting web hook... 4")
+                    ip = str(self.listen)
+                    logging.debug("submitting web hook... 5")
 
-        status_url = "http://%s:%d%s" % (ip, self.port, self.status_handler)
+                status_url = "http://%s:%d%s" % (ip, self.port, self.status_handler)
+                logging.debug("submitting web hook... 6")
+            else:
+                logging.debug("submitting web hook... 7")
+                status_url = "%s%s" % (self.statusurl, self.status_handler)
+                logging.debug("submitting web hook... 8")
+        except:
+            logging.exception("error:")
+
+        logging.debug("wait for repo hash...")
         head_commit = await util.get_hash(self.repo)
 
         if self.repo_vm:
+            logging.debug("wait for server info...")
             await util.update_server_info(self.repo)
 
         repo = self.repo_vm or self.repo
@@ -182,13 +205,14 @@ class GitHub(service.Service):
                     timeout=5.0,
                 )
             except requests.exceptions.RequestException as exc:
-                print("failed delivering webhook: %s" % (exc))
+                logging.error("failed delivering webhook: %s" % (exc))
                 return "failed."
 
         post = self.loop.run_in_executor(None, submit_post)
+        logging.debug("wait for hook delivery...")
         hook_answer = await post
 
-        print("hook delivery: %s" % hook_answer)
+        logging.info("hook delivery: %s" % hook_answer)
 
 
 class UpdateHandler(web.RequestHandler):
@@ -206,8 +230,7 @@ class UpdateHandler(web.RequestHandler):
         self.finish()
 
     def post(self):
-        print("\x1b[34mUpdate from %s:\x1b[m" % self.request.remote_ip,
-              end=" ")
+        logging.info("\x1b[34mUpdate from %s:\x1b[m" % self.request.remote_ip)
         blob = self.request.body
         try:
             auth_header = self.request.headers.get('Authorization').encode()
@@ -225,22 +248,20 @@ class UpdateHandler(web.RequestHandler):
             authtok = (authcfg.auth_user, authcfg.auth_pass)
 
             if tuple(auth) != authtok:
-                print("wrong auth tried: %s" % (auth,))
-                print("expected: %s" % (authtok,))
+                logging.error("wrong auth tried: %s" % (auth,))
+                logging.error("expected: %s" % (authtok,))
                 raise ValueError("wrong authentication")
 
             self.handle_update(blob)
 
         except (ValueError, KeyError) as exc:
-            print("bad request: " + repr(exc))
-            traceback.print_exc()
+            logging.exception("bad request: " + repr(exc))
 
             self.write(repr(exc).encode())
             self.set_status(400, "Bad request")
 
         except Exception as exc:
-            print("\x1b[31;1mexception in post hook\x1b[m")
-            traceback.print_exc()
+            logging.exception("\x1b[31;1mexception in post hook\x1b[m")
 
             self.set_status(500, "Internal error")
             self.set_header("Status", "internal fail")
@@ -258,4 +279,4 @@ class UpdateHandler(web.RequestHandler):
         This output is plattform-independent, it may even work on windows.
         TODO: write testcases
         """
-        print("%s" % data)
+        logging.info("%s" % data)

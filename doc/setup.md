@@ -116,9 +116,9 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 
 ##### Guest systems (Chantal)
 
-- [Setup the OS](https://wiki.archlinux.org/index.php/QEMU#Creating_new_virtualized_system)
-- Install
-  - `python >=3.4`
+ - [Setup the OS](https://wiki.archlinux.org/index.php/QEMU#Creating_new_virtualized_system)
+ - Install
+  - `python >=3.5`
   - `git`
   - `ssh` daemon
   - `sudo`

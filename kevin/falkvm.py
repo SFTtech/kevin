@@ -7,7 +7,7 @@ import logging
 import time
 
 from falk import messages
-from falk.vm import Container
+from falk.vm import Container, ContainerConfig
 
 from .process import SSHProcess, ProcTimeoutError
 
@@ -53,6 +53,10 @@ class FalkVM(Container):
                                                      manage=manage))
         if not isinstance(msg, messages.OK):
             raise VMError(f"Failed to prepare: {msg.msg}")
+
+        # update the configuration after the machine has been prepared
+        self.set_config(ContainerConfig(self.cfg.machine_id, (await self.status()).dump(), self.cfg.cfgpath))
+
 
     async def launch(self):
         msg = await self.falk.query(messages.Launch(run_id=self.run_id))
@@ -135,6 +139,8 @@ class FalkVM(Container):
                                       self.ssh_port,
                                       self.ssh_known_host_key) as proc:
 
+                    async for fd, data in proc.output():
+                        logging.debug(data)
                     try:
                         ret = await proc.wait_for(try_timeout)
 

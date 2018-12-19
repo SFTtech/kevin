@@ -76,8 +76,9 @@ class Falk:
         remove the machine handle with given id.
         """
         machine = self.running[machine_id]
-        self.used_ports[machine.ssh_host].remove(machine.ssh_port)
-
+        if machine.ssh_host in self.used_ports and \
+           machine.ssh_port in self.used_ports[machine.ssh_host]:
+            self.used_ports[machine.ssh_host].remove(machine.ssh_port)
         del self.running[machine_id]
 
     def get_machine(self, machine_id):

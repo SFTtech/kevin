@@ -35,59 +35,6 @@ class Chantal(AsyncWith):
         await self.machine.prepare()
         await self.machine.launch()
 
-    async def upload(self, local_path, remote_folder=".", timeout=10):
-        """
-        Uploads the file or directory from local_path to
-        remote_folder (default: ~).
-        """
-
-        with SSHKnownHostFile(self.machine.ssh_host,
-                              self.machine.ssh_port,
-                              self.machine.ssh_known_host_key) as hostfile:
-            command = [
-                "scp",
-                "-P", str(self.machine.ssh_port),
-                "-q",
-            ] + hostfile.get_options() + [
-                "-r",
-                str(local_path),
-                self.machine.ssh_user + "@" +
-                self.machine.ssh_host + ":" +
-                str(remote_folder),
-            ]
-
-            async with Process(command) as proc:
-                ret = await proc.wait_for(timeout)
-
-                if ret != 0:
-                    raise ProcessFailed(ret, "scp upload failed")
-
-    async def download(self, remote_path, local_folder, timeout=10):
-        """
-        Downloads the file or directory from remote_path to local_folder.
-        Warning: Contains no safeguards regarding filesize.
-        Clever arguments for remote_path or local_folder might
-        allow break-outs.
-        """
-
-        with SSHKnownHostFile(self.machine.ssh_host,
-                              self.machine.ssh_port,
-                              self.machine.ssh_known_host_key) as hostfile:
-            command = [
-                "scp", "-q",
-                "-P", str(self.machine.ssh_port),
-            ] + hostfile.get_options() + [
-                "-r",
-                self.machine.ssh_user + "@" + self.machine.ssh_host + ":" + remote_path,
-                local_folder,
-            ]
-
-            async with Process(command) as proc:
-                ret = await proc.wait_for(timeout)
-
-                if ret != 0:
-                    raise ProcessFailed(ret, "scp down failed")
-
     def exec_remote(self, remote_command,
                     timeout=INF, silence_timeout=INF,
                     must_succeed=True):
@@ -95,12 +42,10 @@ class Chantal(AsyncWith):
         Runs the command via ssh, returns an Process handle.
         """
 
-        return SSHProcess(remote_command,
-                          self.machine.ssh_user, self.machine.ssh_host,
-                          self.machine.ssh_port, self.machine.ssh_known_host_key,
-                          timeout=timeout,
-                          silence_timeout=silence_timeout,
-                          must_succeed=must_succeed)
+        return self.machine.execute(remote_command,
+                                    timeout=timeout,
+                                    silence_timeout=silence_timeout,
+                                    must_succeed=must_succeed)
 
     async def run_command(self, remote_command,
                           timeout=INF, silence_timeout=INF,
@@ -177,8 +122,8 @@ class Chantal(AsyncWith):
 
         # TODO: allow to skip chantal installation
         kevindir = Path(__file__)
-        await self.upload(kevindir.parent.parent / "chantal",
-                          timeout=timeout)
+        await self.machine.upload(kevindir.parent.parent / "chantal",
+                                  timeout=timeout)
 
     def run(self, job):
         """

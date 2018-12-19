@@ -8,10 +8,10 @@ import os
 import shlex
 import subprocess
 
-from . import Container, ContainerConfig
+from . import SSHContainer, SSHContainerConfig
 
 
-class Custom(Container):
+class Custom(SSHContainer):
     """
     Represents a custom virtual machine/container
     launched by custom shell scripts.
@@ -24,7 +24,7 @@ class Custom(Container):
 
     @classmethod
     def config(cls, machine_id, cfgdata, cfgpath):
-        cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
+        cfg = SSHContainerConfig(machine_id, cfgdata, cfgpath)
 
         cfg.prepare = cfgdata["prepare"]
         cfg.launch = cfgdata["launch"]

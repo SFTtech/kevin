@@ -9,12 +9,15 @@ then waits for interaction.
 
 import argparse
 import asyncio
+import logging
 
 from . import github
 from ..util import log_setup
 
 
+
 def main():
+    print("Main Github Simulator...")
     cmd = argparse.ArgumentParser()
     cmd.add_argument("repo", help="clone url/path to the test repo")
     cmd.add_argument("project", help="project to trigger the build for")
@@ -39,6 +42,7 @@ def main():
 
     sp = cmd.add_subparsers(dest="module")
 
+
     # call argparser hooks
     github.GitHub.argparser(sp)
 
@@ -51,6 +55,7 @@ def main():
     loop = asyncio.get_event_loop()
     loop.set_debug(args.debug)
 
+    logging.info("Starting Github Simulator...")
     if args.module is None:
         cmd.print_help()
     else:
