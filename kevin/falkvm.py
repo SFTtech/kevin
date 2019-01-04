@@ -38,6 +38,7 @@ class FalkVM(Container):
 
     An instance of this class is created by falk, it also provides cfg.
     """
+
     def __init__(self, cfg, run_id, falk):
         super().__init__(cfg)
 
@@ -57,6 +58,14 @@ class FalkVM(Container):
         # update the configuration after the machine has been prepared
         self.set_config(ContainerConfig(self.cfg.machine_id, (await self.status()).dump(), self.cfg.cfgpath))
 
+    async def execute(self, *args, **kwds):
+        raise Exception("execute() on the VM controller called")
+
+    async def download(self, *args, **kwds):
+        raise Exception("download() on the VM controller called")
+
+    async def upload(self, *args, **kwds):
+        raise Exception("upload() on the VM controller called")
 
     async def launch(self):
         msg = await self.falk.query(messages.Launch(run_id=self.run_id))

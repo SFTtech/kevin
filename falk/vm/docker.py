@@ -415,6 +415,11 @@ class Docker(Container):
             dict(stdin=True, stdout=True, stderr=True, stream=True), False)
         self.socket = iosocket._sock
 
+    async def status(self):
+        return {
+            "running": await self.is_running(),
+        }
+
     async def is_running(self):
         if self.container is not None:
             self.container = await asyncio.get_event_loop().run_in_executor(

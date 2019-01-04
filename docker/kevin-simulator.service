@@ -1,0 +1,12 @@
+[Unit]
+Description=Kevin CI Github Simulator
+After=network.target
+
+[Service]
+Type=simple
+User=kevin
+ExecStart=/usr/bin/env python3 -m kevin.simulator https://github.com/SFTtech/kevin.git kevin /etc/kevin/kevin.conf github
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -92,7 +92,7 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 
 - Install
   - `python >=3.6`
-  - your container system of choice: `qemu`, ...
+  - your container system of choice: `qemu`, `docker`...
 
 - Create `/etc/kevin/falk.conf` from [`falk.conf.example`](/etc/falk.conf.example)
 
@@ -114,7 +114,7 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
    from talking to internals of your network
 
 
-##### Guest systems (Chantal)
+##### QEMU Guest systems (Chantal)
 
  - [Setup the OS](https://wiki.archlinux.org/index.php/QEMU#Creating_new_virtualized_system)
  - Install
@@ -132,6 +132,13 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
   to the `falk.conf` so the key for this VM can be verified
 - **Set up the container** in the way you'd like to test your project
   - If your build involves graphical things, you could set up `tigervnc` or `x11vnc`
+
+
+##### Docker Guest systems (Chantal)
+
+- Set your project docker build context in .kevin.d/docker
+- The Dockerfile (.kevin.d/docker/Dockerfile) should ensure that `python >=3.5` is available in the image
+- **Set up the container** Dockerfile in the way you'd like to test your project
 
 
 ##### Project

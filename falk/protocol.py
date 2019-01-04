@@ -339,13 +339,14 @@ class FalkProto(asyncio.Protocol):
                 cfg = copy.copy(cfg)
 
                 # select a free ssh port
-                free_port = self.falk.register_free_port(cfg.ssh_host)
+                if hasattr(cfg, 'ssh_host'):
+                    free_port = self.falk.register_free_port(cfg.ssh_host)
 
-                if free_port is not None:
-                    cfg.ssh_port = free_port
-                else:
-                    raise RuntimeError(
-                        "no free port found for %s" % msg.name)
+                    if free_port is not None:
+                        cfg.ssh_port = free_port
+                    else:
+                        raise RuntimeError(
+                            "no free port found for %s" % msg.name)
 
                 # create new container and handle, then store it
                 handle_id = self.falk.create_handle(machinecls(cfg))

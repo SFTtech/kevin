@@ -50,6 +50,12 @@ class ContainerConfig:
     Created from a config dict that contains key-value pairs.
     """
 
+    def __init__(self, machine_id, cfg, cfgpath):
+
+        # store the machine id
+        self.machine_id = machine_id
+        self.cfgpath = cfgpath
+
 
 class SSHContainerConfig(ContainerConfig):
     """
@@ -64,9 +70,7 @@ class SSHContainerConfig(ContainerConfig):
 
     def __init__(self, machine_id, cfg, cfgpath):
 
-        # store the machine id
-        self.machine_id = machine_id
-        self.cfgpath = cfgpath
+        super(SSHContainerConfig, self).__init__(machine_id, cfg, cfgpath)
 
         config_keys = ("name", "ssh_user", "ssh_host", "ssh_port",
                        "ssh_known_host_key", "ssh_known_host_key_file")
@@ -189,9 +193,7 @@ class DockerContainerConfig(ContainerConfig):
 
     def __init__(self, machine_id, cfg, cfgpath):
 
-        # store the machine id
-        self.machine_id = machine_id
-        self.cfgpath = cfgpath
+        super(DockerContainerConfig, self).__init__(machine_id, cfg, cfgpath)
 
         config_keys = (
             "name", "image_name", "context_path", "dockerfile",
@@ -305,14 +307,7 @@ class Container(metaclass=ContainerMeta):
 
     async def status(self):
         """ Return runtime information for the container """
-
-        return {
-            "running": await self.is_running(),
-            "ssh_user": self.ssh_user,
-            "ssh_host": self.ssh_host,
-            "ssh_port": self.ssh_port,
-            "ssh_known_host_key": self.ssh_known_host_key,
-        }
+        pass
 
     @abstractmethod
     async def is_running(self):
@@ -419,3 +414,14 @@ class SSHContainer(Container):
 
                 if ret != 0:
                     raise ProcessFailed(ret, "scp down failed")
+
+    async def status(self):
+        """ Return runtime information for the container """
+
+        return {
+            "running": await self.is_running(),
+            "ssh_user": self.ssh_user,
+            "ssh_host": self.ssh_host,
+            "ssh_port": self.ssh_port,
+            "ssh_known_host_key": self.ssh_known_host_key,
+        }

@@ -13,7 +13,7 @@ control_socket_permissions = 770
 # (can be set to [22,22] to only use port 22)
 #
 # the selected port is passed below as {SSHPORT} to the incovation.
-vm_ports = [7888,8000]
+ssh_ports = [7888,8000]
 
 
 ###############################################################################

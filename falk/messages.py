@@ -504,7 +504,7 @@ class VMStatus(Message):
     """
     Shows status information about a selected VM.
     """
-    def __init__(self, run_id, running, ssh_user, ssh_host, ssh_port, ssh_known_host_key):
+    def __init__(self, run_id, running, ssh_user="null", ssh_host="null", ssh_port=0, ssh_known_host_key="null"):
         super().__init__()
         self.run_id = int(run_id)
         self.running = running
