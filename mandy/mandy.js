@@ -233,8 +233,14 @@ class Mandy {
         this.buildSourcesDiv = this.sidebar.titleDiv.appendChild(document.createElement("div"));
         this.buildSourcesDiv.className = "buildsources";
 
+        var ws_prefix = getEncodedParam("wsurl");
+        if (location.protocol == "https:") {
+            // non-https websocket is blocked anyway, so we force wss://
+            ws_prefix = ws_prefix.replace(/ws:\/\//g, "wss://")
+        }
+
         var wsURL = (
-            getEncodedParam("wsurl") +
+            ws_prefix +
             "?project=" +
             project +
             "&hash=" +
@@ -250,6 +256,9 @@ class Mandy {
             } else {
                 this.error("Websocket error.");
             }
+        };
+        this.ws.onclose = function () {
+            console.log('websocket was closed');
         };
 
         window.my_global_startperf = window.performance.now();
