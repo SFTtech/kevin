@@ -6,6 +6,7 @@ and provide them in a job queue.
 import asyncio
 from abc import abstractmethod
 import logging
+import traceback
 
 from tornado import websocket, web, httpserver
 
@@ -185,7 +186,9 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             await self.build.reconstruct_jobs(self.get_parameter("filter"))
 
         except Exception as exc:
-            self.send_error(f"Error: {exc}")
+            print(f"websocket handling error:")
+            traceback.print_exc()
+            self.send_error(f"Error: {str(exc)}")
             return
 
     def get_parameter(self, name, default=None):
@@ -204,7 +207,10 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         Send an error message to the websocket client.
         """
         msg = RequestError(msg)
-        self.write_message(msg.json())
+        try:
+            self.write_message(msg.json())
+        except websocket.WebSocketClosedError:
+            print("failed to write error because websocket closed: %s" % msg.json())
 
     def on_close(self):
         if self.build is not None:
@@ -256,19 +262,19 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
         try:
             project_name = self.request.query_arguments["project"][0]
         except (KeyError, IndexError):
-            self.write(b"no project given\n")
+            self.write(b"no project= given\n")
             return
 
         try:
             build_id = self.request.query_arguments["hash"][0]
         except (KeyError, IndexError):
-            self.write(b"no build hash given\n")
+            self.write(b"no build hash= given\n")
             return
 
         try:
             job_name = self.request.query_arguments["job"][0]
         except (KeyError, IndexError):
-            self.write(b"no job given\n")
+            self.write(b"no job= given\n")
             return
 
         project_name = project_name.decode(errors='replace')
