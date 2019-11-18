@@ -96,9 +96,9 @@ class Build(Watchable, Watcher):
         self.path = CFG.output_folder / self.relpath
 
         if CFG.dyn_frontend_ssl:
-            dyn_ssl = "wss:"
+            dyn_ssl = "wss"
         else:
-            dyn_ssl = "ws:"
+            dyn_ssl = "ws"
 
         if dyn_ssl:
             omit_port = CFG.dyn_frontend_port == 443
@@ -109,17 +109,13 @@ class Build(Watchable, Watcher):
         if not omit_port:
             ws_port = ":%d" % CFG.dyn_frontend_port
 
-        # info url of this build
-        mandy_url = "%s?wsurl=%s%s//%s:%d/ws&staticurl=%s&project=%s&hash=%s"
-        self.target_url = mandy_url % (
-            CFG.mandy_url,
-            dyn_ssl,
-            CFG.dyn_frontend_host,
-            ws_port,
-            CFG.dyn_frontend_port,
-            CFG.static_url,
-            self.project.name,
-            self.commit_hash
+        # info url of this build (stored in a link)
+        self.target_url = (
+            f"{CFG.mandy_url}?wsurl={dyn_ssl}://"
+            f"{CFG.dyn_frontend_host}{ws_port}/ws"
+            f"&staticurl={CFG.static_url}"
+            f"&project={self.project.name}"
+            f"&hash={self.commit_hash}"
         )
 
         # skip loading disk state if requested
