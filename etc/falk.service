@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=falk
-ExecStart=/usr/bin/env python3 -m falk
+ExecStart=/usr/bin/env python3 -u -m falk
 Restart=on-failure
 
 [Install]
