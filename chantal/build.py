@@ -33,7 +33,9 @@ def build_job(args):
     base_env = os.environ.copy()
     base_env.update({
         "TERM": "xterm",
-        "GCC_COLORS": "yes"
+        "GCC_COLORS": "yes",
+        "KEVIN": "true",
+        "CHANTAL": "true",
     })
 
     if args.clone_location:
