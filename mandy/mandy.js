@@ -236,7 +236,7 @@ class Mandy {
         var ws_prefix = getEncodedParam("wsurl");
         if (location.protocol == "https:") {
             // non-https websocket is blocked anyway, so we force wss://
-            ws_prefix = ws_prefix.replace(/ws:\/\//g, "wss://")
+            ws_prefix = ws_prefix.replace(/^ws:\/\//g, "wss://")
         }
 
         var wsURL = (
