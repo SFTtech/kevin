@@ -11,10 +11,20 @@ output_folder = /your/writable/static/web/folder/served/below
 
 # the internet interaction:
 [web]
+# url prefix for build output stuff
 static_url = http://your.kevin.host/output_folder/statically/
+
+# url prefix for build status links
 mandy_url = http://your.kevin.host/mandy/
+
+# kevin's web worker will listen on that port
 dyn_port = 7777
-dyn_host = your.kevin.host
+
+# set those to the host/port where mandy can reach kevin
+# if kevin is behind a proxy, set the values to reach that proxy
+dyn_frontend_host = your.kevin.host
+dyn_frontend_port = 7777
+dyn_frontend_ssl = false
 
 # configure available falk instances
 # these are programs running on some machine to provide and launch VMs

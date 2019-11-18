@@ -21,10 +21,13 @@ class Config:
         self.max_jobs_running = None
 
         self.static_url = None
-        self.mandy_url = None
+
+        # web listener config
         self.dyn_port = None
         self.dyn_address = ipaddress.ip_address("0.0.0.0")
         self.dyn_host = None
+        self.mandy_url = None
+        self.dyn_ssl = None
 
         self.project_folder = None
         self.output_folder = None
@@ -115,10 +118,19 @@ class Config:
             # web configuration
             current_section = "web"
             web = raw[current_section]
+            self.dyn_port = int(web["dyn_port"])
             self.static_url = web["static_url"]
             self.mandy_url = web["mandy_url"]
-            self.dyn_port = int(web["dyn_port"])
-            self.dyn_host = web["dyn_host"]
+
+            self.dyn_frontend_host = web["dyn_frontend_host"]
+            self.dyn_frontend_port = int(web["dyn_frontend_port"])
+            self.dyn_frontend_ssl = web["dyn_frontend_ssl"].lower()
+            if self.dyn_frontend_ssl == "true":
+                self.dyn_frontend_ssl = True
+            elif self.dyn_frontend_ssl == "false":
+                self.dyn_frontend_ssl = False
+            else:
+                raise ValueError("dyn_frontend_ssl must be either true or false.")
 
             # vm providers
             current_section = "falk"

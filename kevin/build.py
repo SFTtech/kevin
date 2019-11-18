@@ -95,12 +95,28 @@ class Build(Watchable, Watcher):
         # storage path for the job output
         self.path = CFG.output_folder / self.relpath
 
+        if CFG.dyn_frontend_ssl:
+            dyn_ssl = "wss:"
+        else:
+            dyn_ssl = "ws:"
+
+        if dyn_ssl:
+            omit_port = CFG.dyn_frontend_port == 443
+        else:
+            omit_port = CFG.dyn_frontend_port == 80
+
+        ws_port = ""
+        if not omit_port:
+            ws_port = ":%d" % CFG.dyn_frontend_port
+
         # info url of this build
-        mandy_url = "%s?wsurl=ws://%s:%d/ws&staticurl=%s&project=%s&hash=%s"
+        mandy_url = "%s?wsurl=%s%s//%s:%d/ws&staticurl=%s&project=%s&hash=%s"
         self.target_url = mandy_url % (
             CFG.mandy_url,
-            CFG.dyn_host,
-            CFG.dyn_port,
+            dyn_ssl,
+            CFG.dyn_frontend_host,
+            ws_port,
+            CFG.dyn_frontend_port,
             CFG.static_url,
             self.project.name,
             self.commit_hash
