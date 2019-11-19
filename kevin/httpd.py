@@ -108,6 +108,7 @@ class HTTPD:
         # [web.URLSpec(match, handler, kwargs)]
         handlers = list()
         for (url, handler), custom_args in urlhandlers.items():
+            logging.info(f"registering url handler for {url}...")
 
             # custom handlers may have custom kwargs
             if custom_args is not None:

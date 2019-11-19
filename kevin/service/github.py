@@ -173,7 +173,7 @@ class GitHubHook(HookTrigger):
         return [self.pull_manager]
 
     def get_handler(self):
-        return ("/hook-github", GitHubHookHandler)
+        return ("/hooks/github", GitHubHookHandler)
 
 
 class GitHubHookHandler(HookHandler):
