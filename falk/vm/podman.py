@@ -28,9 +28,7 @@ class Podman(Container):
         cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
 
         cfg.base_image = cfgdata["base_image"]
-
         cfg.command = cfgdata["command"]
-        cfg.clean_command = cfgdata["clean_command"]
 
         return cfg
 
