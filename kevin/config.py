@@ -119,6 +119,7 @@ class Config:
             current_section = "web"
             web = raw[current_section]
             self.dyn_port = int(web["dyn_port"])
+            self.dyn_host = web.get("dyn_host")
             self.static_url = web["static_url"]
             self.mandy_url = web["mandy_url"]
 
