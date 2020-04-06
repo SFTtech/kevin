@@ -173,7 +173,7 @@ class GitHub(service.Service):
         def submit_post():
             try:
                 return requests.post(
-                    url="http://%s:%d/hook-github" % (
+                    url="http://%s:%d/hooks/github" % (
                         self.cfg.dyn_host,
                         self.cfg.dyn_port
                     ),
