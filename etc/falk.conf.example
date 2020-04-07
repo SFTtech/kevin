@@ -77,7 +77,7 @@ base_image = my-container-name:my-container-version
 
 # provide the command to start the docker image with, BASE_IMAGE will be
 # substituted with the docker image provided above
-command = podman run -dt -p {SSH_PORT}:22/tcp --name {IMAGENAME} {BASE_IMAGE}
+command = podman run -dt -p {SSHPORT}:22/tcp --name {IMAGENAME} {BASE_IMAGE}
 
 ###############################################################################
 # another container definition, provided by this falk:

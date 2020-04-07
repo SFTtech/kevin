@@ -39,7 +39,7 @@ class Podman(Container):
         if manage:
             raise RuntimeError("Docker image cannot be started in management mode")
 
-        self.running_image = self.cfg.base_image + "-" + str(uuid.uuid4())
+        self.running_image = self.cfg.base_image.replace('/', '-').replace(':', '-') + "-" + str(uuid.uuid4())
 
     async def launch(self):
         logging.debug("Launching podman container which shall listen "
@@ -61,11 +61,12 @@ class Podman(Container):
         self.process.stdin.close()
 
     async def is_running(self):
+        if not self.running_image:
+            return False
+
         command = ['podman', 'inspect', '-f', '\'{{.State.Running}}\'', self.running_image]
         process = await asyncio.create_subprocess_exec(
             *command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
         )
         out, err = await process.communicate()
         return 'true' in out.decode()
@@ -77,11 +78,7 @@ class Podman(Container):
         command = ['podman', 'wait', self.running_image]
         process = await asyncio.create_subprocess_exec(
             *command,
-            stdin=subprocess.PIPE,
-            stdout=None,
-            stderr=None
         )
-        process.stdin.close()
 
         try:
             await asyncio.wait_for(process.wait(), timeout)
@@ -98,11 +95,7 @@ class Podman(Container):
         command = ['podman', 'stop', self.running_image]
         process = await asyncio.create_subprocess_exec(
             *command,
-            stdin=subprocess.PIPE,
-            stdout=None,
-            stderr=None
         )
-        process.stdin.close()
         await asyncio.wait_for(process.wait(), timeout=20)
 
         self.process = None
@@ -112,9 +105,5 @@ class Podman(Container):
 
         process = await asyncio.create_subprocess_exec(
             *command,
-            stdin=subprocess.PIPE,
-            stdout=None,
-            stderr=None
         )
-        process.stdin.close()
         await asyncio.wait_for(process.wait(), timeout=20)
