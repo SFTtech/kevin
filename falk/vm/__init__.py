@@ -245,4 +245,4 @@ class Container(metaclass=ContainerMeta):
 
 
 # force class definitions too fill CONTAINERS dict
-from . import qemu, xen, docker, lxc, clearlinux, nspawn, rkt, custom
+from . import qemu, xen, docker, lxc, clearlinux, nspawn, rkt, custom, podman

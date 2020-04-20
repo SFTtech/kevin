@@ -64,6 +64,22 @@ command = qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -smp 2 -m 2G 
 
 
 ###############################################################################
+# an example podman container definition, provided by this falk:
+[random-container-id]
+name = some-random-name-for-job
+type = podman
+ssh_user = chantal
+ssh_host = localhost
+ssh_known_host_key = ssh-ed25519 AAAAAB3Nza_The_VM's_/etc/ssh/ssh_host_ed25519_key.pub_CONTENT
+#ssh_known_host_key_file = /some/mountpoint/of/vm/etc/ssh/ssh_host_ed25519_key.pub
+# docker base image for each CI container
+base_image = my-container-name:my-container-version
+
+# provide the command to start the docker image with, BASE_IMAGE will be
+# substituted with the docker image provided above
+command = podman run -dt -p {SSHPORT}:22/tcp --name {IMAGENAME} {BASE_IMAGE}
+
+###############################################################################
 # another container definition, provided by this falk:
 [custom-commands]
 
