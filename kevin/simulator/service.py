@@ -33,7 +33,7 @@ class Service:
         self.port = args.port
         self.listen = ipaddress.ip_address(args.listen)
 
-    @staticmethod
+    @classmethod
     def argparser(cls, subparsers):
         """ implement to add a service-specific argparser """
         raise NotImplementedError()

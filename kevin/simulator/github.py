@@ -13,7 +13,7 @@ import pathlib
 import requests
 import traceback
 
-from tornado import web, gen
+from tornado import web
 from tornado.platform.asyncio import AsyncIOMainLoop
 
 from . import util
@@ -104,6 +104,7 @@ class GitHub(service.Service):
         Perform the requests to simulate this pull.
         """
         try:
+            print("submitting simulated web hook...")
             await self.submit_web_hook()
 
         except Exception:
@@ -138,10 +139,11 @@ class GitHub(service.Service):
         if trigger is None:
             raise Exception("couldn't find github trigger in project.")
 
-        # select first allowed repo as virtual "origin"
-        reponame = trigger.repos[0]
+        # select one of the allowed repos as virtual "origin"
+        reponame = trigger.repos.pop()
         hooksecret = trigger.hooksecret
 
+        # most basic webhook for a pull request
         pull_req = {
             "action": "synchronize",
             "sender": {"login": "rolf"},
