@@ -118,7 +118,11 @@ class Build(Watchable, Watcher):
             f"&hash={self.commit_hash}"
         )
 
-        # skip loading disk state if requested
+    async def load_from_fs(self):
+        """
+        Reconstruct this build from updates stored on disk.
+        """
+
         if CFG.args.volatile:
             return
 
@@ -127,14 +131,6 @@ class Build(Watchable, Watcher):
             self.completed = self.path.joinpath("_completed").stat().st_mtime
         except FileNotFoundError:
             pass
-
-    async def load_from_fs(self):
-        """
-        Reconstruct this build from updates stored on disk.
-        """
-
-        if CFG.args.volatile:
-            return
 
         updates_file = self.path.joinpath("_updates")
 
