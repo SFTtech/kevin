@@ -116,7 +116,9 @@ class JobManager:
                 logging.warning(f"\x1b[31merror\x1b[m: $ {exc}")
                 logging.warning("  are you sure that falk entry "
                                 f"'{falk.name}' (= {falk}) "
-                                f"is valid?")
+                                f"is valid and running?")
+                logging.warning("  I'll retry connecting in "
+                                f"{try_interval} seconds...")
 
                 # clean up falk
                 await falk.close()
@@ -147,7 +149,7 @@ class JobManager:
         for vm_id, (vm_type, vm_name) in falk_vms.items():
             del vm_type  # unused
             if vm_name not in self.machines:
-                logging.info("machine '%s' now available!", vm_name)
+                logging.info("container '%s' now available!", vm_name)
             self.machines[vm_name][falk].add(vm_id)
 
     def falk_lost(self, falk):

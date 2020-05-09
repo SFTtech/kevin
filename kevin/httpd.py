@@ -56,8 +56,10 @@ class HookHandler(web.RequestHandler):
     and notify kevin that there's a job to do.
     """
 
-    def initialize(self, triggers):
+    def initialize(self, queue, build_manager, triggers):
         """
+        queue: the job queue where the build should be added to
+        build_manager: creates and maintains builds
         triggers: a list of HookTriggers which requested to instanciate
                   this HookHandler
         """
