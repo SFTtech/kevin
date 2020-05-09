@@ -42,6 +42,7 @@ def main():
     loop.set_debug(args.debug)
 
     # parse config
+    logging.debug("[cfg] loading...")
     CFG.load(args.config)
 
     try:

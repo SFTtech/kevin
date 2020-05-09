@@ -48,11 +48,14 @@ async def spawn_shell(falk, vm_id, volatile, command):
                           options=["-t"]) as proc:
         ret = await proc.wait()
 
-    # wait 30 maximum for the machine to exit gracefully
+    # wait for the machine to exit gracefully
+    wait_time = 30
+    logging.warning(f"waiting {wait_time}s for machine to shut down")
     await vm.wait_for_shutdown(30)
 
     await vm.terminate()
     await vm.cleanup()
+
     return ret
 
 
@@ -105,7 +108,7 @@ def main():
             spawn_shell(falk, args.vm_id, args.volatile, args.command))
 
     except KeyboardInterrupt:
-        print("\n")
+        print("\nfalk.manage killed by keyboard interrupt\n")
 
     loop.stop()
     loop.run_forever()

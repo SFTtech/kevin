@@ -4,6 +4,7 @@ Falk daemon config parsing
 
 from configparser import ConfigParser
 from pathlib import Path
+import logging
 import re
 
 from .vm import CONTAINERS, ContainerConfig
@@ -99,6 +100,9 @@ class Config:
                     machineclassname))
 
             self.machines[machineid] = (machineconfig, machineclass)
+            logging.debug("[cfg] loaded machine %s (%s)",
+                          machineid,
+                          machineclassname)
 
     def verify(self):
         """ Verifies the validity of the loaded config attributes """
