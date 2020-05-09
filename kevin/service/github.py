@@ -301,6 +301,8 @@ class GitHubHookHandler(HookHandler):
                         repo_name, tried_repos)
                     raise ValueError("invalid project source")
 
+            logging.debug("[github] webhook event type: %s", event)
+
             # dispatch by event type
             if event == "pull_request":
                 await self.handle_pull_request(trigger, project, json_data)
@@ -371,6 +373,8 @@ class GitHubHookHandler(HookHandler):
 
         # first, see if the hook contains commit updates
         action = json_data["action"]
+        logging.debug("[github] pull request hook action: %s", action)
+
         if action in {"opened", "synchronize"}:
             # needs a build, let's continue
             create_build = True
