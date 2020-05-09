@@ -124,12 +124,12 @@ def build_job(args):
         else:
             step_state(
                 step, "success",
-                "completed in %.2f seconds" % (time() - steptimer)
+                "completed in %.2f s" % (time() - steptimer)
             )
             success.add(step.name)
 
     if not errors:
-        job_state("success", "completed in %.2fs" % (time() - jobtimer))
+        job_state("success", "completed in %.2f s" % (time() - jobtimer))
 
 
 def output_item(source_name, output_name):
