@@ -9,5 +9,6 @@ def import_all():
     Register the services by importing them (the metaclass registers this).
     """
 
+    # pylint: disable=unused-import
     from ..job import Job
     from .github import GitHubHook

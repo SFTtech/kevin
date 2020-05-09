@@ -4,10 +4,12 @@ GitHub backend for Kevin.
 All github interaction originates from this module.
 """
 
-import  json
+import asyncio
 import hmac
+import json
 import logging
 from hashlib import sha1
+from urllib.parse import quote
 
 import aiohttp
 
@@ -50,8 +52,9 @@ def verify_secret(blob, headers, secret):
 class GitHubStatusURL(GeneratedUpdate):
     """ transmit the github status url to be set """
 
-    def __init__(self, destination):
+    def __init__(self, destination, repo_name):
         self.destination = destination
+        self.repo = repo_name
 
 
 class GitHubPullRequest(GeneratedUpdate):
@@ -62,6 +65,39 @@ class GitHubPullRequest(GeneratedUpdate):
         self.repo = repo
         self.pull_id = pull_id
         self.commit_hash = commit_hash
+
+
+class GitHubBranchUpdate(GeneratedUpdate):
+    """
+    Sent when a branch on github is pushed to.
+    e.g. refs/heads/master, which is not a pull request.
+
+    This update can be consumed e.g. by badge generators
+    or symlink handlers.
+
+    TODO: base on a generic BranchUpdate event.
+    """
+
+    def __init__(self, project_name, repo, branch, commit_hash):
+        self.project_name = project_name
+        self.repo = repo
+        self.branch = branch
+        self.commit_hash = commit_hash
+
+
+class GitHubLabelUpdate(GeneratedUpdate):
+    """
+    Send to perform changes to github issue/pull request labels.
+    """
+
+    def __init__(self, project_name, repo_name, pull_id, issue_url,
+                 action, label):
+        self.project_name = project_name
+        self.repo_name = repo_name
+        self.pull_id = pull_id
+        self.issue_url = issue_url
+        self.action = action
+        self.label = label
 
 
 class GitHubPullManager(Watcher):
@@ -162,9 +198,18 @@ class GitHubHook(HookTrigger):
         self.hooksecret = cfg["hooksecret"].encode()
 
         # allowed github repos
-        self.repos = list()
+        self.repos = set()
         for repo in cfg["repos"].split(","):
-            self.repos.append(repo.strip())
+            repo = repo.strip()
+            if repo:
+                self.repos.add(repo)
+
+        # assign labelname => action for custom control labels
+        self.ctrl_labels = dict()
+        for label in cfg.get("ctrl_labels_rebuild", "").split(','):
+            label = label.strip()
+            if label:
+                self.ctrl_labels[label] = "rebuild"
 
         # pull request manager to detect build aborts
         self.pull_manager = GitHubPullManager(self.repos)
@@ -238,7 +283,7 @@ class GitHubHookHandler(HookHandler):
                         # the project again, but with different secret.
                         pass
 
-                tried_repos |= set(trigger.repos)
+                tried_repos |= trigger.repos
 
             if project is None:
                 if repo_name in tried_repos:
@@ -258,7 +303,7 @@ class GitHubHookHandler(HookHandler):
 
             # dispatch by event type
             if event == "pull_request":
-                await self.handle_pull_request(project, json_data)
+                await self.handle_pull_request(trigger, project, json_data)
 
             elif event == "push":
                 await self.handle_push(project, json_data)
@@ -300,31 +345,54 @@ class GitHubHookHandler(HookHandler):
         github push webhook parser.
         """
 
-        commit_sha = json_data["after"]
+        repo_name = json_data["repository"]["full_name"]
+        commit_sha = json_data["head"]
         clone_url = json_data["repository"]["clone_url"]
         repo_url = json_data["repository"]["html_url"]
         user = json_data["pusher"]["name"]
         branch = json_data["ref"]        # e.g. "refs/heads/master"
 
-        await self.create_build(project, commit_sha, clone_url, repo_url, user,
-                                branch, status_url=None)
+        status_update_url = json_data["repository"]["statuses_url"].replace(
+            "{sha}", commit_sha
+        )
+        updates = [
+            GitHubBranchUpdate(project.name, repo_name, branch, commit_sha),
+        ]
 
-    async def handle_pull_request(self, project, json_data):
+        await self.create_build(project, commit_sha, clone_url, repo_url, user,
+                                repo_name, branch, status_update_url, updates)
+
+    async def handle_pull_request(self, trigger, project, json_data):
         """
         github pull_request webhook parser.
         """
+
+        create_build = False
 
         # first, see if the hook contains commit updates
         action = json_data["action"]
         if action in {"opened", "synchronize"}:
             # needs a build, let's continue
+            create_build = True
+
+        elif action in {"labeled", "unlabeled"}:
+            # control builds, let's continue
             pass
-        elif action in {"labeled", "unlabeled", "assigned",
-                        "unassigned", "reopened", "closed"}:
+
+        elif action in {"assigned", "unassigned", "reopened", "edited"
+                        "review_requested", "review_requested_removed",
+                        "ready_for_review", "locked", "unlocked"}:
             # ignore those.
             return
+
+        elif action in {"closed",}:
+            # maybe helpful some day:
+            # was_merged = json_data["merged"]
+            # the pull request was merged (or not)
+            return
+
         else:
-            logging.warning("unknown pull_request action '%s'" % action)
+            logging.warning("[github] unknown pull_request action '%s'", action)
             return
 
         # select all kinds of metadata.
@@ -340,16 +408,48 @@ class GitHubHookHandler(HookHandler):
         branch = pull["head"]["label"]
 
         status_update_url = pull["statuses_url"]
+        issue_url = pull["issue_url"]
 
         updates = [
             GitHubPullRequest(project.name, repo_name, pull_id, commit_sha),
         ]
 
-        await self.create_build(project, commit_sha, clone_url, repo_url, user,
-                                branch, status_update_url, updates)
+        labels = pull["labels"]
+        label_actions = list()
+        force_rebuild = False
 
-    async def create_build(self, project, commit_sha, clone_url, repo_url, user,
-                           branch, status_url=None, initial_updates=None):
+        for label in labels:
+            label_action = trigger.ctrl_labels.get(label["name"])
+            if label_action:
+                logging.debug("[github] using label %s for action %s",
+                              label["name"], label_action)
+                label_actions.append((label_action, label["name"]))
+            else:
+                logging.debug("[github] ignoring label %s", label["name"])
+
+        for label_action, label_value in label_actions:
+            if label_action == "rebuild":
+                force_rebuild = True
+                create_build = True
+                updates.append(
+                    GitHubLabelUpdate(project.name, repo_name, pull_id,
+                                      issue_url, "remove", label_value)
+                )
+            else:
+                raise Exception("unknown build control action: %s" % label_action)
+
+        if not create_build:
+            return
+
+        await self.create_build(project, commit_sha, clone_url, repo_url, user,
+                                repo_name, branch, status_update_url, updates,
+                                force_rebuild)
+
+    async def create_build(self, project, commit_sha, clone_url,
+                           repo_url, user, repo_name, branch,
+                           status_url=None,
+                           initial_updates=None,
+                           force_rebuild=False):
         """
         Create a new build for this commit hash.
         This commit may already exist, so a existing Build is retrieved.
@@ -357,7 +457,8 @@ class GitHubHookHandler(HookHandler):
 
         # this creates a new build, or, if the commit hash is already known,
         # reuses a known build
-        build = await self.build_manager.new_build(project, commit_sha)
+        build = await self.build_manager.new_build(project, commit_sha,
+                                                   force_rebuild=force_rebuild)
 
         # the github push is a source for the build
         await build.add_source(clone_url, repo_url, user, branch)
@@ -368,7 +469,9 @@ class GitHubHookHandler(HookHandler):
 
         if status_url:
             # notify actions that this status url would like to have updates.
-            await build.send_update(GitHubStatusURL(status_url))
+            # this will most likely tell the GitHubBuildStatusUpdater
+            # where to send updates to.
+            await build.send_update(GitHubStatusURL(status_url, repo_name))
 
         # add the build to the queue
         await self.queue.add_build(build)
@@ -387,6 +490,11 @@ class GitHubStatus(Action):
         super().__init__(cfg, project)
         self.auth_user = cfg["user"]
         self.auth_pass = cfg["token"]
+        self.repos = set()
+        for repo in cfg.get("repos", "any").split(","):
+            repo = repo.strip()
+            if repo:
+                self.repos.add(repo)
 
     async def get_watcher(self, build, completed):
         return GitHubBuildStatusUpdater(build, self)
@@ -412,6 +520,12 @@ class GitHubBuildStatusUpdater(Watcher):
         # updates that we received.
         self.known_updates = list()
 
+        self.update_send_queue = asyncio.Queue(maxsize=1000)
+
+        self.send_task = asyncio.get_event_loop().create_task(
+            self.github_status_worker()
+        )
+
     async def on_update(self, update):
         """
         Translates the update to a JSON GitHub status update request
@@ -424,6 +538,14 @@ class GitHubBuildStatusUpdater(Watcher):
             return
 
         if isinstance(update, GitHubStatusURL):
+            if ("any" not in self.cfg.repos
+                and update.repo_name not in self.cfg.repos):
+
+                # this status url is not handled by this status updater.
+                # => we don't have the auth token to send valid updates
+                #    to the github API.
+                return
+
             newurl = update.destination
 
             # we got some status update url
@@ -435,7 +557,19 @@ class GitHubBuildStatusUpdater(Watcher):
 
             return
 
-        # store the update so we can send it a new client later
+        elif isinstance(update, GitHubLabelUpdate):
+            if ("any" not in self.cfg.repos
+                and update.repo_name not in self.cfg.repos):
+                return
+
+            if update.action == "remove":
+                # DELETE /repos/:owner/:repo/issues/:issue_number/labels/:name
+                url = f"{update.issue_url}/labels/{quote(update.label)}"
+                await self.github_send_status(None, url, "delete")
+            return
+
+        # store the update so we can send it to a new client later
+        # even if we don't have an url yet (it may arrive later)
         self.known_updates.append(update)
 
         # then actually notify github.
@@ -495,33 +629,93 @@ class GitHubBuildStatusUpdater(Watcher):
 
         if not url:
             for destination in self.status_update_urls:
-                await self.github_send_status(data, destination)
+                await self.github_send_status(data, destination, "post")
         else:
-            await self.github_send_status(data, url)
+            await self.github_send_status(data, url, "post")
 
-    async def github_send_status(self, data, url):
-        """ send a single github status update """
+    async def github_send_status(self, data, url, req_method):
+        """
+        send a single github status update
+
+        data: the payload
+        url: http url
+        req_method: http method, e.g. get, post, ...
+
+        this request is put into a queue, where it is
+        processed by the worker task.
+        """
 
         try:
-            # TODO: select authtoken based on url!
+            self.update_send_queue.put_nowait((data, url, req_method))
+
+        except asyncio.QueueFull:
+            logging.error("[github] request queue full! wtf!?")
+
+    async def github_status_worker(self):
+        """
+        works through the update request queue
+        """
+
+        retries = 3
+        retry_delay = 5
+
+        while True:
+            data, url, method = await self.update_send_queue.get()
+
+            delivered = False
+            for _ in range(retries):
+                try:
+                    delivered = await self.github_submit(data, url, method)
+                    if delivered:
+                        break
+                except Exception:
+                    logging.exception("[github] exception occured when sending"
+                                      "%s API request to '%s'", method, url)
+
+                await asyncio.sleep(retry_delay)
+
+            if not delivered:
+                logging.warning("[github] could not deliver %s request to %s "
+                                "in %d tries with %s s retry delay, "
+                                "skipping it...",
+                                method, url, retries, retry_delay)
+
+    async def github_submit(self, data, url, req_method, timeout=10.0):
+        """ send a request to the github API """
+        try:
             authinfo = aiohttp.BasicAuth(self.cfg.auth_user,
                                          self.cfg.auth_pass)
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data, auth=authinfo) as reply:
+            timeout = aiohttp.ClientTimeout(total=timeout)
+
+            async with aiohttp.ClientSession(timeout=timeout,
+                                             trust_env=True) as session:
+                assert req_method in {"post", "get", "delete", "put", "patch"}
+
+                async with session.request(req_method.upper(), url,
+                                           data=data, auth=authinfo) as reply:
                     if 200 <= reply.status < 300:
                         logging.debug("[github] update delivered successfully:"
-                                      " %s" % reply.status)
+                                      " %s", reply.status)
+                        return True
+
                     elif "status" in reply.headers:
-                        logging.warning("[github] status update request "
-                                        "rejected by github: %s\n%s",
+                        logging.warning("[github] status update request to %s "
+                                        "rejected by github (%d): %s\n%s",
+                                        url,
+                                        reply.status,
                                         reply.headers["status"],
                                         await reply.text())
-                    else:
-                        logging.warning("[github] update failed but "
-                                        "no reason given")
+                        return False
+
+                    logging.warning("[github] update to %s failed with"
+                                    "http code %d, "
+                                    "and no status report",
+                                    url,
+                                    reply.status)
+                    return False
 
         except aiohttp.ClientConnectionError as exc:
-            # TODO: schedule this request for resubmission
             logging.warning("[github] Failed status connection to '%s': %s",
                             url, exc)
+            return False
