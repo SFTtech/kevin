@@ -103,12 +103,12 @@ class FalkProto(asyncio.Protocol):
                 self.send(messages.Error(repr(exc)))
 
     def connection_lost(self, exc):
-        self.log("lost connection")
         if exc:
-            self.log("reason: %s" % repr(exc))
+            self.log("lost control connection, reason: %s" % repr(exc))
             self.disconnected.set_exception(exc)
 
         else:
+            self.log("lost control connection")
             self.disconnected.set_result(StopIteration)
 
     def send(self, msg, force_mode=None):
@@ -181,8 +181,11 @@ class FalkProto(asyncio.Protocol):
 
     async def kill_containers(self):
         """
-        Make sure all containers spawned by this control connection are dead.
+        Make sure all running containers spawned by this
+        control connection are dead.
         """
+
+        deleted_handles = list()
 
         for handle_id, name in self.running.items():
             container = self.get_machine(handle_id)
@@ -193,6 +196,10 @@ class FalkProto(asyncio.Protocol):
 
             # remove the handle
             self.falk.delete_handle(handle_id)
+            deleted_handles.append(handle_id)
+
+        for handle_id in deleted_handles:
+            del self.running[handle_id]
 
     async def process_messages(self):
         """
@@ -247,8 +254,8 @@ class FalkProto(asyncio.Protocol):
                     for future_pending in pending:
                         future_pending.cancel()
 
-                    await self.kill_containers()
-
+                    # exit the outer loop
+                    # which makes sure the container is killed.
                     break
 
                 # regular message
@@ -261,6 +268,10 @@ class FalkProto(asyncio.Protocol):
                              logging.ERROR)
                     traceback.print_exc()
                     self.send(messages.Error(repr(exc)))
+
+        # disconnected. make sure containers are killed.
+        await self.kill_containers()
+
 
     async def control_message(self, msg):
         """
