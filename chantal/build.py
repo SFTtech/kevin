@@ -69,6 +69,8 @@ def build_job(args):
         if not step.skip:
             step_state(step, "waiting", "waiting")
 
+    jobtimer = time()
+
     errors = []
     success = set()
     for step in steps:
@@ -94,7 +96,7 @@ def build_job(args):
         if step.commands or step.outputs:
             step_state(step, "running", "running")
 
-        timer = time()
+        steptimer = time()
         stdout("\n\x1b[36;1m[%s]\x1b[m\n" % step.name)
 
         try:
@@ -122,12 +124,12 @@ def build_job(args):
         else:
             step_state(
                 step, "success",
-                "completed in %.2f seconds" % (time() - timer)
+                "completed in %.2f seconds" % (time() - steptimer)
             )
             success.add(step.name)
 
     if not errors:
-        job_state("success", "completed")
+        job_state("success", "completed in %.2fs" % (time() - jobtimer))
 
 
 def output_item(source_name, output_name):
