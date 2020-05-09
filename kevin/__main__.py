@@ -5,6 +5,7 @@ Program entry point
 import argparse
 import asyncio
 import logging
+import os
 import sys
 
 from .config import CFG
@@ -52,6 +53,16 @@ def main():
 
     # pass commandline args
     CFG.set_cmdargs(args)
+
+    # print proxy environment variables
+    proxy_vars = [env_var for env_var in os.environ.keys()
+                  if env_var.lower().endswith("_proxy")]
+    if proxy_vars:
+        logging.info("active proxy config:")
+        for proxy_var in proxy_vars:
+            logging.info(f"  {proxy_var}={os.environ[proxy_var]}")
+    else:
+        logging.info("no active proxy configuration.")
 
     logging.error("\x1b[1;32mKevin CI running...\x1b[m")
 
