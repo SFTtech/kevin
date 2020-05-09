@@ -16,7 +16,7 @@ tl;dr
 
 * Install `kevin` on a server
 * Create/edit `kevin.conf`, `falk.conf` and add a config for all your projects to be built
-* Set up a VM or container and add it to `falk.conf`
+* Set up a VM or container with active SSH and add it to `falk.conf`
 * Add `kevin-ci` as github webhook
 * Run `kevin` and `falk` (e.g. as `systemd` service)
 * Add the `kevinfile` control file to your project repo
@@ -71,11 +71,13 @@ Each project can spawn as many "jobs" as you like to have.
 
 #### Component setup
 
-At the moment, only a `qemu` VM is supported.
-Look inside [`falk/vm/`](/falk/vm) to add more container types.
+We support different container backends.
+Have a look inside [`falk/vm/`](/falk/vm) to see which ones and to add more container types.
 
 
 ##### Host system (Kevin)
+
+Kevin gets a notification that it should build something, and kevin then notifies falk to provide a container.
 
 - Install
   - `python >=3.6`
@@ -88,11 +90,13 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 - Install the `kevin` Python module (ideally, as a [systemd unit](/etc/kevin.service) or whatever)
 
 
-##### VM provider (Falk)
+##### Container provider (Falk)
+
+Falk starts and cleans up containers when Kevin requests them.
 
 - Install
   - `python >=3.6`
-  - your container system of choice: `qemu`, ...
+  - your container implementation of choice: `qemu`, `libpod`, `docker`, ...
 
 - Create `/etc/kevin/falk.conf` from [`falk.conf.example`](/etc/falk.conf.example)
 
@@ -116,25 +120,16 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 
 ##### Guest systems (Chantal)
 
-- [Setup the OS](https://wiki.archlinux.org/index.php/QEMU#Creating_new_virtualized_system)
-- Install
-  - `python >=3.4`
-  - `git`
-  - `ssh` daemon
-  - `sudo`
-- In the VM, create user `chantal`
-- In `visudo`, give `NOPASSWD: ALL` permissions to `chantal`
-  - That way, `chantal` easily gets root permissions in the machine
-- Enable and run the `sshd` service
-- Setup password-less SSH access (`ssh-copy-id`) for above `kevin` user to `chantal@container_vm`
-  - Add `kevin`'s `id_rsa.pub` into `~chantal/.ssh/authorized_keys`
-- Store the contents of the container's `/etc/ssh/ssh_host_ed25519_key.pub`
-  to the `falk.conf` so the key for this VM can be verified
-- **Set up the container** in the way you'd like to test your project
-  - If your build involves graphical things, you could set up `tigervnc` or `x11vnc`
+Setting up the guest system depends on the container technology you use.
+
+* [Qemu](container/vm.md)
+* [Podman](container/podman.md)
+* Your [favorite-to-be-implemented](/falk/vm) backend
 
 
 ##### Project
+
+The project config determines active Kevin plugins and their configuration.
 
 - On the `kevin` machine,
    create a folder where project configurations reside in
@@ -168,7 +163,7 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 
 #### Testing
 
-* You can directly run Chantal without all the other fuzz.
+* You can **directly run Chantal** without all the other fuzz and see how it will build stuff.
 * Kevin would do the same thing in the container/VM.
 * To test, invoke `python3 -m chantal --help` and be enlightnened.
   * You can run Chantal inside your project without cloning it:
@@ -184,7 +179,9 @@ Look inside [`falk/vm/`](/falk/vm) to add more container types.
 
 #### Running
 
-* Persistent storage for `kevin` is done in the `[web]` `folder`
+* Persistent storage for `kevin` is done in `[projects]`/`output_folder`.
+  * All build data will be stored there.
+  * There's no cleanup mechanism yet (you may implemente it :)
 * [systemd](https://www.freedesktop.org/wiki/Software/systemd/) setup
   * copy and adjust `etc/kevin.service` to `/etc/systemd/system/kevin.service`
   * copy and adjust `etc/falk.service` to `/etc/systemd/system/falk.service`

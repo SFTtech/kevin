@@ -80,6 +80,7 @@ Optionally, serve the **Mandy** webinterface with any static webserver.
   * [ ] ...
 * [Support for more container types](/falk/vm/)
   * [X] [qemu](http://qemu-project.org)
+  * [X] [podman](https://podman.io/)
   * [ ] [docker](https://www.docker.com/)
   * [ ] [libvirt](https://libvirt.org/)
   * [ ] [xen](https://www.xenproject.org/)
