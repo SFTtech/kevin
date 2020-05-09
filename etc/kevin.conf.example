@@ -31,13 +31,13 @@ dyn_frontend_ssl = false
 [falk]
 
 # chose any name for a falk you wanna register here
-some_name = how-can-it-be-reached
+#some_name = how-can-it-be-reached
 
 # when falk is running on the same physical machine:
-lol_unix_falk = unix://me@/run/kevin/falk
+#lol_unix_falk = unix://me@/run/kevin/falk
 
 # reuse your known hosts file
-lol_ssh_falk_keyfile = ssh://yourmom@your.falk.host:22 = ~/.ssh/known_hosts
+#lol_ssh_falk_keyfile = ssh://yourmom@your.falk.host:22 = ~/.ssh/known_hosts
 
 # specify public key directly
-lol_ssh_falk_direct = ssh://yourdad@your.falk.host:22 = ssh-rsa ROFLOLKEY...
+#lol_ssh_falk_direct = ssh://yourdad@your.falk.host:22 = ssh-rsa ROFLOLKEY...

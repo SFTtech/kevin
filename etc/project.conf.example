@@ -1,5 +1,10 @@
-# project config.
-# place many of those in a folder.
+# kevin project config.
+# enables and configures kevin features
+#
+# each [section] configures a module
+# to have multiple instances of the same module,
+# the module name is suffixed with .0, .1, ...
+# e.g. to have multiple compile jobs (maybe on different falk machines)
 
 [project]
 # general project configuration
@@ -7,27 +12,34 @@ name = murrica-freedom-simulator-9001
 job_timeout = 10m
 job_silence_timeout = 5min
 job_max_output = 100MiB
-job_desc_file = kevinfile   # name for the in-repo control file
 
-# now follow a list of triggers/actions
-# to register the same trigger/action multiple times with different
-# configuration, suffix the name with .0, .1, etc.
+# name of the build job task configuration file within the repo
+job_desc_file = kevinfile
+
 
 [github_webhook]
 # github delivers an authenticated captain hook to kevin
 hooksecret = roflsharedsecret
+# these repos are allowed to send captain webhooks
 repos = yourmom/repo, yourdad/somerepo
+# kevin can be controlled through github label values.
+# control labels are automatically removed upon acceptance only
+# if there's a suitable [github_status] which has permissions.
+# comment this to disable.
+ctrl_labels_rebuild = kevin-rebuild-pl0x
 
 [github_status]
 # used to display the progress status on github
 # create that access token for a github account
 user = yourmom
 token = tokentokentokenbaby
+# to use this status reporter (and its login token) for specific repos only,
+# set the repo names here (the default, "any", is for all repos)
+repos = any
+#repos = yourkitteh/mice_reloaded, macrohard/doors
 
 
-# the "job" action is the most important one:
-# it actually performs a build.
-
+# "job" module configuration, which performs a build via falk.
 [job.0]
 # invokes a container launch
 name = GNU-debian-hurd     # this name is passed to chantal!
