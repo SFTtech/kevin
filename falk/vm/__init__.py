@@ -137,7 +137,7 @@ class ContainerConfig:
 
         if not self.ssh_known_host_key:
             logging.warning("[vm] \x1b[33mwarning\x1b[m: "
-                            "'%s' doesn't have ssh-key configured, "
+                            "container '%s' doesn't have ssh-key configured, "
                             "thus I won't do a key verification!",
                             self.machine_id)
             self.ssh_known_host_key = None
@@ -245,4 +245,4 @@ class Container(metaclass=ContainerMeta):
 
 
 # force class definitions too fill CONTAINERS dict
-from . import qemu, xen, docker, lxc, clearlinux, nspawn, rkt, custom, podman
+from . import qemu, custom, podman
