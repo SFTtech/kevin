@@ -61,31 +61,24 @@ class Podman(Container):
         )
         process.stdin.close()
 
-        # either the podman run fails,
-        # or it echoes the container hash and then exits with 0
-        loop = asyncio.get_event_loop()
-        exit_wait_task = loop.create_task(process.wait())
-        readline_task = loop.create_task(process.stdout.readline())
-        done, pending = await asyncio.wait({exit_wait_task, readline_task},
-                                           return_when=asyncio.FIRST_COMPLETED)
-        if readline_task in pending:
-            readline_task.cancel()
-            if not exit_wait_task in done:
-                raise RuntimeError("process did not exit, but also print no line.")
+        # podman echoes the container id
+        line = await process.stdout.readline()
+        if line:
+            self.container_id = line.strip().decode()
+            if self.container_id:
+                logging.debug("[podman] spawned container with hash %s" % self.container_id)
+
+        else:
             raise Exception("no container id was provided by podman, "
                             "pls investigate launch command")
-        else:
-            self.container_id = readline_task.result().strip().decode()
-            logging.debug("[podman] spawned container with hash %s" % self.container_id)
 
-        if exit_wait_task in pending:
-            ret = await exit_wait_task
-        else:
-            ret = exit_wait_task.result()
+        ret = await process.wait()
 
         if ret != 0:
             self.running_image = None
             self.container_id = None
+
+            raise Exception("failed to start podman container")
 
     async def is_running(self):
         if not self.running_image:
