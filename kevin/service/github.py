@@ -348,7 +348,7 @@ class GitHubHookHandler(HookHandler):
         """
 
         repo_name = json_data["repository"]["full_name"]
-        commit_sha = json_data["head"]
+        commit_sha = json_data["head_commit"]["id"]
         clone_url = json_data["repository"]["clone_url"]
         repo_url = json_data["repository"]["html_url"]
         user = json_data["pusher"]["name"]
