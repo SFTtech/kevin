@@ -465,7 +465,8 @@ class GitHubHookHandler(HookHandler):
                                                    force_rebuild=force_rebuild)
 
         # the github push is a source for the build
-        await build.add_source(clone_url, repo_url, user, branch)
+        await build.add_source(clone_url, repo_url, user, branch,
+                               "GitHub source")
 
         if initial_updates:
             for update in initial_updates:

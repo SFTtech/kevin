@@ -91,6 +91,11 @@ class Build(Watchable, Watcher):
             self.commit_hash[:3],  # -> 4096 folders with 2**148 files max
             self.commit_hash[3:]
         )
+        # Branch available in the clone url where the commit
+        # to be built is in.
+        # If set, we can clone this branch.
+        # If not set, we clone the whole repo.
+        self.branch = None
 
         # storage path for the job output
         self.path = CFG.output_folder / self.relpath
@@ -218,7 +223,8 @@ class Build(Watchable, Watcher):
         """
         # a primitive duplicate-source filter
         for source in self.sources:
-            if source.repo_url == repo_url:
+            if (source.repo_url == repo_url and
+                source.branch == branch):
                 return
 
         await self.send_update(BuildSource(
@@ -326,6 +332,7 @@ class Build(Watchable, Watcher):
         elif isinstance(update, BuildSource):
             self.sources.add(update)
             self.clone_url = update.clone_url
+            self.branch = update.branch
 
         elif isinstance(update, JobCreated):
             # recreate all missing jobs that were active

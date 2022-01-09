@@ -16,7 +16,7 @@ from .msg import (
     output_file as msg_output_file,
     raw_msg
 )
-from .util import FatalBuildError, run_command, CommandError
+from .util import FatalBuildError, run_command, CommandError, filter_t
 
 
 class OutputError(Exception):
@@ -38,27 +38,32 @@ def build_job(args):
         "CHANTAL": "true",
     })
 
-    if args.clone_location:
+    if args.clone_source:
         job_state("running", "cloning repo")
 
         if args.clone_depth > 0:
-            shallow = ("--depth %d " % args.clone_depth)
+            shallow = ("--depth %d" % args.clone_depth)
         else:
-            shallow = ""
+            shallow = None
 
         if args.treeish:
-            run_command("git init " + args.work_location, base_env)
+            refname = f"kevin-{args.branch.replace(':', '/')}" if args.branch else "kevin-build"
+
+            run_command(f"git init '{args.work_location}'", env=base_env)
             os.chdir(args.work_location)
-            run_command("git remote add origin " +
-                    shlex.quote(args.clone_location), base_env)
-            run_command("git fetch " + shallow + "--prune " +
-                        "origin " + args.treeish + ":" + args.treeish,
-                        base_env)
-            run_command("git checkout -q " + args.treeish, base_env)
+            run_command(f"git remote add origin {shlex.quote(args.clone_source)}", env=base_env)
+            run_command(filter_t(("git", "fetch", shallow, "--no-tags", "--prune", "origin",
+                                  f"{args.treeish}:{refname}")),
+                        env=base_env)
+            run_command(f"git checkout -q '{refname}'", env=base_env)
+
         else:
-            run_command("git clone " + shallow +
-                        shlex.quote(args.clone_location) +
-                        " " + args.work_location, base_env)
+            if args.branch:
+                branch = f"--branch '{args.branch}' --single-branch"
+            else:
+                branch = None
+
+            run_command(filter_t(("git clone", shallow, branch, shlex.quote(args.clone_source), args.work_location)), env=base_env)
             os.chdir(args.work_location)
 
     try:
@@ -111,7 +116,7 @@ def build_job(args):
 
             # execute commands
             for command in step.commands:
-                run_command(command, step_env, step.cwd)
+                run_command(command, env=step_env, cwd=step.cwd, shell=True)
 
             # then, transfer output files
             for output_src, output_dst in step.outputs:

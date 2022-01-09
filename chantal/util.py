@@ -4,6 +4,7 @@ Utility routines.
 
 import codecs
 import os
+import shlex
 
 from .msg import stdout
 
@@ -15,14 +16,27 @@ class CommandError(Exception):
     pass
 
 
-def run_command(cmd, env, cwd=None):
+def filter_t(input: list[str] | tuple[str]) -> list[str]:
+    return [elem for elem in input if elem]
+
+
+def run_command(cmd, env, cwd=None, shell=False):
     """
     Prints the command name, then runs it.
     Throws CommandError on retval != 0.
 
     Env is the environment variables that are passed.
     """
-    stdout("\x1b[32;1m$\x1b[m %s\n" % cmd)
+    if shell:
+        assert isinstance(cmd, str)
+        cmd_str = cmd
+    else:
+        if isinstance(cmd, str):
+            cmd = shlex.split(cmd)
+        assert isinstance(cmd, list)
+        cmd_str = shlex.join(cmd)
+
+    stdout("\x1b[32;1m$\x1b[m %s\n" % cmd_str)
 
     child_pid, tty_fd = os.forkpty()
     if child_pid < 0:
@@ -37,7 +51,10 @@ def run_command(cmd, env, cwd=None):
             os.chdir(tgt)
 
         # launch the subprocess here.
-        os.execve("/bin/sh", ["sh", "-c", cmd], env)
+        if shell:
+            os.execve("/bin/sh", ["sh", "-c", cmd], env)
+        else:
+            os.execvpe(cmd[0], cmd, env)
         # we only reach this point if the execve has failed
         print("\x1b[31;1mcould not execve\x1b[m")
         raise SystemExit(1)
@@ -57,7 +74,7 @@ def run_command(cmd, env, cwd=None):
 
     if retval != 0:
         stdout("\x1b[31;1mcommand returned %d\x1b[m\n" % retval)
-        raise CommandError("command failed: %s [%d]" % (cmd, retval))
+        raise CommandError("command failed: %s [%d]" % (cmd_str, retval))
 
 
 class FatalBuildError(Exception):

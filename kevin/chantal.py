@@ -183,20 +183,29 @@ class Chantal(AsyncWith):
 
     def run(self, job):
         """
-        execute chantal in the VM.
+        execute chantal in the container.
         return a state object, use its .output() function to get
         an async iterator.
-
-        TODO: optionally, launch Docker in the VM
         """
 
+        chantal_command = [
+            "python3", "-u", "-m", "chantal",
+            "--clone", job.build.clone_url,
+            "--checkout", job.build.commit_hash,
+        ]
+
+        if job.build.branch:
+            chantal_command.extend([
+                "--branch", job.build.branch,
+            ])
+
+        chantal_command.extend([
+            "--desc-file", job.build.project.cfg.job_desc_file,
+            job.name
+        ])
+
         return self.exec_remote(
-            ("python3", "-u", "-m", "chantal",
-             "--clone", job.build.clone_url,
-             "--checkout", job.build.commit_hash,
-             "--clone-depth", self.git_config["shallow"],
-             "--desc-file", job.build.project.cfg.job_desc_file,
-             job.name),
+            chantal_command,
             timeout=job.build.project.cfg.job_timeout,
             silence_timeout=job.build.project.cfg.job_silence_timeout,
         )

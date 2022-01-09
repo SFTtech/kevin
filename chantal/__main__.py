@@ -24,9 +24,12 @@ def main():
                          "build instructions. ")
         )
 
-        cmd.add_argument("--clone", dest="clone_location",
+        cmd.add_argument("--clone", dest="clone_source",
                          help=("Location to clone the git repo from. "
                                "If not given, don't clone."))
+        cmd.add_argument("--branch",
+                         help=("Branch to clone. If given, clone only "
+                               "this branch and no other repo history."))
         cmd.add_argument("--checkout", dest="treeish",
                          help=("Treeish (branch, hash, ...) to check out "
                                "after clone. If not given, just clone."))

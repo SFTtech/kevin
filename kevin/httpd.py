@@ -189,7 +189,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             await self.build.reconstruct_jobs(self.get_parameter("filter"))
 
         except Exception as exc:
-            print(f"websocket handling error:")
+            print("websocket handling error:")
             traceback.print_exc()
             self.send_error(f"Error: {str(exc)}")
             return
