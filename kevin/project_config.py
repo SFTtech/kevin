@@ -44,6 +44,7 @@ class Config:
             self.job_silence_timeout = parse_time(
                 projcfg["job_silence_timeout"])
             self.job_desc_file = projcfg["job_desc_file"]
+            self.git_fetch_depth = projcfg["git_fetch_depth"]
 
             # configuration for triggers and actions
             # these define what can trigger a project job,

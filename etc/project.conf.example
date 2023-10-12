@@ -16,6 +16,8 @@ job_max_output = 100MiB
 # name of the build job task configuration file within the repo
 job_desc_file = kevinfile
 
+# git configuration
+git_fetch_depth = 0
 
 [github_webhook]
 # github delivers an authenticated captain hook to kevin

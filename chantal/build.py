@@ -46,13 +46,21 @@ def build_job(args):
         else:
             shallow = ""
 
-        run_command("git clone " + shallow +
-                    shlex.quote(args.clone_location) +
-                    " " + args.work_location, base_env)
+        if args.treeish:
+            run_command("git init " + args.work_location, base_env)
+        else:
+            run_command("git clone " + shallow +
+                        shlex.quote(args.clone_location) +
+                        " " + args.work_location, base_env)
 
     os.chdir(args.work_location)
 
     if args.treeish:
+        run_command("git remote add origin " +
+                    shlex.quote(args.clone_location), base_env)
+        run_command("git fetch " + shallow + "--prune " +
+                    "origin " + args.treeish + ":" + args.treeish,
+                    base_env)
         run_command("git checkout -q " + args.treeish, base_env)
 
     try:
