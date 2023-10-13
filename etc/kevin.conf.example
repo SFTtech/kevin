@@ -19,6 +19,7 @@ mandy_url = http://your.kevin.host/mandy/
 
 # kevin's web worker will listen on that port
 dyn_port = 7777
+# dyn_host = 0.0.0.0
 
 # set those to the host/port where mandy can reach kevin
 # if kevin is behind a proxy, set the values to reach that proxy
