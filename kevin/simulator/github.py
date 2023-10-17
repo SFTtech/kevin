@@ -158,6 +158,11 @@ class GitHub(service.Service):
                 },
                 "html_url": repo,
                 "statuses_url": status_url,
+                "issue_url": repo+"/issues/1",
+                "labels": {
+                    "name": "mylabel",
+                    "value": "my awesome label"
+                },
             },
             "repository": {
                 "full_name": reponame,

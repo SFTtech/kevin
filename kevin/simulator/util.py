@@ -14,7 +14,7 @@ async def get_hash(repo):
     """
 
     proc = await asyncio.create_subprocess_exec(
-        "git", "ls-remote", repo,
+        "git", "ls-remote", repo, "HEAD",
         stdout=asyncio.subprocess.PIPE
     )
 
