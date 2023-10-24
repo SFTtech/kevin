@@ -95,12 +95,7 @@ Optionally, serve the **Mandy** webinterface with any static webserver.
 ### Contact
 
 If you have questions, suggestions, encounter any problem,
-please join our Matrix or IRC channel and ask!
-
-```
-#sfttech:matrix.org
-irc.freenode.net #sfttech
-```
+please join our [Matrix channel](https://matrix.to/#/#sfttech:matrix.org) and ask!
 
 Of course, create [issues](https://github.com/SFTtech/kevin/issues)
 and [pull requests](https://github.com/SFTtech/kevin/pulls).
