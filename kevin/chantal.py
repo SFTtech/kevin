@@ -18,10 +18,11 @@ class Chantal(AsyncWith):
 
     # TODO: different connection methods (e.g. agent, non-ssh commands)
     """
-    def __init__(self, machine, loop=None):
+    def __init__(self, machine, git_config, loop=None):
         self.machine = machine
         self.loop = loop or asyncio.get_event_loop()
         self.ssh_worked = self.loop.create_future()
+        self.git_config = git_config
 
     def can_connect(self):
         """ return if the vm ssh connection was successful once. """
@@ -193,6 +194,7 @@ class Chantal(AsyncWith):
             ("python3", "-u", "-m", "chantal",
              "--clone", job.build.clone_url,
              "--checkout", job.build.commit_hash,
+             "--clone-depth", self.git_config["shallow"],
              "--desc-file", job.build.project.cfg.job_desc_file,
              job.name),
             timeout=job.build.project.cfg.job_timeout,
