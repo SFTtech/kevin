@@ -189,7 +189,7 @@ class JobManager:
         falk = random.choice(list(candidate_falks.keys()))
 
         # get a machine
-        vm_id = random.sample(candidate_falks[falk], 1)[0]
+        vm_id = random.sample(sorted(candidate_falks[falk]), 1)[0]
 
         # TODO: if this falk doesn't wanna spawn the vm, try another one.
         return await falk.create_vm(vm_id)
