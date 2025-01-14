@@ -169,17 +169,21 @@ class JobState(JobUpdate, State):
     """ Job specific state changes """
 
     def __init__(self, project_name, build_id, job_name,
-                 state, text, time=None):
+                 state, text, time=None, updates_merged=False):
         State.__init__(self, project_name, build_id, state, text, time)
         self.job_name = job_name
+        self.updates_merged = updates_merged
+
+    def set_updates_merged(self):
+        self.updates_merged = True
 
 
 class JobEmergencyAbort(JobState):
     """ Special job state that for job-double-failures """
 
-    def __init__(self, project_name, build_id, job_name, text, time=None):
+    def __init__(self, project_name, build_id, job_name, text, time=None, version=None):
         super().__init__(project_name, build_id, job_name,
-                         "error", text, time)
+                         "error", text, time, version)
 
 
 class StepState(JobUpdate, State):

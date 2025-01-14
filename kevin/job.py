@@ -119,6 +119,12 @@ class Job(Watcher, Watchable):
         # storage folder for this job.
         self.path = build.path.joinpath(self.name)
 
+        # the job updates storage file
+        self._updates_fd = None
+
+        # if all our updates are combined
+        self._updates_merged = False
+
         # are all updates from the job in the update list already?
         self.all_loaded = False
 
@@ -140,6 +146,66 @@ class Job(Watcher, Watchable):
         """
         await self.send_update(JobCreated(self.name, self.vm_name))
 
+    def _merge_updates(self) -> None:
+        """
+        merge all updates to only remember their effective end result.
+        output is combined and only the latest states are retained.
+        """
+
+        if self._updates_merged:
+            return
+
+        # last JobState
+        job_state: JobState | None = None
+        # all step_states. step_name -> state
+        step_states: dict[str, StepState] = dict()
+        output: list[str] = list()
+        other_updates: list[JobUpdate] = list()
+
+        for update in self.updates:
+            match update:
+                case JobCreated() | GeneratedUpdate():
+                    # a build stores JobCreated; generated updates are not persistent.
+                    continue
+
+                case JobState():
+                    job_state = update
+                case StepState():
+                    step_states[update.step_name] = update
+                case StdOut():
+                    output.append(update.data)
+                case JobUpdate():
+                    other_updates.append(update)
+                case _:
+                    raise ValueError("non JobUpdate event found to be stored in a Job")
+
+        # merge all output
+        if job_state is None:
+            raise RuntimeError("no JobState found in job updates")
+
+        job_state.set_updates_merged()
+        stdout_state = StdOut(self.name, "".join(output))
+
+        updates: list[JobUpdate] = [job_state]
+        updates.extend(step_states.values())
+        updates.extend(other_updates)
+        updates.append(stdout_state)
+
+        if self._updates_fd is not None:
+            self._updates_fd.close()
+            self._updates_fd = None
+
+        merged_update_path = self.path.joinpath("_updates_merged")
+        with merged_update_path.open("w") as fd:
+            for update in updates:
+                fd.write(update.json())
+                fd.write("\n")
+
+        # replace the old updates file
+        merged_update_path.rename(self.path.joinpath("_updates"))
+        self.updates = updates
+        self._updates_merged = True
+
     async def load_from_fs(self):
         """
         Ensure the job is reconstructed from filesystem.
@@ -148,6 +214,7 @@ class Job(Watcher, Watchable):
         if CFG.args.volatile:
             return False
 
+        # lines of json, for incremental updates
         updates_file = self.path.joinpath("_updates")
 
         if not updates_file.is_file():
@@ -158,6 +225,8 @@ class Job(Watcher, Watchable):
                 for json_line in updates_file:
                     await self.send_update(Update.construct(json_line),
                                            reconstruct=True)
+
+            self._merge_updates()
 
             logging.debug(f"reconstructed Job {id(self)} {self} from fs")
 
@@ -210,6 +279,12 @@ class Job(Watcher, Watchable):
             raise Exception("job wants to send update "
                             f"after being completed: {update}")
 
+        if isinstance(update, JobState):
+            # the updates-merged flag is only ever set after a job ran through
+            # so we can assume it for all other updates.
+            # the merging retains only one JobState, so we can track merge-status through it.
+            self._updates_merged = update.updates_merged
+
         if isinstance(update, JobUpdate):
             # run the job-update hook.
             # when it's a StepUpdate, this manages the pending_steps set.
@@ -231,9 +306,11 @@ class Job(Watcher, Watchable):
             return
 
         # append this update to the build updates file
-        # TODO perf: don't open _updates on each update!
-        with self.path.joinpath("_updates").open("a") as ufile:
-            ufile.write(update.json() + "\n")
+        if self._updates_fd is None:
+            self._updates_fd = self.path.joinpath("_updates").open("a")
+
+        self._updates_fd.write(update.json())
+        self._updates_fd.write("\n")
 
     async def on_update(self, update):
         """
@@ -259,7 +336,7 @@ class Job(Watcher, Watchable):
                     await update.queue.add_job(self)
                     await self.set_state("waiting", "enqueued")
 
-    def step_update(self, update):
+    def step_update(self, update: StepState):
         """ apply a step update to this job. """
 
         if not isinstance(update, StepState):
@@ -403,7 +480,7 @@ class Job(Watcher, Watchable):
             await self.error("Process %s took > %.02fs." % (exc.cmd[0],
                                                             exc.timeout))
 
-        except ProcessError as exc:
+        except ProcessError:
             logging.error("[job] \x1b[31;1mCommunication failure:"
                           "\x1b[m %s", self)
 
@@ -503,6 +580,13 @@ class Job(Watcher, Watchable):
                 self.path.joinpath("_completed").touch()
 
             await self.send_update(StopIteration)
+
+            if self._updates_fd:
+                self._updates_fd.close()
+                self._updates_fd = None
+
+            # perform state compression
+            self._merge_updates()
 
     async def error(self, text):
         """
