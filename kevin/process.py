@@ -509,7 +509,8 @@ class ProcessIterator:
             # or the queue gives us the next data item.
             # wait for the first of those events.
             done, pending = await asyncio.wait(
-                [self.process.protocol.queue.get(), self.process.killed],
+                [self.loop.create_task(self.process.protocol.queue.get()),
+                 self.process.killed],
                 return_when=asyncio.FIRST_COMPLETED)
 
             # at least one of them is done now:
