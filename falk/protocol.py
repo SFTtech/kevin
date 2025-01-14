@@ -191,8 +191,10 @@ class FalkProto(asyncio.Protocol):
             container = self.get_machine(handle_id)
 
             self.log("killing container %s..." % name)
-            await container.terminate()
-            await container.cleanup()
+            try:
+                await container.terminate()
+            finally:
+                await container.cleanup()
 
             # remove the handle
             self.falk.delete_handle(handle_id)
@@ -247,7 +249,7 @@ class FalkProto(asyncio.Protocol):
                     raise exc
 
                 message = future.result()
-                if message == StopIteration:
+                if message is StopIteration:
                     if not self.disconnected.done():
                         self.disconnected.set_result(message)
 
@@ -350,13 +352,16 @@ class FalkProto(asyncio.Protocol):
                 cfg = copy.copy(cfg)
 
                 # select a free ssh port
-                free_port = self.falk.register_free_port(cfg.ssh_host)
+                # since each container has to have a distinct port.
+                if not machinecls.dynamic_ssh_config():
 
-                if free_port is not None:
-                    cfg.ssh_port = free_port
-                else:
-                    raise RuntimeError(
-                        "no free port found for %s" % msg.name)
+                    free_port = self.falk.register_free_port(cfg.ssh_host)
+
+                    if free_port is not None:
+                        cfg.ssh_port = free_port
+                    else:
+                        raise RuntimeError(
+                            "no free port found for %s" % msg.name)
 
                 # create new container and handle, then store it
                 handle_id = self.falk.create_handle(machinecls(cfg))
@@ -379,6 +384,11 @@ class FalkProto(asyncio.Protocol):
             elif isinstance(msg, messages.Launch):
                 self.log("launching machine..", level=logging.DEBUG)
                 await self.get_machine(msg.run_id).launch()
+
+            elif isinstance(msg, messages.GetConnectionInfo):
+                self.log("getting machine connection info..", level=logging.DEBUG)
+                connection_info = await self.get_machine(msg.run_id).connection_info()
+                answer = messages.ConnectionInfo(**connection_info)
 
             elif isinstance(msg, messages.Terminate):
                 self.log("terminating machine..", level=logging.DEBUG)

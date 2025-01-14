@@ -8,7 +8,7 @@ import os
 import shlex
 import subprocess
 
-from . import Container, ContainerConfig
+from . import Container, ContainerConfigFile
 
 
 class Custom(Container):
@@ -23,8 +23,12 @@ class Custom(Container):
         self.process = None
 
     @classmethod
+    def dynamic_ssh_config(cls) -> bool:
+        return False
+
+    @classmethod
     def config(cls, machine_id, cfgdata, cfgpath):
-        cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
+        cfg = ContainerConfigFile(machine_id, cfgdata, cfgpath)
 
         cfg.prepare = cfgdata["prepare"]
         cfg.launch = cfgdata["launch"]

@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 import re
 
-from .vm import CONTAINERS, ContainerConfig
+from .vm import CONTAINERS, ContainerConfigFile
 
 class Config:
     def __init__(self):
@@ -85,18 +85,16 @@ class Config:
             try:
                 machineclass = CONTAINERS[machineclassname]
             except KeyError:
-                raise ValueError("Unknown Machine type %s" % (
-                    machineclassname)) from None
+                raise ValueError(f"Unknown Machine type {machineclassname!r}") from None
 
             # each machine type requests different config options,
             # these are parsed here.
-            # this should be a a ContainerConfig object.
             machineconfig = machineclass.config(machineid,
                                                 machinecfg,
                                                 cfgpath)
 
-            if not isinstance(machineconfig, ContainerConfig):
-                raise Exception("'%s' did not return ContainerConfig" % (
+            if not isinstance(machineconfig, ContainerConfigFile):
+                raise Exception("'%s' did not return ContainerConfigFile" % (
                     machineclassname))
 
             self.machines[machineid] = (machineconfig, machineclass)

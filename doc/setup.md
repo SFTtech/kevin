@@ -124,6 +124,7 @@ Setting up the guest system depends on the container technology you use.
 
 * [Qemu](container/vm.md)
 * [Podman](container/podman.md)
+* [LXD](container/lxd.md)
 * Your [favorite-to-be-implemented](/falk/vm) backend
 
 

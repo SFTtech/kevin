@@ -2,9 +2,14 @@
 Falk module properties
 """
 
+import asyncio
+import logging
+import shutil
+import os
 from collections import defaultdict
 
 from .config import CFG
+from .protocol import FalkProto
 
 
 class Falk:
@@ -25,6 +30,65 @@ class Falk:
         # contains all used ssh ports
         # hostname -> used ports
         self.used_ports = defaultdict(set)
+
+    def prepare_socket(self):
+        try:
+            os.unlink(CFG.control_socket)
+        except OSError:
+            if os.path.exists(CFG.control_socket):
+                raise
+            else:
+                sockdir = os.path.dirname(CFG.control_socket)
+                if not os.path.exists(sockdir):
+                    try:
+                        logging.info("creating socket directory '%s'", sockdir)
+                        os.makedirs(sockdir, exist_ok=True)
+                    except PermissionError as exc:
+                        raise exc from None
+
+    async def run(self):
+        logging.warning("listening on '%s'...", CFG.control_socket)
+
+        loop = asyncio.get_running_loop()
+        proto_tasks = set()
+
+        def create_proto():
+            """ creates the asyncio protocol instance """
+            proto = FalkProto(self)
+
+            # create message "worker" task
+            proto_task = loop.create_task(proto.process_messages())
+            proto_tasks.add(proto_task)
+
+            proto_task.add_done_callback(
+                lambda fut: proto_tasks.remove(proto_task))
+
+            return proto
+
+        server = await loop.create_unix_server(create_proto, CFG.control_socket)
+
+        if CFG.control_socket_group:
+            # this only works if the current user is a member of the
+            # target group!
+            shutil.chown(CFG.control_socket, None, CFG.control_socket_group)
+
+        if CFG.control_socket_permissions:
+            mode = int(CFG.control_socket_permissions, 8)
+            os.chmod(CFG.control_socket, mode)
+
+        try:
+            await server.serve_forever()
+        except asyncio.CancelledError:
+            logging.info("exiting...")
+            logging.warning("served %d connections", self.handle_id)
+
+            for proto_task in proto_tasks:
+                proto_task.cancel()
+
+            await asyncio.gather(*proto_tasks,
+                                 return_exceptions=True)
+
+            raise
 
     def register_free_port(self, hostname):
         """
@@ -76,7 +140,9 @@ class Falk:
         remove the machine handle with given id.
         """
         machine = self.running[machine_id]
-        self.used_ports[machine.ssh_host].remove(machine.ssh_port)
+
+        if not machine.dynamic_ssh_config():
+            self.used_ports[machine.ssh_host].remove(machine.ssh_port)
 
         del self.running[machine_id]
 

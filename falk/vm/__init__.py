@@ -2,17 +2,21 @@
 VM management functionality
 """
 
+from __future__ import annotations
+
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
 import logging
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 
 # container class name -> class mapping
 # it's populated by the metaclass below,
 # which is triggered by the imports at the end of this file.
-CONTAINERS = dict()
+CONTAINERS: dict[str, Container] = dict()
 
 
 class ContainerMeta(ABCMeta):
@@ -24,9 +28,19 @@ class ContainerMeta(ABCMeta):
         CONTAINERS[cls.containertype()] = cls
 
 
+@dataclass
 class ContainerConfig:
+    machine_id: str
+    ssh_user: str | None = None
+    ssh_host: str | None = None
+    ssh_port: int | None = None
+    ssh_known_host_key: str | None = None
+    ssh_known_host_key_file: str | None = None
+
+
+class ContainerConfigFile(ContainerConfig):
     """
-    Configuration for a container.
+    Configuration for a falk-managed container.
     Guarantees the existence of:
      * VM access data (SSH)
      * Machine ID     (id unique in this falk instance)
@@ -34,18 +48,14 @@ class ContainerConfig:
 
     Created from a config dict that contains key-value pairs.
     """
-    def __init__(self, machine_id, cfg, cfgpath):
+    def __init__(self, machine_id: str, cfg: dict[str, str], cfgpath: Path) -> None:
+        super().__init__(machine_id)
 
-        # store the machine id
-        self.machine_id = machine_id
         self.cfgpath = cfgpath
 
         config_keys = ("name", "ssh_user", "ssh_host", "ssh_port",
                        "ssh_known_host_key", "ssh_known_host_key_file")
-
-        # set all config keys to None.
-        for key in config_keys:
-            setattr(self, key, None)
+        self.name = None
 
         # matches an /etc/ssh/ssh_host*_key.pub file
         # and ~/.ssh/known_hosts line
@@ -55,23 +65,12 @@ class ContainerConfig:
 
         host_key_pattern = re.compile(host_key_entry)
 
-
         # standard keys that exist for every machine.
         # more config options are specified in each container type,
         # e.g. Qemu, Xen, ...
         for key in config_keys:
 
             value = cfg.get(key)
-
-            # legacy compatibility:
-            # ssh_known_host_key was named ssh_key before.
-            if key == "ssh_known_host_key" and not value:
-                value = cfg.get("ssh_key")
-                if value:
-                    logging.warning("[vm] \x1b[33mwarning\x1b[m: "
-                                    "'%s' uses deprecated option 'ssh_key', "
-                                    "which is now called 'ssh_known_host_key'",
-                                    self.machine_id)
 
             if not value:
                 continue
@@ -125,6 +124,11 @@ class ContainerConfig:
                 # simply copy the value from the config:
                 setattr(self, key, value)
 
+        if self.ssh_host == "__dynamic__" and not self.ssh_port:
+            raise ValueError("[vm] \x1b[33mwarning\x1b[m: "
+                             "'%s' has no dynamic ssh_host, but no ssh port specified",
+                             self.machine_id)
+
         # set default values for missing entries
         if not self.ssh_host:
             # if host is not specified, assume the falk localhost
@@ -133,7 +137,6 @@ class ContainerConfig:
                             "assuming localhost",
                             self.machine_id)
             self.ssh_host = "localhost"
-
 
         if not self.ssh_known_host_key:
             logging.warning("[vm] \x1b[33mwarning\x1b[m: "
@@ -162,7 +165,7 @@ class Container(metaclass=ContainerMeta):
     for all machines of the same type.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: ContainerConfig):
         if not isinstance(cfg, ContainerConfig):
             raise ValueError("not a container config: %s" % cfg)
         self.cfg = cfg
@@ -171,10 +174,11 @@ class Container(metaclass=ContainerMeta):
         self.ssh_known_host_key = self.cfg.ssh_known_host_key
         self.ssh_port = self.cfg.ssh_port
 
-        if self.ssh_port is None:
-            raise ValueError("ssh port not yet set!")
-        if self.ssh_user is None:
-            raise ValueError("ssh user not set!")
+        if not self.dynamic_ssh_config():
+            if self.ssh_port is None:
+                raise ValueError("ssh port not yet set!")
+            if self.ssh_user is None:
+                raise ValueError("ssh user not set!")
 
     @classmethod
     def containertype(cls):
@@ -183,7 +187,18 @@ class Container(metaclass=ContainerMeta):
 
     @classmethod
     @abstractmethod
-    def config(cls, machine_id, cfgdata, cfgpath):
+    def dynamic_ssh_config(cls) -> bool:
+        """
+        return True if the container can fetch its ssh config after launch
+        False if the ssh config has to be determined before start (to allocate a new port)
+        TODO: make dependent on ContainerConfig, because a container backend could support both.
+        this info is then fetched in `connection_info`.
+        """
+        raise NotImplementedError()
+
+    @classmethod
+    @abstractmethod
+    def config(cls, machine_id, cfgdata, cfgpath) -> ContainerConfigFile:
         """
         Create configuration dict for this container type.
         This method allows container-type specific config options.
@@ -191,12 +206,12 @@ class Container(metaclass=ContainerMeta):
         machine_id: the unique id of the machine in the cfgfile
         cfgdata: key-value pairs from configuration file
         cfgpath: folder where the config files was in
-        returns: ContainerConfig object
+        returns: ContainerConfigFile object
         """
         raise NotImplementedError()
 
     @abstractmethod
-    async def prepare(self, manage=False):
+    async def prepare(self, manage: bool = False) -> None:
         """
         Prepares the launch of the container,
         e.g. by creating a temporary runimage.
@@ -204,15 +219,20 @@ class Container(metaclass=ContainerMeta):
         pass
 
     @abstractmethod
-    async def launch(self):
+    async def launch(self) -> None:
         """ Launch the virtual machine container """
         pass
 
-    async def status(self):
+    async def status(self) -> dict[str, Any]:
         """ Return runtime information for the container """
 
         return {
             "running": await self.is_running(),
+        }
+
+    async def connection_info(self) -> dict[str, Any]:
+        """ Return infos about how to connect to the container """
+        return {
             "ssh_user": self.ssh_user,
             "ssh_host": self.ssh_host,
             "ssh_port": self.ssh_port,
@@ -220,7 +240,7 @@ class Container(metaclass=ContainerMeta):
         }
 
     @abstractmethod
-    async def is_running(self):
+    async def is_running(self) -> bool:
         """
         Return if the container is still running.
         """
@@ -244,5 +264,5 @@ class Container(metaclass=ContainerMeta):
         pass
 
 
-# force class definitions too fill CONTAINERS dict
-from . import qemu, custom, podman
+# force module imports to register them
+from . import qemu, custom, podman, lxd

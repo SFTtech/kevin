@@ -58,7 +58,7 @@ class Message(metaclass=MessageMeta):
     """
 
     # member export blacklist to prevent members from being dump()ed
-    BLACKLIST = set()
+    BLACKLIST: set[str] = set()
 
     def __init__(self):
         pass
@@ -504,10 +504,25 @@ class VMStatus(Message):
     """
     Shows status information about a selected VM.
     """
-    def __init__(self, run_id, running, ssh_user, ssh_host, ssh_port, ssh_known_host_key):
+    def __init__(self, run_id, running):
         super().__init__()
         self.run_id = int(run_id)
         self.running = running
+
+
+class GetConnectionInfo(RequestID):
+    """
+    Request connection information about the selected VM.
+    """
+    pass
+
+
+class ConnectionInfo(Message):
+    """
+    Shows connection information about a selected VM.
+    """
+    def __init__(self, ssh_user, ssh_host, ssh_port, ssh_known_host_key):
+        super().__init__()
         self.ssh_user = ssh_user
         self.ssh_host = ssh_host
         self.ssh_port = int(ssh_port)

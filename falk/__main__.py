@@ -5,14 +5,11 @@ Falk is the VM provider for Kevin CI.
 import argparse
 import asyncio
 import logging
-import os
-import shutil
 
 from kevin.util import log_setup
 
 from . import Falk
 from .config import CFG
-from .protocol import FalkProto
 
 
 def main():
@@ -36,7 +33,7 @@ def main():
 
     log_setup(args.verbose - args.quiet)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
 
     # enable asyncio debugging
     loop.set_debug(args.debug)
@@ -45,77 +42,15 @@ def main():
     logging.debug("[cfg] loading...")
     CFG.load(args.config)
 
-    try:
-        os.unlink(CFG.control_socket)
-    except OSError:
-        if os.path.exists(CFG.control_socket):
-            raise
-        else:
-            sockdir = os.path.dirname(CFG.control_socket)
-            if not os.path.exists(sockdir):
-                try:
-                    logging.info("creating socket directory '%s'", sockdir)
-                    os.makedirs(sockdir, exist_ok=True)
-                except PermissionError as exc:
-                    raise exc from None
-
     logging.error("\x1b[1;32mstarting falk...\x1b[m")
 
     # state storage
     falk = Falk()
-
-    logging.warning("listening on '%s'...", CFG.control_socket)
-
-    proto_tasks = set()
-
-    def create_proto():
-        """ creates the asyncio protocol instance """
-        proto = FalkProto(falk)
-
-        # create message "worker" task
-        proto_task = loop.create_task(proto.process_messages())
-        proto_tasks.add(proto_task)
-
-        proto_task.add_done_callback(
-            lambda fut: proto_tasks.remove(proto_task))
-
-        return proto
-
-    srv_coro = loop.create_unix_server(create_proto, CFG.control_socket)
-    server = loop.run_until_complete(srv_coro)
-
-    if CFG.control_socket_group:
-        # this only works if the current user is a member of the
-        # target group!
-        shutil.chown(CFG.control_socket, None, CFG.control_socket_group)
-
-    if CFG.control_socket_permissions:
-        mode = int(CFG.control_socket_permissions, 8)
-        os.chmod(CFG.control_socket, mode)
-
+    falk.prepare_socket()
     try:
-        loop.run_forever()
+        asyncio.run(falk.run(), debug=args.debug)
     except KeyboardInterrupt:
-        print("\nexiting...")
-
-    logging.warning("served %d connections", falk.handle_id)
-
-    logging.info("cleaning up...")
-
-    for proto_task in proto_tasks:
-        proto_task.cancel()
-
-    # execute the cancellations
-    loop.run_until_complete(asyncio.gather(*proto_tasks,
-                                           return_exceptions=True))
-
-    # server teardown
-    server.close()
-    loop.run_until_complete(server.wait_closed())
-
-    loop.stop()
-    loop.run_forever()
-    loop.close()
+        pass
 
     print("cya!")
 

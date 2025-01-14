@@ -10,7 +10,7 @@ import logging
 
 from kevin.falk import FalkSSH, FalkSocket
 from kevin.process import SSHProcess
-from kevin.util import parse_connection_entry, log_setup
+from kevin.util import parse_listen_entry, log_setup
 
 
 async def spawn_shell(falk, vm_id, volatile, command):
@@ -89,7 +89,7 @@ def main():
     # enable asyncio debugging
     loop.set_debug(args.debug)
 
-    user, connection, location, key = parse_connection_entry(
+    user, connection, location, key = parse_listen_entry(
         "falk_id", args.falk_id, require_key=False)
 
     if connection == "ssh":

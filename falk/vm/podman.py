@@ -10,7 +10,7 @@ import uuid
 import shlex
 import subprocess
 
-from . import Container, ContainerConfig
+from . import Container, ContainerConfigFile
 
 
 class Podman(Container):
@@ -24,8 +24,12 @@ class Podman(Container):
         self.container_id = None
 
     @classmethod
+    def dynamic_ssh_config(cls) -> bool:
+        return False
+
+    @classmethod
     def config(cls, machine_id, cfgdata, cfgpath):
-        cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
+        cfg = ContainerConfigFile(machine_id, cfgdata, cfgpath)
 
         cfg.base_image = cfgdata["base_image"]
         cfg.command = cfgdata["command"]

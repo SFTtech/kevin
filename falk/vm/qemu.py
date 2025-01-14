@@ -9,7 +9,7 @@ from pathlib import Path
 import shlex
 import subprocess
 
-from . import Container, ContainerConfig
+from . import Container, ContainerConfigFile
 
 
 class QEMU(Container):
@@ -24,8 +24,12 @@ class QEMU(Container):
         self.running_image = None
 
     @classmethod
+    def dynamic_ssh_config(cls) -> bool:
+        return True
+
+    @classmethod
     def config(cls, machine_id, cfgdata, cfgpath):
-        cfg = ContainerConfig(machine_id, cfgdata, cfgpath)
+        cfg = ContainerConfigFile(machine_id, cfgdata, cfgpath)
 
         base_img = Path(cfgdata["base_image"])
         if not base_img.is_absolute():
