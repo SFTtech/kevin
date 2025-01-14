@@ -333,7 +333,7 @@ class GitHubHookHandler(HookHandler):
             self.write(repr(exc).encode())
             self.set_status(400, "Bad request")
 
-        except Exception as exc:
+        except Exception:
             logging.exception("[github] \x1b[31;1mexception in post hook\x1b[m")
 
             self.set_status(500, "Internal error")
@@ -539,7 +539,7 @@ class GitHubBuildStatusUpdater(Watcher):
         to allow near real-time status information.
         """
 
-        if update == StopIteration:
+        if update is StopIteration:
             return
 
         if isinstance(update, GitHubStatusURL):
@@ -675,7 +675,7 @@ class GitHubBuildStatusUpdater(Watcher):
                         break
                 except Exception:
                     logging.exception("[github] exception occured when sending"
-                                      "%s API request to '%s'", method, url)
+                                      " %s API request to '%s'", method, url)
 
                 await asyncio.sleep(retry_delay)
 

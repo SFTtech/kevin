@@ -78,7 +78,7 @@ class ContainerConfig:
 
             # ssh key loading:
             if key == "ssn_known_host_key":
-                match = host_key_pattern.match(entry, value)
+                match = host_key_pattern.match(value)
                 if not match:
                     raise ValueError("malformed ssh_known_host_key entry: "
                                      "%s" % value)
@@ -109,7 +109,7 @@ class ContainerConfig:
                         if not line.strip():
                             continue
 
-                        match = host_key_pattern.match(entry, line)
+                        match = host_key_pattern.match(line)
 
                         if not match:
                             raise ValueError(
