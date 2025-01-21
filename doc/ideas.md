@@ -7,12 +7,6 @@ If you'd like to start implementing one of those, you can
 ask on our IRC (freenode.net #sfttech) for assistance.
 
 
-#### Job restarting
-
-* Restart a job because it failed in unrelated step (e.g. network timeout)
-* Authentication maybe via github oauth
-
-
 #### Job finish actions
 
 * Notifications via IRC, email, ...

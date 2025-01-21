@@ -2,12 +2,15 @@
 Job processing code
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import shutil
 import time as clock
 import traceback
+import typing
 
 from .action import Action
 from .chantal import Chantal
@@ -15,10 +18,15 @@ from .config import CFG
 from .falkvm import VMError
 from .process import (ProcTimeoutError, ProcessFailed, ProcessError)
 from .update import (Update, JobState, JobUpdate, StepState,
-                     StdOut, OutputItem, QueueActions, JobCreated,
+                     StdOut, OutputItem, QueueActions,
                      GeneratedUpdate, JobEmergencyAbort, RegisterActions)
 from .watchable import Watchable
 from .watcher import Watcher
+
+if typing.TYPE_CHECKING:
+    from .build import Build
+    from .project import Project
+    from typing import TextIO
 
 
 class JobTimeoutError(Exception):
@@ -40,25 +48,27 @@ class JobAction(Action):
 
     The inheritance alone leads to the availability of
     a [job] action in the project config file.
+
+    This is what causes a new job to be created.
+    In order for it to be reconstructed from storage, Build re-creates it
+    due to the BuildJobCreated updates it persisted.
     """
 
     @classmethod
     def name(cls):
         return "job"
 
-    def __init__(self, cfg, project):
+    def __init__(self, cfg, project: Project):
         super().__init__(cfg, project)
         self.job_name = cfg["name"]
         self.descripton = cfg.get("description")
         self.vm_name = cfg["machine"]
 
-    async def get_watcher(self, build, completed):
+    async def get_watcher(self, build: Build, completed) -> Watcher | None:
         if completed:
             return None
 
-        new_job = Job(build, self.project, self.job_name, self.vm_name)
-        await new_job.send_creation_notification()
-        return new_job
+        return await build.create_job(self.job_name, self.vm_name)
 
 
 class Job(Watcher, Watchable):
@@ -70,7 +80,7 @@ class Job(Watcher, Watchable):
           not happen. for that, a "reset" must be implemented.
           The restart is not implemented either, though.
     """
-    def __init__(self, build, project, name, vm_name):
+    def __init__(self, build: Build, project: Project, name: str, vm_name: str):
         super().__init__()
 
         # the project and build this job is invoked by
@@ -92,7 +102,7 @@ class Job(Watcher, Watchable):
         self.tasks = set()
 
         # List of job status update JSON objects.
-        self.updates = list()
+        self._updates: list[JobUpdate] = list()
 
         # Internal cache, used when erroring all remaining pending states.
         self.pending_steps = set()
@@ -120,13 +130,13 @@ class Job(Watcher, Watchable):
         self.path = build.path.joinpath(self.name)
 
         # the job updates storage file
-        self._updates_fd = None
+        self._updates_fd: TextIO | None = None
 
         # if all our updates are combined
         self._updates_merged = False
 
         # are all updates from the job in the update list already?
-        self.all_loaded = False
+        self._all_loaded = False
 
         self.git_config = {
             "shallow": self.project.cfg.git_fetch_depth,
@@ -139,12 +149,6 @@ class Job(Watcher, Watchable):
                 self.completed = self.path.joinpath("_completed").stat().st_mtime
             except FileNotFoundError:
                 pass
-
-    async def send_creation_notification(self):
-        """
-        Tell the our watchers that this job is was created
-        """
-        await self.send_update(JobCreated(self.name, self.vm_name))
 
     def _merge_updates(self) -> None:
         """
@@ -162,10 +166,10 @@ class Job(Watcher, Watchable):
         output: list[str] = list()
         other_updates: list[JobUpdate] = list()
 
-        for update in self.updates:
+        for update in self._updates:
             match update:
-                case JobCreated() | GeneratedUpdate():
-                    # a build stores JobCreated; generated updates are not persistent.
+                case GeneratedUpdate():
+                    # generated updates are not persistent.
                     continue
 
                 case JobState():
@@ -203,16 +207,34 @@ class Job(Watcher, Watchable):
 
         # replace the old updates file
         merged_update_path.rename(self.path.joinpath("_updates"))
-        self.updates = updates
+        self._updates = updates
         self._updates_merged = True
 
-    async def load_from_fs(self):
+        # build caches the update messages - so it needs to be notified.
+        self.build.merge_job_updates(self.name, self._updates)
+
+    async def load(self) -> bool:
         """
-        Ensure the job is reconstructed from filesystem.
+        maybe load a job from permanent storage.
+
+        returns: is it was reconstructed.
         """
 
         if CFG.args.volatile:
             return False
+
+        if not self._all_loaded:
+            return await self._load_from_fs()
+
+        return False
+
+    async def _load_from_fs(self):
+        """
+        Ensure the job is reconstructed from filesystem.
+        """
+
+        if self._all_loaded:
+            raise Exception("tried to load job that is loaded already")
 
         # lines of json, for incremental updates
         updates_file = self.path.joinpath("_updates")
@@ -220,22 +242,21 @@ class Job(Watcher, Watchable):
         if not updates_file.is_file():
             return False
 
-        if not self.all_loaded:
-            with updates_file.open() as updates_file:
-                for json_line in updates_file:
-                    await self.send_update(Update.construct(json_line),
-                                           reconstruct=True)
+        with updates_file.open() as updates_file:
+            for json_line in updates_file:
+                await self.send_update(Update.construct(json_line),
+                                       reconstruct=True)
 
-            self._merge_updates()
+        self._merge_updates()
 
-            logging.debug(f"reconstructed Job {id(self)} {self} from fs")
+        logging.debug(f"reconstructed Job {id(self)} {self} from fs")
 
-            # jup, we reconstructed.
-            self.all_loaded = True
+        # jup, we reconstructed.
+        self._all_loaded = True
 
         return True
 
-    def purge_fs(self):
+    def _purge_fs(self):
         """
         Remove all the files from this build.
         """
@@ -260,17 +281,13 @@ class Job(Watcher, Watchable):
             self.name,
             self.build.commit_hash)
 
-    def on_send_update(self, update, reconstruct=False):
+    def on_send_update(self, update: Update, reconstruct=False):
         """
         When an update is to be sent to all watchers
         """
 
         if update is StopIteration:
             return
-
-        # store the update in the list of updates
-        # that are replayed to each new subscriber
-        replay = True
 
         # when reconstructing, the update just came from the file
         fs_save = not reconstruct
@@ -279,27 +296,26 @@ class Job(Watcher, Watchable):
             raise Exception("job wants to send update "
                             f"after being completed: {update}")
 
+        if not isinstance(update, JobUpdate):
+            # we only send job updates
+            raise Exception(f"sent non job-update from job: {update}")
+
+        # run the job-update hook.
+        # when it's a StepUpdate, this manages the pending_steps set.
+        update.apply_to(self)
+
+        # store the update in the list of updates
+        # that are replayed to each new subscriber
+        self._updates.append(update)
+
         if isinstance(update, JobState):
             # the updates-merged flag is only ever set after a job ran through
             # so we can assume it for all other updates.
             # the merging retains only one JobState, so we can track merge-status through it.
             self._updates_merged = update.updates_merged
 
-        if isinstance(update, JobUpdate):
-            # run the job-update hook.
-            # when it's a StepUpdate, this manages the pending_steps set.
-            update.apply_to(self)
-
         if isinstance(update, GeneratedUpdate):
-            replay = False
             fs_save = False
-
-        if isinstance(update, JobCreated):
-            # this is stored by the build.
-            fs_save = False
-
-        if replay:
-            self.updates.append(update)
 
         if not fs_save or CFG.args.volatile:
             # don't write the update to the job storage
@@ -312,26 +328,26 @@ class Job(Watcher, Watchable):
         self._updates_fd.write(update.json())
         self._updates_fd.write("\n")
 
-    async def on_update(self, update):
+    async def on_update(self, update: Update):
         """
         When this job receives updates from any of its watched
         watchables, the update is processed here.
 
-        That means normally: the Build notifies this Job.
+        That means normally: the Build notifies this Job to queue/run itself.
         """
 
         if isinstance(update, RegisterActions):
             await self.register_to_build()
 
         elif isinstance(update, QueueActions):
-            if not self.all_loaded:
+            if not self._all_loaded:
 
                 if self.completed:
                     # we can reconstruct as the _completed file exists.
-                    await self.load_from_fs()
+                    await self.load()
 
                 else:
-                    self.purge_fs()
+                    self._purge_fs()
                     # run the job by adding it to the processing queue
                     await update.queue.add_job(self)
                     await self.set_state("waiting", "enqueued")
@@ -369,7 +385,7 @@ class Job(Watcher, Watchable):
 
     async def on_watcher_registered(self, watcher):
         # send all previous job updates to the watcher
-        for update in self.updates:
+        for update in self._updates:
             await watcher.on_update(update)
 
         # and send stop if this job is finished
@@ -391,6 +407,10 @@ class Job(Watcher, Watchable):
         """ Attempts to build the job. """
 
         try:
+            if self._all_loaded:
+                raise Exception("tried to run a job that was loaded from storage.")
+            self._all_loaded = True
+
             if self.completed:
                 raise Exception("tried to run a completed job!")
 
@@ -573,7 +593,6 @@ class Job(Watcher, Watchable):
 
             # the job is completed!
             self.completed = clock.time()
-            self.all_loaded = True
 
             if not CFG.args.volatile:
                 # the job is now officially completed

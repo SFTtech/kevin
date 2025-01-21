@@ -2,9 +2,17 @@
 Build action base class definition.
 """
 
+from __future__ import annotations
+
+import typing
 from abc import abstractmethod
 
 from .service_meta import Service
+
+if typing.TYPE_CHECKING:
+    from .watcher import Watcher
+    from .project import Project
+    from .build import Build
 
 
 class Action(Service):
@@ -13,11 +21,11 @@ class Action(Service):
     some actions, e.g. sending mail, setting status, etc.
     """
 
-    def __init__(self, cfg, project):
+    def __init__(self, cfg, project: Project):
         super().__init__(cfg, project)
 
     @abstractmethod
-    async def get_watcher(self, build, completed):
+    async def get_watcher(self, build: Build, completed: bool) -> Watcher | None:
         """
         Return a watcher object which is then registered for build updates.
         """

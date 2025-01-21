@@ -14,8 +14,8 @@ but you can use it for _any_ project!
 Kevin can create doc files, bundle software, run tests, make screenshots,
 end world hunger, calculate the last digits of pi: all in a custom container.
 
-Requires [Python >=3.6](https://www.python.org/),
-[tornado >=5.1](http://www.tornadoweb.org/) and [qemu](http://qemu-project.org).
+Requires [Python >=3.11](https://www.python.org/),
+[aiohttp](https://aiohttp.org/) and some container/vm to run jobs in ([qemu](http://qemu-project.org), podman, lxd, ...).
 
 
 ### How?

@@ -2,6 +2,7 @@
 Various utility functions.
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -244,3 +245,14 @@ class AsyncWith:
 
     def __exit__(self, exc, value, traceback):
         raise Exception("use async with!")
+
+
+class TerminateTaskGroup(Exception):
+    """ Exception to terminate asyncio.TaskGroup """
+    pass
+
+
+async def terminate_task_group(when: asyncio.Event):
+    """ task part of the TaskGroup which triggers termination when the event fires """
+    await when.wait()
+    raise TerminateTaskGroup()

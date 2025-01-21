@@ -16,6 +16,11 @@ ERROR_STATES = {"error"}
 UPDATE_CLASSES = {}
 
 
+UPDATE_COMPAT = {
+    "JobCreated": "BuildJobCreated",
+}
+
+
 class UpdateMeta(ABCMeta):
     """ Update metaclass. Adds the classes to UPDATE_CLASSES. """
     def __init__(cls, name, bases, classdict):
@@ -30,7 +35,7 @@ class Update(metaclass=UpdateMeta):
     """
 
     # which of the member variables should not be sent via json?
-    BLACKLIST = set()
+    BLACKLIST: set[str] = set()
 
     def dump(self):
         """
@@ -66,6 +71,8 @@ class Update(metaclass=UpdateMeta):
         """
         data = json.loads(jsonmsg)
         classname = data['class']
+        # mapping of old class names
+        classname = UPDATE_COMPAT.get(classname, classname)
         del data['class']
         try:
             return UPDATE_CLASSES[classname](**data)
@@ -85,21 +92,7 @@ class GeneratedUpdate(Update):
     pass
 
 
-class JobUpdate(Update):
-    """
-    An update that is assigned to a job.
-    """
-
-    def apply_to(self, job):
-        """
-        Update-specific code to modify the thing object on job.update().
-        No-op by default.
-        Raise to report errors.
-        """
-        pass
-
-
-class JobCreated(JobUpdate):
+class BuildJobCreated(Update):
     """
     Update that notifies the creation of a job.
     """
@@ -165,13 +158,30 @@ class BuildState(GeneratedUpdate, State):
         State.__init__(self, project_name, build_id, state, text, time)
 
 
+class JobUpdate(Update):
+    """
+    An update that is emitted from a job.
+    """
+
+    def __init__(self, job_name):
+        self.job_name = job_name
+
+    def apply_to(self, job):
+        """
+        Update-specific code to modify the thing object on job.update().
+        No-op by default.
+        Raise to report errors.
+        """
+        pass
+
+
 class JobState(JobUpdate, State):
     """ Job specific state changes """
 
     def __init__(self, project_name, build_id, job_name,
                  state, text, time=None, updates_merged=False):
+        JobUpdate.__init__(self, job_name)
         State.__init__(self, project_name, build_id, state, text, time)
-        self.job_name = job_name
         self.updates_merged = updates_merged
 
     def set_updates_merged(self):
@@ -196,6 +206,7 @@ class StepState(JobUpdate, State):
                  step_name, state, text, time=None,
                  step_number=None):
 
+        JobUpdate.__init__(self, job_name)
         State.__init__(self, project_name, build_id, state, text, time)
 
         if not step_name.isidentifier():
@@ -203,7 +214,6 @@ class StepState(JobUpdate, State):
         if time is None:
             time = clock.time()
 
-        self.job_name = job_name
         self.step_name = step_name
         self.step_number = step_number
 
@@ -214,6 +224,8 @@ class StepState(JobUpdate, State):
 class OutputItem(JobUpdate):
     """ Job has produced an output item """
     def __init__(self, job_name, name, isdir, size=0):
+        JobUpdate.__init__(self, job_name)
+
         if not name:
             raise ValueError("output item name must not be empty")
         if not name[0].isalpha():
@@ -221,7 +233,6 @@ class OutputItem(JobUpdate):
         if not name.isprintable() or (set("/\\'\"") & set(name)):
             raise ValueError("output item name contains illegal characters")
 
-        self.job_name = job_name
         self.name = name
         self.isdir = isdir
         self.size = size
@@ -248,10 +259,11 @@ class OutputItem(JobUpdate):
 class StdOut(JobUpdate):
     """ Process has produced output on the TTY """
     def __init__(self, job_name, data):
+        JobUpdate.__init__(self, job_name)
+
         if not isinstance(data, str):
             raise TypeError("StdOut.data not str: %r" % (data,))
 
-        self.job_name = job_name
         self.data = data
 
 

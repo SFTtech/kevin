@@ -2,13 +2,20 @@
 Project configuration file definition
 """
 
+from __future__ import annotations
+
 from configparser import ConfigParser
 import logging
 import re
+import typing
 
 from .service_meta import SERVICES
 from .service import import_all as import_all_services
 from .util import parse_size, parse_time
+
+if typing.TYPE_CHECKING:
+    from .service_meta import Service
+    from .project import Project
 
 
 class Config:
@@ -22,12 +29,12 @@ class Config:
     with the followed config.
     """
 
-    def __init__(self, filename, project):
+    def __init__(self, filename: str, project: Project):
         # parse the project config file
         raw = ConfigParser()
         raw.read(filename)
 
-        self.services = list()
+        self.services: list[Service] = list()
 
         current_section = None
 
@@ -75,6 +82,7 @@ class Config:
 
                 # create the service with the config section
                 # e.g. GitHubHook(config, project)
+                # or job.0 becomes JobAction
                 module = modulecls(config, project)
 
                 self.services.append(module)

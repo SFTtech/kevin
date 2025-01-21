@@ -675,7 +675,7 @@ class GitHubBuildStatusUpdater(Watcher):
                         break
                 except Exception:
                     logging.exception("[github] exception occured when sending"
-                                      " %s API request to '%s'", method, url)
+                                      f" {method} API request to {url!r}")
 
                 await asyncio.sleep(retry_delay)
 

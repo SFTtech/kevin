@@ -72,14 +72,18 @@ class JobManager:
             # none of the falks is connected initially
             self.pending_falks.put_nowait(falk)
 
-        # keeping connections to job runners alive
-        self.running = loop.create_task(self.run())
-
     async def run(self):
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self._process())
+        except asyncio.CancelledError:
+            await self._shutdown()
+            raise
+
+    async def _process(self):
         """
         create control connections to all known falks.
         """
-
         while True:
             # wait for any falk that got lost.
             falk = await self.pending_falks.get()
@@ -194,26 +198,16 @@ class JobManager:
         # TODO: if this falk doesn't wanna spawn the vm, try another one.
         return await falk.create_vm(vm_id)
 
-    async def shutdown(self):
+    async def _shutdown(self):
         """
         Terminate Falk connections.
         """
-
-        # cancel the queue processing
-        if not self.running.done():
-            self.running.cancel()
-
-            try:
-                await self.running
-            except asyncio.CancelledError:
-                pass
 
         expected_cancels = len(self.running_reconnects)
 
         # cancel the reconnects tasks
         for reconnect in self.running_reconnects:
             reconnect.cancel()
-
 
         # let all tasks run and gather their cancellation exceptions
         reconnects_canceled = [

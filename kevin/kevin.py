@@ -2,13 +2,21 @@
 Main Queue and Falk management entity.
 """
 
+from __future__ import annotations
+
+import asyncio
+import typing
+
 from .build_manager import BuildManager
 from .httpd import HTTPD
 from .job_manager import JobManager
-from .jobqueue import Queue
+from .task_queue import TaskQueue
+
+if typing.TYPE_CHECKING:
+    from .config import Config
 
 
-class Kevin:
+async def run(config: Config):
     """
     This is Kevin. He will build your job. Guaranteed to be bug-free(*).
 
@@ -16,45 +24,29 @@ class Kevin:
     which is processed by running each jobs via Falk with Chantal.
 
     (*) Disclaimer: May not actually be bug-free.
+
+    Runs Kevin foreveeeeeerrrrrrrrrr!
     """
 
-    def __init__(self, loop, config):
-        self.loop = loop
+    # job distribution
+    job_manager = JobManager(asyncio.get_running_loop(), config)
 
-        # TODO: load "plugins"
-        # loader = importlib.machinery.SourceFileLoader(m, 'lol/' + m + '.py')
-        # b.register(loader.load_module(m))
+    # build creation
+    build_manager = BuildManager()
 
-        # job distribution
-        self.job_manager = JobManager(loop, config)
+    # queue where build jobs will end up in
+    queue = TaskQueue(asyncio.get_running_loop(), job_manager,
+                      config.max_jobs_running, config.max_jobs_queued)
 
-        # build creation
-        self.build_manager = BuildManager()
+    # webserver: receives hooks and provides websocket api
+    httpd = HTTPD(config.urlhandlers, queue, build_manager)
 
-        # queue where build jobs will end up in
-        self.queue = Queue(loop, self.job_manager,
-                           config.max_jobs_running, config.max_jobs_queued)
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(queue.run())
+            tg.create_task(job_manager.run())
 
-        # webserver: receives hooks and provides websocket api
-        self.httpd = HTTPD(config.urlhandlers, self.queue, self.build_manager)
-
-    def run(self):
-        """
-        Run Kevin foreveeeeeerrrrrrrrrr!
-        """
-
-        self.loop.run_forever()
-
-    async def shutdown(self):
-        """
-        Cancel running jobs and stop processing new tasks.
-        """
-
+    except asyncio.CancelledError:
         # stop http listening
-        await self.httpd.stop()
-
-        # terminate falk connections
-        await self.job_manager.shutdown()
-
-        # terminate the job waiting queue
-        await self.queue.shutdown()
+        await httpd.stop()
+        raise

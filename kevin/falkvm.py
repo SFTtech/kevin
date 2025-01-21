@@ -45,6 +45,10 @@ class FalkVM(Container):
         self.falk = falk
 
     @classmethod
+    def dynamic_ssh_config(cls):
+        return True
+
+    @classmethod
     def config(cls, machine_id, cfgdata, cfgpath):
         raise Exception("config() on the VM controller called")
 
@@ -58,6 +62,16 @@ class FalkVM(Container):
         msg = await self.falk.query(messages.Launch(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
             raise VMError(f"Failed to launch machine: {msg.msg}")
+
+        msg = await self.falk.query(messages.GetConnectionInfo(run_id=self.run_id))
+        if not isinstance(msg, messages.ConnectionInfo):
+            raise VMError(f"Failed to get connection info: {msg.msg}")
+
+        # this is used to connect to the remote container instance!
+        self.ssh_host = msg.ssh_host
+        self.ssh_port = msg.ssh_port
+        self.ssh_known_host_key = msg.ssh_known_host_key
+        self.ssh_user = msg.ssh_user
 
     async def status(self):
         return await self.falk.query(messages.Status(run_id=self.run_id))
@@ -94,7 +108,7 @@ class FalkVM(Container):
             await asyncio.sleep(retry_delay)
 
             if not raw_acquired:
-                logging.debug("testing for ssh port...")
+                logging.debug("testing for ssh port %s:%d...", self.ssh_host, self.ssh_port)
 
                 established = loop.create_future()
 
@@ -127,7 +141,7 @@ class FalkVM(Container):
                         logging.debug("    \x1b[31;5mtimeout\x1b[m!")
 
             else:
-                logging.debug("testing for ssh service on port...")
+                logging.debug("testing for ssh service %s@%s:%d...", self.ssh_user, self.ssh_host, self.ssh_port)
 
                 async with SSHProcess(["true"],
                                       self.ssh_user,

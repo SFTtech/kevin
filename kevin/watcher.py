@@ -3,6 +3,14 @@ Job watching.
 You can receive job updates with a Watcher.
 """
 
+from __future__ import annotations
+
+import typing
+
+if typing.TYPE_CHECKING:
+    from .update import Update
+
+
 class Watcher:
     """
     Abstract event watcher. Gets notified by a Watchable.
@@ -11,7 +19,7 @@ class Watcher:
     each update will be supplied to the watcher then.
     """
 
-    async def on_update(self, update):
+    async def on_update(self, update: Update):
         """
         Process the update here.
         """

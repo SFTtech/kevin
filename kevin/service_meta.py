@@ -2,6 +2,13 @@
 Supported service base definitions.
 """
 
+from __future__ import annotations
+
+import typing
+
+if typing.TYPE_CHECKING:
+    from .project import Project
+
 
 from abc import ABCMeta, abstractmethod
 
@@ -39,7 +46,7 @@ class Service(metaclass=ServiceMeta):
 
     @classmethod
     @abstractmethod
-    def name(cls):
+    def name(cls) -> str:
         """
         Return the service name.
         This is the key that has to be placed in the project config.
@@ -48,13 +55,10 @@ class Service(metaclass=ServiceMeta):
         """
         pass
 
-    def __init__(self, cfg, project):
-        """
-        project must be a project.Project.
-        """
-        del cfg  # currently unused. subclasses use it, though.
+    def __init__(self, cfg, project: Project):
+        del cfg  # unused here. subclasses use it, though.
         self.project = project
 
-    def get_project(self):
+    def get_project(self) -> Project:
         """ Return the associated project """
         return self.project

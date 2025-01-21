@@ -10,9 +10,10 @@ class BuildManager:
     Manages which builds are in-memory.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # stores known builds by (project, hash) -> build
-        self.builds = dict()
+        # TODO: limit max cached builds, but only if they are not currently running/watched
+        self.builds: dict[tuple, Build] = dict()
 
     async def new_build(self, project, commit_hash, create_new=True,
                         force_rebuild=False):
@@ -25,28 +26,26 @@ class BuildManager:
         if cached_build and not force_rebuild:
             return cached_build
 
+        newbuild = Build(project, commit_hash)
+
+        if force_rebuild:
+            if cached_build:
+                del self.builds[cache_key]
         else:
-            # this tries loading from filesystem
-            newbuild = Build(project, commit_hash)
+            # try loading from filesystem
+            await newbuild.load()
 
-            if force_rebuild:
-                if cached_build:
-                    del self.builds[cache_key]
-            else:
-                # try loading from filesystem
-                await newbuild.load_from_fs()
+        # store build to the cache
+        # newbuild.completed => it could be loaded from fs
+        # create_new => as its a new build, always store it
+        if newbuild.completed or create_new:
+            self.builds[cache_key] = newbuild
+        else:
+            # if the build couldn't be loaded from fs
+            # and it's not a new build
+            newbuild = None
 
-            # store build to the cache
-            # newbuild.completed => it could be loaded from fs
-            # create_new => as its a new build, always store it
-            if newbuild.completed or create_new:
-                self.builds[cache_key] = newbuild
-            else:
-                # if the build couldn't be loaded from fs
-                # and it's not a new build
-                newbuild = None
-
-            return newbuild
+        return newbuild
 
     async def get_build(self, project, commit_hash):
         """

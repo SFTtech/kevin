@@ -24,8 +24,7 @@ class Config:
 
         # web listener config
         self.dyn_port = None
-        self.dyn_address = ipaddress.ip_address("0.0.0.0")
-        self.dyn_host = None
+        self.dyn_address = None
         self.mandy_url = None
         self.dyn_ssl = None
 
@@ -119,7 +118,7 @@ class Config:
             current_section = "web"
             web = raw[current_section]
             self.dyn_port = int(web["dyn_port"])
-            self.dyn_host = web.get("dyn_host")
+            self.dyn_address = web.get("dyn_address", "::1")
             self.static_url = web["static_url"]
             self.mandy_url = web["mandy_url"]
 

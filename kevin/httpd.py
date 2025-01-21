@@ -3,20 +3,28 @@ Web server to receive WebHook notifications from GitHub,
 and provide them in a job queue.
 """
 
+from __future__ import annotations
+
 import asyncio
 from abc import abstractmethod
 import logging
 import traceback
+import typing
 
 from tornado import websocket, web, httpserver
 
 from .config import CFG
 from .trigger import Trigger
 from .update import (
-    JobCreated, JobUpdate, JobState,
+    BuildJobCreated, JobUpdate, JobState,
     StdOut, BuildState, BuildSource, RequestError
 )
 from .watcher import Watcher
+
+if typing.TYPE_CHECKING:
+    from typing import Callable, Any
+    from .task_queue import TaskQueue
+    from .build_manager import BuildManager
 
 
 class HookTrigger(Trigger):
@@ -56,7 +64,7 @@ class HookHandler(web.RequestHandler):
     and notify kevin that there's a job to do.
     """
 
-    def initialize(self, queue, build_manager, triggers):
+    def initialize(self, queue, build_manager: BuildManager, triggers):
         """
         queue: the job queue where the build should be added to
         build_manager: creates and maintains builds
@@ -82,12 +90,12 @@ class HTTPD:
     It also provides the websocket API and plain log streams for curl.
     """
 
-    def __init__(self, external_handlers, queue, build_manager):
+    def __init__(self, external_handlers: dict[tuple[str, Callable[..., Any]], dict | None],
+                 queue: TaskQueue, build_manager: BuildManager):
         """
         external_handlers: (url, handlercls) -> [cfg, cfg, ...]
-        queue: the jobqueue.Queue where new builds/jobs are put in
-        build_manager: build_manager.BuildManager for caching
-                       and restoring buils from disk.
+        queue: the task_queue.TaskQueue where new builds/jobs are put in
+        build_manager: for caching and restoring buils from disk.
         """
 
         # this dict will be the kwargs of each urlhandler
@@ -98,7 +106,7 @@ class HTTPD:
 
         # url handler configuration dict
         # (urlmatch, requesthandlerclass) => custom_args
-        urlhandlers = dict()
+        urlhandlers: dict[tuple[str, Callable[..., Any]], dict | None] = dict()
         urlhandlers[("/", PlainStreamHandler)] = None
         urlhandlers[("/ws", WebSocketHandler)] = None
         urlhandlers[("/robots.txt", RobotsHandler)] = None
@@ -107,19 +115,18 @@ class HTTPD:
 
         # create the tornado application
         # that serves assigned urls to handlers:
-        # [web.URLSpec(match, handler, kwargs)]
-        handlers = list()
-        for (url, handler), custom_args in urlhandlers.items():
+        handlers: list[web.UrlSpec] = list()
+        for (url, handler_fun), custom_args in urlhandlers.items():
             logging.info(f"registering url handler for {url}...")
 
             # custom handlers may have custom kwargs
             if custom_args is not None:
                 kwargs = handler_args.copy()
                 kwargs.update(custom_args)
-                handler = web.URLSpec(url, handler, kwargs)
+                handler = web.URLSpec(url, handler_fun, kwargs)
 
             else:
-                handler = web.URLSpec(url, handler, handler_args)
+                handler = web.URLSpec(url, handler_fun, handler_args)
 
             handlers.append(handler)
 
@@ -128,6 +135,9 @@ class HTTPD:
         # bind http server to tcp port
         self.server = httpserver.HTTPServer(app)
         self.server.listen(port=CFG.dyn_port, address=str(CFG.dyn_address))
+
+    async def run(self):
+        await self.server.start()
 
     async def stop(self):
         """
@@ -140,7 +150,7 @@ class HTTPD:
 class WebSocketHandler(websocket.WebSocketHandler, Watcher):
     """ Provides a job description stream via WebSocket """
 
-    def initialize(self, queue, build_manager):
+    def initialize(self, queue: TaskQueue, build_manager):
         del queue  # unused
 
         self.build_manager = build_manager
@@ -183,10 +193,10 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             # (except for JobState updates, which are treated by the filter above).
             self.filter_ = get_filter(self.get_parameter("filter"))
 
+            # get all previous and new updates
             await self.build.register_watcher(self)
 
-            # trigger the disk-load, if necessary
-            await self.build.reconstruct_jobs(self.get_parameter("filter"))
+            await self.build.load(self.get_parameter("filter"))
 
         except Exception as exc:
             print("websocket handling error:")
@@ -232,7 +242,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             return
 
         if isinstance(update, JobUpdate):
-            if isinstance(update, JobCreated):
+            if isinstance(update, BuildJobCreated):
                 # those are not interesting for the webinterface.
                 return
             if isinstance(update, JobState):

@@ -7,7 +7,7 @@ import asyncio
 import logging
 
 from falk.messages import (Message, ProtoType, Mode, Version, List,
-                           Select, Status, OK, Login, Welcome, Error,
+                           Select, OK, Login, Welcome, Error,
                            Exit)
 from falk.protocol import FalkProto
 from falk.vm import ContainerConfig
@@ -88,16 +88,8 @@ class Falk(ABC):
         # create vm handle in the remote falk.
         run_id = (await self.query(Select(machine_id))).run_id
 
-        # fetch status and ssh config for created vm handle.
-        cfg = (await self.query(Status(run_id))).dump()
-
-        # falk says VM is running on his "localhost",
-        # so we replace that with falks address.
-        if cfg["ssh_host"] == "localhost":
-            cfg["ssh_host"] = self.get_vm_host()
-
         # create the machine config
-        config = ContainerConfig(machine_id, cfg, None)
+        config = ContainerConfig(machine_id)
 
         # create machine from the config
         return FalkVM(config, run_id, self)
