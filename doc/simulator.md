@@ -5,8 +5,7 @@ Hosting site simulator
 To allow development without a test repo e.g. at github,
 we provide a simulator that mimics the api of that service.
 
-These are located in `kevin/simulator`. And for run the simulator,
-you will need to uncomment the `dyn_host` in the `kevin.conf`.
+These are located in `kevin/simulator`.
 
 
 Example for building `some-repo` with a kevin currently running with

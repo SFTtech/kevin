@@ -19,7 +19,7 @@ class Service:
         # git repo serving:
         self.local_repo = args.local_repo
         self.local_repo_address = args.local_repo_address
-        self.repo_vm = None
+        self.repo_server = None
 
         # repo config
         self.repo = args.repo
@@ -38,6 +38,6 @@ class Service:
         """ implement to add a service-specific argparser """
         raise NotImplementedError()
 
-    def run(self):
+    async def run(self):
         """ simulator-specific code """
         raise NotImplementedError()

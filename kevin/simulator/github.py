@@ -8,13 +8,11 @@ import hashlib
 import hmac
 import ipaddress
 import json
-import logging
 import pathlib
-import requests
 import traceback
 
-from tornado import web
-from tornado.platform.asyncio import AsyncIOMainLoop
+from aiohttp import web, ClientSession, ClientTimeout
+from aiohttp.web import Request, Response
 
 from . import util
 from . import service
@@ -30,8 +28,8 @@ class GitHub(service.Service):
         super().__init__(args)
 
         # url where to push updates to.
-        self.status_handler = "/%s" % args.statuspath
-        self.repo_handler = "/repo"
+        self._status_path = "/%s" % args.statuspath
+        self._repo_path = "/repo"
 
         self.pull_id = args.pull_id
 
@@ -44,73 +42,44 @@ class GitHub(service.Service):
                          help="the pull request id number, e.g. 1337")
         cli.set_defaults(service=cls)
 
-    def run(self):
+    async def run(self):
         """
         creates the interaction server
         """
-        self.loop = asyncio.get_event_loop()
-        AsyncIOMainLoop().install()
+        print("Creating simulated GitHub server...")
 
-        print("Creating simulated server...")
+        app = web.Application()
 
-        # create server
-        handlers = [
-            (self.status_handler, UpdateHandler, {"config": self.cfg,
-                                                  "project": self.project}),
-        ]
+        app.add_routes([web.post(self._status_path, self.handle_status)])
 
         # add http server to serve a local repo to qemu
         if self.local_repo and pathlib.Path(self.repo).is_dir():
             if not pathlib.Path(self.repo).joinpath("HEAD").is_file():
-                print("\x1b[33;1m%r doesn't look like a .git folder!\x1b[m" %
-                      self.repo)
+                print(f"\x1b[33;1m{self.repo!r} doesn't look like a .git folder!\x1b[m")
 
-            print("Serving '%s' on 'http://%s:%d%s/'" % (
-                self.repo,
-                self.listen,
-                self.port,
-                self.repo_handler
-            ))
+            print(f"serving '{self.repo}' on 'http://{self.listen}:{self.port}{self._repo_path}/'")
 
-            handlers.append(
-                (r"%s/(.*)" % self.repo_handler,
-                 web.StaticFileHandler, dict(path=self.repo))
-            )
-            self.repo_vm = "http://%s:%d%s" % (self.local_repo_address,
-                                               self.port,
-                                               self.repo_handler)
+            app.add_routes([web.static(self._repo_path, self.repo, show_index=True)])
 
-        self.app = web.Application(handlers)
+            self.repo_server = f"http://{self.local_repo_address}:{self.port}{self._repo_path}"
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, str(self.listen), self.port)
         print("listening on port %s:%d" % (self.listen, self.port))
-        self.app.listen(self.port, address=str(self.listen))
+        await site.start()
 
-        # perform the request
-        webhook = self.loop.create_task(self.request())
+        # perform the "pull request" trigger
+        await self._submit_pullreq_webhook()
 
         try:
-            self.loop.run_forever()
-        except KeyboardInterrupt:
-            print("exiting...")
+            # run forever
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            await runner.cleanup()
+            raise
 
-        if not webhook.done():
-            webhook.cancel()
-
-        self.loop.stop()
-        self.loop.run_forever()
-        self.loop.close()
-
-    async def request(self):
-        """
-        Perform the requests to simulate this pull.
-        """
-        try:
-            print("submitting simulated web hook...")
-            await self.submit_web_hook()
-
-        except Exception:
-            logging.exception("simulated pull request failed")
-
-    async def submit_web_hook(self):
+    async def _submit_pullreq_webhook(self):
         """
         create the webhook to kevin to trigger it.
         """
@@ -120,13 +89,13 @@ class GitHub(service.Service):
         else:
             ip = str(self.listen)
 
-        status_url = "http://%s:%d%s" % (ip, self.port, self.status_handler)
+        status_url = "http://%s:%d%s" % (ip, self.port, self._status_path)
         head_commit = await util.get_hash(self.repo)
 
-        if self.repo_vm:
+        if self.repo_server:
             await util.update_server_info(self.repo)
 
-        repo = self.repo_vm or self.repo
+        repo = self.repo_server or self.repo
         project = self.cfg.projects[self.project]
 
         # chose first github trigger in the project config
@@ -159,10 +128,12 @@ class GitHub(service.Service):
                 "html_url": repo,
                 "statuses_url": status_url,
                 "issue_url": repo+"/issues/1",
-                "labels": {
-                    "name": "mylabel",
-                    "value": "my awesome label"
-                },
+                "labels": [
+                    {
+                        "name": "mylabel",
+                        "value": "my awesome label",
+                    },
+                ],
             },
             "repository": {
                 "full_name": reponame,
@@ -177,56 +148,25 @@ class GitHub(service.Service):
         headers = {"X-Hub-Signature": signature,
                    "X-GitHub-Event": "pull_request"}
 
-        def submit_post():
-            try:
-                return requests.post(
-                    url="http://%s:%d/hooks/github" % (
-                        self.cfg.dyn_host,
-                        self.cfg.dyn_port
-                    ),
-                    data=payload,
-                    headers=headers,
-                    timeout=5.0,
-                )
-            except requests.exceptions.RequestException as exc:
-                print("failed delivering webhook: %s" % (exc))
-                return "failed."
+        target_url = f"http://{self.cfg.dyn_frontend_host}:{self.cfg.dyn_frontend_port}/hooks/github"
+        print(f"submitting pullreq webhook to {target_url!r}...")
+        async with ClientSession(timeout=ClientTimeout(total=5.0)) as session:
+            async with session.post(target_url,
+                                    data=payload, headers=headers) as resp:
+                print(f"hook answer {'ok' if resp.ok else 'bad'}: {await resp.text()}")
 
-        post = self.loop.run_in_executor(None, submit_post)
-        hook_answer = await post
-
-        print("hook delivery: %s" % hook_answer)
-
-
-class UpdateHandler(web.RequestHandler):
-    """
-    Handles a POST from kevin.
-    """
-
-    def initialize(self, config, project):
-        self.cfg = config
-        self.project = project
-
-    def get(self):
-        self.write(b"Expected a JSON-formatted POST request.\n")
-        self.set_status(400)
-        self.finish()
-
-    def post(self):
-        print("\x1b[34mUpdate from %s:\x1b[m" % self.request.remote_ip,
-              end=" ")
-        blob = self.request.body
+    async def handle_status(self, request: Request) -> Response:
+        print(f"\x1b[34mUpdate from {request.remote}:\x1b[m", end=" ")
+        blob = await request.text()
         try:
-            auth_header = self.request.headers.get('Authorization').encode()
+            auth_header = request.headers.get('Authorization')
             if auth_header is None:
-                self.set_status(401, "no authorization given!")
-                self.finish()
-                return
+                return Response(text="no authorization given!", status=401)
 
-            if not auth_header.startswith(b"Basic "):
+            if not auth_header.startswith("Basic "):
                 raise ValueError("wrong auth type")
 
-            auth = base64.decodebytes(auth_header[6:]).decode().split(":", 2)
+            auth = base64.b64decode(auth_header[6:]).decode().split(":", 2)
 
             authcfg = self.cfg.projects[self.project].actions[0]
             authtok = (authcfg.auth_user, authcfg.auth_pass)
@@ -236,27 +176,22 @@ class UpdateHandler(web.RequestHandler):
                 print("expected: %s" % (authtok,))
                 raise ValueError("wrong authentication")
 
-            self.handle_update(blob)
+            self.show_update(blob)
 
         except (ValueError, KeyError) as exc:
-            print("bad request: " + repr(exc))
             traceback.print_exc()
 
-            self.write(repr(exc).encode())
-            self.set_status(400, "Bad request")
+            return Response(text=f"{exc}", status=400)
 
-        except Exception as exc:
+        except Exception:
             print("\x1b[31;1mexception in post hook\x1b[m")
             traceback.print_exc()
 
-            self.set_status(500, "Internal error")
-            self.set_header("Status", "internal fail")
-        else:
-            self.write(b"OK")
-            self.set_header("status", "ok")
-        self.finish()
+            return Response(text="internal exception", status=500)
 
-    def handle_update(self, data):
+        return Response(text="ok")
+
+    def show_update(self, data):
         """
         Process a received update and present it in a shiny way graphically.
         Ensures maximum readability by dynamically formatting the text in

@@ -37,7 +37,7 @@ def main():
     cmd.add_argument("-q", "--quiet", action="count", default=0,
                      help="decrease program verbosity")
 
-    sp = cmd.add_subparsers(dest="module")
+    sp = cmd.add_subparsers(dest="module", required=True)
 
     # call argparser hooks
     github.GitHub.argparser(sp)
@@ -47,15 +47,14 @@ def main():
     # set up log level
     log_setup(args.verbose - args.quiet)
 
-    # enable asyncio debugging
-    loop = asyncio.get_event_loop()
-    loop.set_debug(args.debug)
+    service = args.service(args)
 
-    if args.module is None:
-        cmd.print_help()
-    else:
-        service = args.service(args)
-        service.run()
+    try:
+        asyncio.run(service.run(), debug=args.debug)
+    except KeyboardInterrupt:
+        pass
+
+    print("cya!")
 
 
 if __name__ == "__main__":
