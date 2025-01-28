@@ -11,6 +11,7 @@ import shutil
 import time as clock
 import traceback
 import typing
+from collections import defaultdict
 
 from .action import Action
 from .chantal import Chantal
@@ -98,26 +99,23 @@ class Job(Watcher, Watchable):
         # else, stores None.
         self.completed = None
 
-        # the tasks required to run for this job.
-        self.tasks = set()
-
         # List of job status update JSON objects.
         self._updates: list[JobUpdate] = list()
 
         # Internal cache, used when erroring all remaining pending states.
-        self.pending_steps = set()
+        self.pending_steps: set[str] = set()
 
         # {step name: step number}, used for step name prefixes
-        self.step_numbers = dict()
+        self.step_numbers: dict[str, int] = dict()
 
         # all commited output items
-        self.output_items = set()
+        self.output_items: set[OutputItem] = set()
 
         # current uncommited output item
         self.current_output_item = None
 
         # current step name of the job
-        self.current_step = None
+        self._current_step: str | None = None
 
         # remaining size limit
         self.remaining_output_size = self.project.cfg.job_max_output
@@ -163,8 +161,13 @@ class Job(Watcher, Watchable):
         job_state: JobState | None = None
         # all step_states. step_name -> state
         step_states: dict[str, StepState] = dict()
-        output: list[str] = list()
+        # step_name -> output strings
+        output: dict[str | None, list[str]] = defaultdict(list)
         other_updates: list[JobUpdate] = list()
+
+        current_step: str | None = None
+        step_order: list[str] = list()
+        seen_steps: set[str] = set()
 
         for update in self._updates:
             match update:
@@ -176,8 +179,20 @@ class Job(Watcher, Watchable):
                     job_state = update
                 case StepState():
                     step_states[update.step_name] = update
+                    if update.text != "waiting":
+                        current_step = update.step_name
+                        if current_step is None:
+                            raise Exception("no step name for step state update")
+                        if current_step not in seen_steps:
+                            step_order.append(current_step)
+                            seen_steps.add(current_step)
                 case StdOut():
-                    output.append(update.data)
+                    # we need to chunk/interleave the output with StepState
+                    # otherwise anchors are not placed correctly!
+
+                    # track the current_step above for backward compatibility
+                    # new versions of StdOut know their step name on their own
+                    output[update.step_name or current_step].append(update.data)
                 case JobUpdate():
                     other_updates.append(update)
                 case _:
@@ -188,12 +203,17 @@ class Job(Watcher, Watchable):
             raise RuntimeError("no JobState found in job updates")
 
         job_state.set_updates_merged()
-        stdout_state = StdOut(self.name, "".join(output))
 
         updates: list[JobUpdate] = [job_state]
-        updates.extend(step_states.values())
+
+        if pre_output := output.get(None):
+            updates.append(StdOut(self.name, "".join(pre_output)))
+        for step_name in step_order:
+            step_state = step_states[step_name]
+            updates.append(step_state)
+            if step_output := output.get(step_name):
+                updates.append(StdOut(self.name, "".join(step_output)))
         updates.extend(other_updates)
-        updates.append(stdout_state)
 
         if self._updates_fd is not None:
             self._updates_fd.close()
@@ -281,7 +301,7 @@ class Job(Watcher, Watchable):
             self.name,
             self.build.commit_hash)
 
-    def on_send_update(self, update: Update, reconstruct=False):
+    def on_send_update(self, update: Update, **kwargs):
         """
         When an update is to be sent to all watchers
         """
@@ -289,6 +309,7 @@ class Job(Watcher, Watchable):
         if update is StopIteration:
             return
 
+        reconstruct = kwargs.get("reconstruct", False)
         # when reconstructing, the update just came from the file
         fs_save = not reconstruct
 
@@ -516,8 +537,8 @@ class Job(Watcher, Watchable):
                 logging.error("\x1b[31;1mTook longer than limit "
                               "of %.2fs.\x1b[m", exc.timeout)
 
-                if self.current_step:
-                    await self.set_step_state(self.current_step, "error",
+                if self._current_step:
+                    await self.set_step_state(self._current_step, "error",
                                               "Timeout!")
 
                 await self.error("Job took > %.02fs." % (exc.timeout))
@@ -529,8 +550,8 @@ class Job(Watcher, Watchable):
                               self, exc.timeout)
 
                 # a specific step is responsible:
-                if self.current_step:
-                    await self.set_step_state(self.current_step, "error",
+                if self._current_step:
+                    await self.set_step_state(self._current_step, "error",
                                               "Silence for > %.02fs." % (
                                                   exc.timeout))
                     await self.error("Silence Timeout!")
@@ -684,13 +705,15 @@ class Job(Watcher, Watchable):
             await self.set_state(msg["state"], msg["text"])
 
         elif cmd == 'step-state':
-            self.current_step = msg["step"]
+            if msg["state"] != "waiting":
+                self._current_step = msg["step"]
             await self.set_step_state(msg["step"], msg["state"], msg["text"])
 
         elif cmd == 'stdout':
             await self.send_update(StdOut(
                 self.name,
-                msg["text"]
+                msg["text"],
+                step_name=self._current_step,
             ))
 
         # finalize file transfer

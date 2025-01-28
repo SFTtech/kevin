@@ -258,12 +258,13 @@ class OutputItem(JobUpdate):
 
 class StdOut(JobUpdate):
     """ Process has produced output on the TTY """
-    def __init__(self, job_name, data):
+    def __init__(self, job_name: str, data: str, step_name: str | None = None):
         JobUpdate.__init__(self, job_name)
 
         if not isinstance(data, str):
             raise TypeError("StdOut.data not str: %r" % (data,))
 
+        self.step_name = data
         self.data = data
 
 

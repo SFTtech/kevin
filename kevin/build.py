@@ -205,7 +205,7 @@ class Build(Watchable, Watcher):
 
         for job_name, vm_name in jobs.items():
             if job_name in self.jobs:
-                raise Exception("Job to reconstruct is already registered")
+                raise Exception(f"Job to reconstruct {job_name!r} is already registered")
 
             job = Job(self, self.project, job_name, vm_name)
 
@@ -315,6 +315,7 @@ class Build(Watchable, Watcher):
         Registers a job that is run for this build.
 
         This is called from a Job when we send the `RegisterActions` update.
+        Or, on reconstruction, the build calls job.register_to_build().
         """
 
         if job.name in self.jobs:
@@ -354,6 +355,7 @@ class Build(Watchable, Watcher):
             if reconstruct:
                 if update.job_name in self._jobs_to_reconstruct:
                     raise Exception(f"duplicate job name {update.job_name!r}")
+                logging.debug("register job %s for reconstruction", update.job_name)
                 self._jobs_to_reconstruct[update.job_name] = update.vm_name
 
         # stored the update to be sent to a new subscriber
