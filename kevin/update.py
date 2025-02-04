@@ -79,7 +79,7 @@ class Update(metaclass=_UpdateMeta):
             raise Exception("Failed reconstructing %s: %r" % (
                 classname, err)) from err
 
-type UpdateStep = Update | type[StopIteration]
+UpdateStep = Update | type[StopIteration]
 
 
 class GeneratedUpdate(Update):
