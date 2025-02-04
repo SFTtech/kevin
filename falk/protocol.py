@@ -4,12 +4,17 @@ Falk communication protocol.
 
 import asyncio
 import copy
+import grp
 import logging
+import pwd
+import struct
 import traceback
+from socket import SOL_SOCKET, SO_PEERCRED
 
 from . import messages
 from .config import CFG
 from .messages import ProtoType
+from kevin.util import strflazy
 
 
 class FalkProto(asyncio.Protocol):
@@ -61,14 +66,25 @@ class FalkProto(asyncio.Protocol):
         # transport and connection tracking
         self.connected = False
         self.transport = None
+        self.peer_user = None
+        self.peer_group = None
 
     def connection_made(self, transport):
         self.connected = True
         self.conn_id = self.falk.get_connection_id()
 
-        self.log("new client connected")
+        socket = transport.get_extra_info('socket')
+        who = socket.getsockopt(SOL_SOCKET, SO_PEERCRED, struct.calcsize('3i'))
+        pid, uid, gid = struct.unpack('3i', who)
+        user_name = pwd.getpwuid(uid)[0]
+        group_name = grp.getgrgid(gid)[0]
+
+        self.log("new client connected: from PID=%s, UID=%s(%s), GID=%s(%s)",
+                 pid, uid, user_name, gid, group_name)
 
         self.transport = transport
+        self.peer_user = user_name
+        self.peer_group = group_name
 
     def data_received(self, data):
         if not data.strip():
@@ -127,12 +143,12 @@ class FalkProto(asyncio.Protocol):
         self.log("terminating connection..")
         self.transport.close()
 
-    def log(self, msg, level=logging.INFO):
+    def log(self, msg, *args, level=logging.INFO):
         """
         logs something for this connection
         """
 
-        logging.log(level, "[\x1b[1m%3d\x1b[m] %s", self.conn_id, msg)
+        logging.log(level, "[\x1b[1m%3d\x1b[m] %s", self.conn_id, strflazy(msg, *args))
 
     def check_version(self, msg):
         """
@@ -267,7 +283,7 @@ class FalkProto(asyncio.Protocol):
 
                 except Exception as exc:
                     self.log("\x1b[31;1merror processing request:\x1b[m",
-                             logging.ERROR)
+                             level=logging.ERROR)
                     traceback.print_exc()
                     self.send(messages.Error(repr(exc)))
 

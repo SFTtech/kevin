@@ -256,3 +256,28 @@ async def terminate_task_group(when: asyncio.Event):
     """ task part of the TaskGroup which triggers termination when the event fires """
     await when.wait()
     raise TerminateTaskGroup()
+
+
+class strlazy:
+    """
+    usage: logging.debug("rolf %s", strlazy(lambda: do_something()))
+    do_something is only called when the debug message is actually printed
+    do_something could also be an f-string.
+    """
+    def __init__(self, fun):
+        self._fun = fun
+    def __str__(self):
+        return self._fun()
+
+
+class strflazy:
+    """
+    usage: logging.debug("rolf %s", strflazy("stuff %s", do_something()))
+    do_something is only exected when the debug message is actually logged
+    does %-style formatting once str-evaluated.
+    """
+    def __init__(self, txt, *args):
+        self._txt = txt
+        self._args = args
+    def __str__(self):
+        return self._txt % self._args

@@ -213,8 +213,8 @@ class LXD(Container):
         # we don't run poweroff since that's up to Chantal's `cleanup`
 
         await asyncio.wait_for(
-            self._run(f"lxc stop --timeout 20 {self._container_id}"),
-            timeout=25,
+            self._run(f"lxc stop --timeout 10 {self._container_id}"),
+            timeout=11,
         )
 
         if self._manage:
