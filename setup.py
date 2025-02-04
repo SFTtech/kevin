@@ -22,7 +22,7 @@ setup(
     ),
     maintainer="SFT Technologies",
     maintainer_email="jj@stusta.net",
-    url="https://github.com/SFTtech/kevin",
+    url="https://github.com/SFTtech/kevin-ci",
     license='AGPL3+',
     packages=[
         "kevin",

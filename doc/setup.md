@@ -80,11 +80,9 @@ Have a look inside [`falk/vm/`](/falk/vm) to see which ones and to add more cont
 Kevin gets a notification that it should build something, and kevin then notifies falk to provide a container.
 
 - Install
-  - `python >=3.6`
-  - `tornado >=5.1`
+  - `python >=3.11`
   - `aiohttp >=2.0`
 - Create user `kevin` (you can, of course, change that)
-  - Add `kevin` to group `kvm`
   - Create `/etc/kevin/kevin.conf` from [`kevin.conf.example`](/etc/kevin.conf.example)
   - Create a password-less SSH key with `ssh-keygen -t rsa -b 4096` for the user `kevin`
 - Install the `kevin` Python module (ideally, as a [systemd unit](/etc/kevin.service) or whatever)
@@ -204,7 +202,7 @@ The project config determines active Kevin plugins and their configuration.
 
 If you encounter any problem, please [contact us](/README.md#contact) and ask!
 
-If things crash, bug, or whatever, [create an issue](https://github.com/SFTtech/kevin/issues)!
+If things crash, bug, or whatever, [create an issue](https://github.com/SFTtech/kevin-ci/issues)!
 
 If you think this guide or anything else in this project is crap and sucks,
-[just do better](https://github.com/SFTtech/kevin/pulls)!
+[just do better](https://github.com/SFTtech/kevin-ci/pulls)!
