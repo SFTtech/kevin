@@ -6,7 +6,7 @@ A build is a repo state that was triggered to be run in multiple jobs.
 
 from __future__ import annotations
 
-from pathlib import Path
+import asyncio
 import logging
 import shutil
 import time
@@ -62,10 +62,6 @@ class Build(Watchable, Watcher):
         # The Queue where this build was put in
         self._queue = None
 
-        # Special information storage, for example the status update url,
-        # or other custom used by triggers and actions.
-        self.info = dict()
-
         # gathered sources of this build.
         self.sources: set[BuildSource] = set()
 
@@ -78,9 +74,9 @@ class Build(Watchable, Watcher):
         self.jobs: dict[str, Job] = dict()
 
         # job status collections
-        self.jobs_pending = set()
-        self.jobs_succeeded = set()
-        self.jobs_errored = set()
+        self.jobs_pending: set[Job] = set()
+        self.jobs_succeeded: set[Job] = set()
+        self.jobs_errored: set[Job] = set()
 
         # jobs that were once running
         # (we remember them to re-create jobs when this build is reconstructed)
@@ -128,6 +124,8 @@ class Build(Watchable, Watcher):
             f"&hash={self.commit_hash}"
         )
 
+        self._update_lock = asyncio.Lock()
+
     async def load(self, preferred_job_name: str | None = None):
         """
         requests to maybe load this job from storage.
@@ -155,7 +153,7 @@ class Build(Watchable, Watcher):
         """
 
         if self._all_loaded:
-            raise Exception("already loaded job is loading again")
+            raise Exception("already loaded build is loading again")
 
         updates_file = self.path.joinpath("_updates")
 
@@ -165,7 +163,7 @@ class Build(Watchable, Watcher):
         with updates_file.open() as updates_file:
             for json_line in updates_file:
                 await self.send_update(Update.construct(json_line),
-                                        reconstruct=True)
+                                       reconstruct=True)
 
         self._all_loaded = True
 
@@ -181,8 +179,6 @@ class Build(Watchable, Watcher):
             shutil.rmtree(str(self.path))
         except FileNotFoundError:
             pass
-
-        self._all_loaded = False
 
     async def _reconstruct_jobs(self, preferred_job_name: str | None = None):
         """
@@ -220,23 +216,26 @@ class Build(Watchable, Watcher):
 
         self._jobs_to_reconstruct.clear()
 
-    def merge_job_updates(self, job_name: str, merged_updates: Sequence[Update]):
+    async def merge_job_updates(self, job_name: str, merged_updates: Sequence[Update]):
         """
         job_name finished, and has merged updates.
         for replay of merged messages, build needs to store those as well.
         """
 
-        new_updates: list[Update] = list()
+        async with self._update_lock:
 
-        # get rid of all job-updates from the job that told us of merged updates job.
-        for update in self.updates:
-            if isinstance(update, JobUpdate) and update.job_name == job_name:
-                continue
+            new_updates: list[Update] = list()
 
-            new_updates.append(update)
+            # remove all updates from the job that sent us merged ones.
+            # so we can replace them.
+            for update in self.updates:
+                if isinstance(update, JobUpdate) and update.job_name == job_name:
+                    continue
 
-        new_updates.extend(merged_updates)
-        self.updates = new_updates
+                new_updates.append(update)
+
+            new_updates.extend(merged_updates)
+            self.updates = new_updates
 
     async def set_state(self, state, text, timestamp=None):
         """ set this build state """
@@ -279,6 +278,11 @@ class Build(Watchable, Watcher):
         run is called by the build trigger,
         not a passive subscriber like the httpd.
         """
+
+        if self._all_loaded:
+            raise Exception(f"attempted to run already loaded build {self}")
+        self._all_loaded = True
+
         # memorize the queue
         self._queue = queue
 
@@ -309,6 +313,20 @@ class Build(Watchable, Watcher):
         # this will trigger a call to Job.run
         await self.send_update(QueueActions(self.commit_hash, queue,
                                             self.project.name))
+
+    async def create_job(self, job_name: str, vm_name: str) -> Job:
+        """
+        creates a job, triggered by when a projects' `JobAction` are attached for a build.
+        it's not yet registered, this happens by the build emitting RegisterActions
+        which the job then uses to call `register_job`.
+        """
+        if self.finished:
+            raise Exception("job created after build was finished!")
+
+        new_job = Job(self, self.project, job_name, vm_name)
+        await self.send_update(BuildJobCreated(job_name, vm_name))
+
+        return new_job
 
     def register_job(self, job):
         """
@@ -396,15 +414,6 @@ class Build(Watchable, Watcher):
         with self.path.joinpath("_updates").open("a") as ufile:
             ufile.write(update.json() + "\n")
 
-    async def create_job(self, job_name: str, vm_name: str) -> Job:
-        if self.finished:
-            raise Exception("job created after build was finished!")
-
-        new_job = Job(self, self.project, job_name, vm_name)
-        await self.send_update(BuildJobCreated(job_name, vm_name))
-
-        return new_job
-
     async def on_update(self, update):
         """
         Received message from somewhere,
@@ -460,14 +469,16 @@ class Build(Watchable, Watcher):
                 pass
 
             if not self.jobs_pending:
-                await self.finish()
+                await self._finish()
 
-    async def finish(self):
+    async def _finish(self):
         """ no more jobs are pending  """
         if self.finished:
             # finish message already sent.
-            logging.warning("build %s finished multiple times, wtf?", self)
+            logging.warning("build %s finished again, wtf?", self)
             return
+
+        logging.debug("build %s finished", self)
 
         if self._queue is not None:
             self._queue.remove_build(self)
@@ -514,4 +525,4 @@ class Build(Watchable, Watcher):
             for job in self.jobs_pending.copy():
                 await self._queue.cancel_job(job)
 
-        await self.finish()
+        await self._finish()

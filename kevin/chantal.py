@@ -134,8 +134,11 @@ class Chantal(AsyncWith):
             raise RuntimeError("VM shutdown timeout")
         finally:
             try:
+                logging.debug("terminating machine %s..." % self.machine)
                 await self.machine.terminate()
+                logging.debug("cleaning up machine %s..." % self.machine)
                 await self.machine.cleanup()
+                logging.debug("cleanup complete for machine %s..." % self.machine)
             except subprocess.SubprocessError:
                 logging.warning("[chantal] failed telling falk about VM "
                                 "teardown, but he'll do that on its own.")

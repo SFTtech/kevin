@@ -10,5 +10,5 @@ MANIFEST
 dist/
 
 /*.conf
-/test
+/test-*
 /build

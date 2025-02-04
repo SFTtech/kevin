@@ -11,7 +11,7 @@ import typing
 from .watcher import Watcher
 
 if typing.TYPE_CHECKING:
-    from .update import Update
+    from .update import UpdateStep
 
 
 class Watchable:
@@ -20,8 +20,10 @@ class Watchable:
     """
 
     def __init__(self) -> None:
-        self.watchers: set[Watcher] = set()
-        self.watchers_lock = asyncio.Lock()
+        self._watchers: set[Watcher] = set()
+        self._watchers_lock = asyncio.Lock()
+
+        self._updates_concluded = False
 
     async def register_watcher(self, watcher: Watcher):
         """
@@ -32,7 +34,7 @@ class Watchable:
         if not isinstance(watcher, Watcher):
             raise Exception("invalid watcher type: %s" % type(watcher))
 
-        self.watchers.add(watcher)
+        self._watchers.add(watcher)
 
         await self.on_watcher_registered(watcher)
 
@@ -44,27 +46,35 @@ class Watchable:
 
     def deregister_watcher(self, watcher: Watcher):
         """ Un-subscribe a watcher from the notification list """
-        self.watchers.remove(watcher)
+        self._watchers.remove(watcher)
 
     def on_watcher_deregistered(self, watcher: Watcher):
         """ Custom actions when a watcher unsubscribes """
         pass
 
-    async def send_update(self, update: Update, exclude=False, **kwargs):
+    async def send_update(self, update: UpdateStep,
+                          exclude: typing.Callable[[Watcher], bool] | None = None,
+                          **kwargs):
         """
         Send an update to all registered watchers
         Exclude: callable that can exclude subscribers from
         receiving the update. (called with func(subscriber))
         """
+        if update is StopIteration:
+            if self._updates_concluded:
+                raise Exception("this watcher sent StopIteration again")
+            else:
+                self._updates_concluded = True
+
         self.on_send_update(update, **kwargs)
 
         # copy list of watchers so an update can add and remove watchers
-        for watcher in self.watchers.copy():
+        for watcher in self._watchers.copy():
             if exclude and exclude(watcher):
                 continue
 
             await watcher.on_update(update)
 
-    def on_send_update(self, update: Update, **kwargs):
+    def on_send_update(self, update: UpdateStep, **kwargs):
         """ Called when an update is about to be sent """
         pass

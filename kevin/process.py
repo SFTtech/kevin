@@ -5,9 +5,11 @@ subprocess utility functions and classes.
 import asyncio
 import asyncio.streams
 import logging
+import shlex
 import signal
 import subprocess
 import sys
+from typing import Sequence, Callable
 
 from .util import INF, SSHKnownHostFile, AsyncWith
 
@@ -89,9 +91,16 @@ class Process(AsyncWith):
     queue_size: maximum number of entries in the output queue
     """
 
-    def __init__(self, command, chop_lines=False, must_succeed=False,
-                 pipes=True, loop=None,
-                 linebuf_max=(8 * 1024 ** 2), queue_size=1024):
+    def __init__(
+        self,
+        command: Sequence[str],
+        chop_lines: bool = False,
+        must_succeed: bool = False,
+        pipes: bool = True,
+        loop: asyncio.AbstractEventLoop | None = None,
+        linebuf_max: int = (8 * 1024 ** 2),
+        queue_size: int = 1024
+    ):
 
         self.loop = loop or asyncio.get_event_loop()
 
@@ -118,7 +127,10 @@ class Process(AsyncWith):
         self.transport = None
         self.protocol = None
 
-        self.exit_callbacks = list()
+        self.exit_callbacks: list[Callable] = list()
+
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__} args='{shlex.join(self.args)}'>"
 
     async def create(self):
         """ Launch the process """
@@ -166,7 +178,7 @@ class Process(AsyncWith):
         """ send data to stdin and read one line of response data """
         return self.communicate(data, output_timeout=timeout, linecount=1)
 
-    def returncode(self):
+    def returncode(self) -> int | None:
         """ get the exit code, or None if still running """
         if not self.transport:
             raise Exception("Process has never run!")
@@ -270,10 +282,23 @@ class SSHProcess(Process):
     options: additional ssh option list
     """
 
-    def __init__(self, command, ssh_user, ssh_host, ssh_port, ssh_known_host_key=None,
-                 timeout=INF, silence_timeout=INF, chop_lines=False,
-                 must_succeed=False, pipes=True, options=None,
-                 loop=None, linebuf_max=(8 * 1024 ** 2), queue_size=1024):
+    def __init__(
+        self,
+        command: Sequence[str],
+        ssh_user: str,
+        ssh_host: str,
+        ssh_port: str,
+        ssh_known_host_key: str | None = None,
+        timeout: float = INF,
+        silence_timeout: float = INF,
+        chop_lines: bool = False,
+        must_succeed: bool = False,
+        pipes: bool = True,
+        options: list[str] = [],
+        loop: asyncio.AbstractEventLoop | None = None,
+        linebuf_max: int = (8 * 1024 ** 2),
+        queue_size: int = 1024,
+    ):
 
         if not isinstance(command, (list, tuple)):
             raise Exception("invalid command: %r" % (command,))
@@ -282,9 +307,6 @@ class SSHProcess(Process):
         # for ssh host key verification.
         self.ssh_hash = SSHKnownHostFile(ssh_host, ssh_port, ssh_known_host_key)
         self.ssh_hash.create()
-
-        if options is None:
-            options = []
 
         ssh_cmd = [
             "ssh", "-q",
@@ -365,7 +387,7 @@ class WorkerInteraction(asyncio.streams.FlowControlMixin,
     def process_exited(self):
         # process exit happens after all the pipes were lost.
 
-        logging.debug("Process %s exited", self.process)
+        logging.debug("Process %s exited with %d", self.process, self.process.returncode())
 
         # send out remaining data to queue
         if self.buf:

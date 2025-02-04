@@ -19,13 +19,14 @@ from .config import CFG
 from .falkvm import VMError
 from .process import (ProcTimeoutError, ProcessFailed, ProcessError)
 from .update import (Update, JobState, JobUpdate, StepState,
-                     StdOut, OutputItem, QueueActions,
+                     StdOut, OutputItem, QueueActions, UpdateStep,
                      GeneratedUpdate, JobEmergencyAbort, RegisterActions)
 from .watchable import Watchable
 from .watcher import Watcher
 
 if typing.TYPE_CHECKING:
     from .build import Build
+    from .job_manager import JobManager
     from .project import Project
     from typing import TextIO
 
@@ -99,6 +100,9 @@ class Job(Watcher, Watchable):
         # else, stores None.
         self.completed = None
 
+        # did this job emit a JobState that is successful
+        self._success = False
+
         # List of job status update JSON objects.
         self._updates: list[JobUpdate] = list()
 
@@ -148,7 +152,7 @@ class Job(Watcher, Watchable):
             except FileNotFoundError:
                 pass
 
-    def _merge_updates(self) -> None:
+    async def _merge_updates(self) -> None:
         """
         merge all updates to only remember their effective end result.
         output is combined and only the latest states are retained.
@@ -190,8 +194,8 @@ class Job(Watcher, Watchable):
                     # we need to chunk/interleave the output with StepState
                     # otherwise anchors are not placed correctly!
 
-                    # track the current_step above for backward compatibility
-                    # new versions of StdOut know their step name on their own
+                    # we track the current_step above for backward compatibility
+                    # new versions of StdOut know their step_name on their own!
                     output[update.step_name or current_step].append(update.data)
                 case JobUpdate():
                     other_updates.append(update)
@@ -207,12 +211,16 @@ class Job(Watcher, Watchable):
         updates: list[JobUpdate] = [job_state]
 
         if pre_output := output.get(None):
-            updates.append(StdOut(self.name, "".join(pre_output)))
+            updates.append(StdOut(job_name=self.name,
+                                  data="".join(pre_output)))
         for step_name in step_order:
             step_state = step_states[step_name]
             updates.append(step_state)
             if step_output := output.get(step_name):
-                updates.append(StdOut(self.name, "".join(step_output)))
+                # TODO: maybe do chunk step_output if it's really huge...
+                updates.append(StdOut(job_name=self.name,
+                                      step_name=step_name,
+                                      data="".join(step_output)))
         updates.extend(other_updates)
 
         if self._updates_fd is not None:
@@ -231,7 +239,7 @@ class Job(Watcher, Watchable):
         self._updates_merged = True
 
         # build caches the update messages - so it needs to be notified.
-        self.build.merge_job_updates(self.name, self._updates)
+        await self.build.merge_job_updates(self.name, self._updates)
 
     async def load(self) -> bool:
         """
@@ -262,12 +270,20 @@ class Job(Watcher, Watchable):
         if not updates_file.is_file():
             return False
 
+        is_merged = False
         with updates_file.open() as updates_file:
             for json_line in updates_file:
-                await self.send_update(Update.construct(json_line),
-                                       reconstruct=True)
+                update = Update.construct(json_line)
 
-        self._merge_updates()
+                # migrate to merged job updates
+                if isinstance(update, JobState):
+                    if update.updates_merged:
+                        is_merged = True
+
+                await self.send_update(update, reconstruct=True)
+
+        if not is_merged:
+            self._merge_updates()
 
         logging.debug(f"reconstructed Job {id(self)} {self} from fs")
 
@@ -301,7 +317,7 @@ class Job(Watcher, Watchable):
             self.name,
             self.build.commit_hash)
 
-    def on_send_update(self, update: Update, **kwargs):
+    def on_send_update(self, update: UpdateStep, **kwargs):
         """
         When an update is to be sent to all watchers
         """
@@ -335,6 +351,10 @@ class Job(Watcher, Watchable):
             # the merging retains only one JobState, so we can track merge-status through it.
             self._updates_merged = update.updates_merged
 
+            # whooh the job did its job!
+            if update.is_succeeded():
+                self._success = True
+
         if isinstance(update, GeneratedUpdate):
             fs_save = False
 
@@ -349,7 +369,7 @@ class Job(Watcher, Watchable):
         self._updates_fd.write(update.json())
         self._updates_fd.write("\n")
 
-    async def on_update(self, update: Update):
+    async def on_update(self, update: UpdateStep):
         """
         When this job receives updates from any of its watched
         watchables, the update is processed here.
@@ -394,9 +414,9 @@ class Job(Watcher, Watchable):
 
     async def set_state(self, state, text, time=None):
         """ set the job state information """
-        await self.send_update(JobState(self.project.name, self.build.commit_hash,
-                                        self.name, state, text, time))
-
+        state = JobState(self.project.name, self.build.commit_hash,
+                         self.name, state, text, time)
+        await self.send_update(state)
 
     async def set_step_state(self, step_name, state, text, time=None):
         """ send a StepState update. """
@@ -404,7 +424,7 @@ class Job(Watcher, Watchable):
                                          self.name, step_name, state, text,
                                          time=time))
 
-    async def on_watcher_registered(self, watcher):
+    async def on_watcher_registered(self, watcher: Watcher):
         # send all previous job updates to the watcher
         for update in self._updates:
             await watcher.on_update(update)
@@ -424,7 +444,7 @@ class Job(Watcher, Watchable):
         # now, we subscribe the build to us so it gets our updates.
         await self.register_watcher(self.build)
 
-    async def run(self, job_manager):
+    async def run(self, job_manager: JobManager):
         """ Attempts to build the job. """
 
         try:
@@ -475,6 +495,7 @@ class Job(Watcher, Watchable):
 
                         # wait for chantal termination
                         await run.wait()
+                        logging.debug("chantal exited with %s", run.returncode)
 
                 except ProcTimeoutError as exc:
                     raise JobTimeoutError(exc.timeout, exc.was_global)
@@ -483,14 +504,15 @@ class Job(Watcher, Watchable):
                     error_messages += b"process returned %d" % exc.returncode
 
                 if error_messages:
-                    error_messages = error_messages.decode(errors='replace')
+                    error_stdout = error_messages.decode(errors='replace')
                     logging.error("[job] \x1b[31;1mChantal failed\x1b[m\n%s", error_messages)
                     await self.error("Chantal failed; stdout: %s" %
-                                     error_messages.replace("\n", ", "))
+                                     error_stdout.replace("\n", ", "))
 
         except asyncio.CancelledError:
-            logging.info("\x1b[31;1mJob aborted:\x1b[m %s", self)
-            await self.error("Job cancelled")
+            if not self._success:
+                logging.info("\x1b[31;1mJob cancelled:\x1b[m %s", self)
+                await self.error("Job cancelled")
             raise
 
         except (ProcessFailed, asyncio.TimeoutError) as exc:
@@ -626,7 +648,7 @@ class Job(Watcher, Watchable):
                 self._updates_fd = None
 
             # perform state compression
-            self._merge_updates()
+            await self._merge_updates()
 
     async def error(self, text):
         """
@@ -711,8 +733,8 @@ class Job(Watcher, Watchable):
 
         elif cmd == 'stdout':
             await self.send_update(StdOut(
-                self.name,
-                msg["text"],
+                job_name=self.name,
+                data=msg["text"],
                 step_name=self._current_step,
             ))
 

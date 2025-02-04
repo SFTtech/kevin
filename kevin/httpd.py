@@ -155,7 +155,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
         self.build_manager = build_manager
         self.build = None
-        self.filter_ = None
+        self._filter = None
 
     def select_subprotocol(self, subprotocols):
         # sync this with mandy.js and other websocket clients
@@ -191,7 +191,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             self.state_filter = get_filter(self.get_parameter("state_filter"))
             # filter_ specifies which JobUpdate updates to forward.
             # (except for JobState updates, which are treated by the filter above).
-            self.filter_ = get_filter(self.get_parameter("filter"))
+            self._filter = get_filter(self.get_parameter("filter"))
 
             # get all previous and new updates
             await self.build.register_watcher(self)
@@ -248,7 +248,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             if isinstance(update, JobState):
                 filter_ = self.state_filter
             else:
-                filter_ = self.filter_
+                filter_ = self._filter
 
             if filter_(update.job_name):
                 self.write_message(update.json())

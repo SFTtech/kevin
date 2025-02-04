@@ -21,14 +21,14 @@ UPDATE_COMPAT = {
 }
 
 
-class UpdateMeta(ABCMeta):
+class _UpdateMeta(ABCMeta):
     """ Update metaclass. Adds the classes to UPDATE_CLASSES. """
     def __init__(cls, name, bases, classdict):
         super().__init__(name, bases, classdict)
         UPDATE_CLASSES[name] = cls
 
 
-class Update(metaclass=UpdateMeta):
+class Update(metaclass=_UpdateMeta):
     """
     Abstract base class for all JSON-serializable Update objects.
     __init__() should simply set the update's member variables.
@@ -52,33 +52,34 @@ class Update(metaclass=UpdateMeta):
         Returns a JSON-serialized string of self (via self.dump()).
         This string will be broadcast via WebSocket and saved to disk.
         """
-        result = self.dump()
-        result['class'] = type(self).__name__
+        result = {
+            'class': type(self).__name__,
+            **self.dump(),
+        }
         return json.dumps(result)
 
     def __repr__(self):
-        try:
-            return self.json()
-        except TypeError:
-            return f"<{type(self).__name__}>"
+        return f"<{type(self).__name__}>"
 
     @staticmethod
-    def construct(jsonmsg):
+    def construct(jsonmsg: str):
         """
         Constructs an Update object from a JSON-serialized string.
         The 'class' member is used to determine the subclass that shall be
         built, the rest is passed on to the constructor as kwargs.
         """
         data = json.loads(jsonmsg)
-        classname = data['class']
+        classname = data.pop('class')
         # mapping of old class names
         classname = UPDATE_COMPAT.get(classname, classname)
-        del data['class']
+
         try:
             return UPDATE_CLASSES[classname](**data)
         except (TypeError, KeyError) as err:
             raise Exception("Failed reconstructing %s: %r" % (
-                classname, err)) from None
+                classname, err)) from err
+
+type UpdateStep = Update | type[StopIteration]
 
 
 class GeneratedUpdate(Update):
@@ -264,7 +265,7 @@ class StdOut(JobUpdate):
         if not isinstance(data, str):
             raise TypeError("StdOut.data not str: %r" % (data,))
 
-        self.step_name = data
+        self.step_name = step_name
         self.data = data
 
 
