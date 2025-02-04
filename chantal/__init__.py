@@ -1,3 +1,3 @@
 """
-The kevin-ci component that runs inside the builder VM.
+The kevin-ci component that runs inside the builder machine.
 """

@@ -27,7 +27,7 @@ class JobManager:
         self.loop = loop
 
         # lookup which justins provide the machine
-        # {machinename: {justin0: {vm_id0, ...}}
+        # {machinename: {justin0: {machine_id0, ...}}
         self.machines = defaultdict(lambda: defaultdict(set))
 
         # list of known justin connections: {name: Justin}
@@ -139,26 +139,26 @@ class JobManager:
 
     async def connect_to_justin(self, justin):
         """
-        Connect to a Justin VM provider.
+        Connect to a Justin machine provider.
         When this function does not except,
         the connection is assumed to be sucessful.
         """
-        # TODO: refresh vm lists for reconnect
+        # TODO: refresh machine lists for reconnect
 
         await justin.create()
 
-        justin_vms = await justin.get_vms()
+        justin_machines = await justin.get_machines()
 
-        # vm_id, (vmclassname, vm_name)
-        for vm_id, (vm_type, vm_name) in justin_vms.items():
+        # machine_id, (vmclassname, machine_name)
+        for machine_id, (vm_type, machine_name) in justin_machines.items():
             del vm_type  # unused
-            if vm_name not in self.machines:
-                logging.info("container '%s' now available!", vm_name)
-            self.machines[vm_name][justin].add(vm_id)
+            if machine_name not in self.machines:
+                logging.info("container '%s' now available!", machine_name)
+            self.machines[machine_name][justin].add(machine_id)
 
     def justin_lost(self, justin):
         """
-        Called when a justin lost its connection.
+        Called when a Justin lost its connection.
 
         If a connection can't be established,
         this function is called as well!
@@ -166,15 +166,15 @@ class JobManager:
 
         # count how many justins provide a vm
         provided_count = defaultdict(lambda: 0)
-        for vm_name, justin_providers in self.machines.items():
+        for machine_name, justin_providers in self.machines.items():
             justin_providers.pop(justin, None)
-            provided_count[vm_name] += len(justin_providers.keys())
+            provided_count[machine_name] += len(justin_providers.keys())
 
         # remove unavailable vms
-        for vm_name, count in provided_count.items():
+        for machine_name, count in provided_count.items():
             if count == 0:
-                logging.info("machine '%s' no longer available", vm_name)
-                del self.machines[vm_name]
+                logging.info("machine '%s' no longer available", machine_name)
+                del self.machines[machine_name]
 
         # and queue the justin for reconnection
         self.pending_justins.put_nowait(justin)
@@ -193,10 +193,10 @@ class JobManager:
         justin = random.choice(list(candidate_justins.keys()))
 
         # get a machine
-        vm_id = random.sample(sorted(candidate_justins[justin]), 1)[0]
+        machine_id = random.sample(sorted(candidate_justins[justin]), 1)[0]
 
-        # TODO: if this justin doesn't wanna spawn the vm, try another one.
-        return await justin.create_vm(vm_id)
+        # TODO: if this justin doesn't wanna spawn the machine, try another one.
+        return await justin.create_machine(machine_id)
 
     async def _shutdown(self):
         """

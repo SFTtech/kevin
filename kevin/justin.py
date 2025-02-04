@@ -1,16 +1,18 @@
 """
-Code for interfacing with Justin instances to aquire VMs.
+Code for interfacing with Justin instances to aquire machines.
 """
 
 from abc import ABC, abstractmethod
 import asyncio
 import logging
 
+from typing import Callable
+
 from justin.messages import (Message, ProtoType, Mode, Version, List,
                            Select, OK, Login, Welcome, Error,
                            Exit)
 from justin.protocol import JustinProto
-from justin.vm import ContainerConfig
+from justin.machine import ContainerConfig
 
 from .justin_machine import JustinMachine, JustinError
 from .process import SSHProcess, ProcessError
@@ -18,17 +20,17 @@ from .process import SSHProcess, ProcessError
 
 class Justin(ABC):
     """
-    VM provider instance.
-    Provides a communication interface to request a VM.
+    machine provider instance.
+    Provides a communication interface to request a machine.
 
     name: name of this Justin.
     """
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.name = name
         self.proto_mode = JustinProto.DEFAULT_MODE
 
         # list of callbacks that are invoked upon disconnect
-        self.disconnect_callbacks = list()
+        self._on_disconnect: list[Callable[[Justin], None]] = list()
 
         # set to false when this justin shall no longer be active
         # used for the reconnect mechanism in JobManager.
@@ -68,16 +70,16 @@ class Justin(ABC):
         if not isinstance(vercheck, OK):
             raise JustinError("incompatible justin contacted: %s" % vercheck)
 
-    async def get_vms(self):
+    async def get_machines(self):
         """ return {name: type} """
         return (await self.query(List())).machines
 
     @abstractmethod
-    def get_vm_host(self):
-        """ Return the VM host by using the justin connection information """
+    def get_machine_host(self):
+        """ Return the machine host by using the justin connection information """
         raise NotImplementedError()
 
-    async def create_vm(self, machine_id):
+    async def create_machine(self, machine_id):
         """
         Retrieve the machine list from justin and select one.
 
@@ -85,7 +87,7 @@ class Justin(ABC):
         machine_id: id of the machine to boot
         """
 
-        # create vm handle in the remote justin.
+        # create machine handle in the remote justin.
         run_id = (await self.query(Select(machine_id))).run_id
 
         # create the machine config
@@ -132,14 +134,14 @@ class Justin(ABC):
         if not callable(callback):
             raise ValueError(f"invalid callback: {callback}")
 
-        self.disconnect_callbacks.append(callback)
+        self._on_disconnect.append(callback)
 
     def connection_lost(self):
         """
         Justin was disconnected. Call all the callbacks.
         """
 
-        for func in self.disconnect_callbacks:
+        for func in self._on_disconnect:
             func(self)
 
         self.proto_mode = ProtoType.text
@@ -156,8 +158,8 @@ class Justin(ABC):
 
 class JustinVirtual(Justin):
     """
-    Dummy justin that is invoking the VM directly.
-    That way, no separate justin process is needed, instead, the VM
+    Dummy justin that is invoking the machine directly.
+    That way, no separate justin process is needed, instead, the machine
     is launched by kevin (using justins code).
 
     TODO: implement :)
@@ -171,7 +173,7 @@ class JustinVirtual(Justin):
     async def send(self, msg=None, mode=ProtoType.json):
         raise NotImplementedError()
 
-    def get_vm_host(self):
+    def get_machine_host(self):
         return "localhost"
 
     def __str__(self):
@@ -243,7 +245,7 @@ class JustinSSH(Justin):
         except ProcessError as exc:
             raise JustinError(f"Failed to send request: {exc}") from exc
 
-    def get_vm_host(self):
+    def get_machine_host(self):
         return self.ssh_host
 
     async def close(self):
@@ -329,7 +331,7 @@ class JustinSocket(Justin):
         if self.transport and not self.transport.is_closing():
             self.transport.close()
 
-    def get_vm_host(self):
+    def get_machine_host(self):
         return "localhost"
 
     def __str__(self):

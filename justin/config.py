@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 import re
 
-from .vm import CONTAINERS, ContainerConfigFile
+from .machine import CONTAINERS, ContainerConfigFile
 
 class Config:
     def __init__(self):
@@ -57,7 +57,7 @@ class Config:
                 raise ValueError("vm_ports malformed, should be =[from,to]")
 
             # further config ideas:
-            # max parallel vms, memory usage checking
+            # max parallel machines, memory usage checking
 
         except KeyError as exc:
             print("\x1b[31mConfig file is missing entry: %s\x1b[m" % (exc))

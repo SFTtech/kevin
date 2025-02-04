@@ -45,7 +45,7 @@ class JustinProto(asyncio.Protocol):
         self.source = None
 
         # containers running in this session
-        # contains {handle_id: vmname, ...}
+        # contains {handle_id: machinename, ...}
         self.running = dict()
 
         # set by the Select message
@@ -347,15 +347,15 @@ class JustinProto(asyncio.Protocol):
         else:
             # we have a login!
             # TODO: actual permission checking
-            # user: {vmname, vmname, ...} access and management
+            # user: {machinename, ...} access and management
             if isinstance(msg, messages.List):
                 self.log("providing machine list",
                          level=logging.DEBUG)
 
                 # the config stores machineid -> (config, class)
                 answer = messages.MachineList(
-                    [(vm_id, (cls.__name__, cfg.name))
-                     for vm_id, (cfg, cls) in CFG.machines.items()]
+                    [(machine_id, (cls.__name__, cfg.name))
+                     for machine_id, (cfg, cls) in CFG.machines.items()]
                 )
 
             elif isinstance(msg, messages.Select):
@@ -391,7 +391,7 @@ class JustinProto(asyncio.Protocol):
                 machine = self.get_machine(msg.run_id)
                 status = await machine.status()
                 status["run_id"] = self.get_machine_id(msg.run_id)
-                answer = messages.VMStatus(**status)
+                answer = messages.MachineStatus(**status)
 
             elif isinstance(msg, messages.Prepare):
                 self.log("preparing machine..", level=logging.DEBUG)

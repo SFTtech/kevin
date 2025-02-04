@@ -1,5 +1,5 @@
 """
-Justin is the VM provider for Kevin CI.
+Justin is the machine (container/vm) provider for Kevin CI.
 """
 
 import argparse
@@ -16,7 +16,7 @@ def main():
     """ Justin service launch """
 
     cmd = argparse.ArgumentParser(
-        description="Kevin CI Justin - VM provider")
+        description="Kevin CI Justin - machine provider")
 
     cmd.add_argument("-c", "--config", default="/etc/kevin/justin.conf",
                      help="file name of the configuration to use.")

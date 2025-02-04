@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-SSH client for a VM managed by justin.
+SSH client for a machine managed by justin.
 """
 
 import argparse
@@ -13,7 +13,7 @@ from kevin.process import SSHProcess
 from kevin.util import parse_listen_entry, log_setup
 
 
-async def spawn_shell(justin, vm_id, volatile, command):
+async def spawn_shell(justin, machine_id, volatile, command):
     """
     Spawns an interactive shell with justin.
     """
@@ -21,55 +21,55 @@ async def spawn_shell(justin, vm_id, volatile, command):
     logging.debug("connecting to justin...")
     await justin.create()
 
-    logging.debug("looking up machine '%s'...", vm_id)
-    vm = await justin.create_vm(vm_id)
+    logging.debug("looking up machine '%s'...", machine_id)
+    machine = await justin.create_machine(machine_id)
 
-    if vm is None:
-        raise Exception("vm '%s' was not found on justin '%s'. "
+    if machine is None:
+        raise Exception("machine '%s' was not found on justin '%s'. "
                         "available:\n%s" % (
-                            vm_id, justin, await justin.get_vms()))
+                            machine_id, justin, await justin.get_machines()))
 
     manage = not volatile
     logging.debug("preparing and launching machine (manage=%s)..." % manage)
-    await vm.prepare(manage=manage)
-    await vm.launch()
+    await machine.prepare(manage=manage)
+    await machine.launch()
 
-    logging.debug("VM launched, waiting for ssh...")
-    await vm.wait_for_ssh_port()
+    logging.debug("machine launched, waiting for ssh...")
+    await machine.wait_for_ssh_port()
 
     if manage:
-        logging.warning("please shut down the VM gracefully "
+        logging.warning("please shut down the machine gracefully "
                         "to avoid data loss (=> `sudo poweroff`)")
 
     # ssh into the machine, force tty allocation
     async with SSHProcess(command,
-                          vm.ssh_user, vm.ssh_host,
-                          vm.ssh_port, vm.ssh_known_host_key, pipes=False,
+                          machine.ssh_user, machine.ssh_host,
+                          machine.ssh_port, machine.ssh_known_host_key, pipes=False,
                           options=["-t"]) as proc:
         ret = await proc.wait()
 
     # wait for the machine to exit gracefully
     wait_time = 30
     logging.warning(f"waiting {wait_time}s for machine to shut down")
-    await vm.wait_for_shutdown(30)
+    await machine.wait_for_shutdown(wait_time)
 
-    await vm.terminate()
-    await vm.cleanup()
+    await machine.terminate()
+    await machine.cleanup()
 
     return ret
 
 
 def main():
-    """ Connect to a pty of some vm provided by justin """
+    """ Connect to a pty of some machine provided by justin """
 
     cmd = argparse.ArgumentParser()
     cmd.add_argument("--volatile", action="store_true",
-                     help="don't start the VM in management mode")
+                     help="don't start the machine in management mode")
     cmd.add_argument("justin_id",
                      help=("justin connection information: "
                            "unix://socketpath, unix://user@socket "
                            "or ssh://user@host:port"))
-    cmd.add_argument("vm_id", help="machine identification")
+    cmd.add_argument("machine_id", help="machine identification")
     cmd.add_argument("command", nargs="*",
                      help="command to execute. default: shell.")
     cmd.add_argument("-d", "--debug", action="store_true",
@@ -105,7 +105,7 @@ def main():
     ret = 1
     try:
         ret = loop.run_until_complete(
-            spawn_shell(justin, args.vm_id, args.volatile, args.command))
+            spawn_shell(justin, args.machine_id, args.volatile, args.command))
 
     except KeyboardInterrupt:
         print("\njustin.manage killed by keyboard interrupt\n")

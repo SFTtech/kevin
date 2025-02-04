@@ -384,13 +384,13 @@ class HelpText(Message):
             "  exit                   - quit the control connection.",
             "  mode <text|json>       - set protocol mode.",
             "  login <name>           - login as some user, + now unlocked.",
-            "+ list                   - list available vms and states",
-            "+ select <vmname>        - use a machine, get `runid` handle",
+            "+ list                   - list available machines and states",
+            "+ select <machinename>   - use a machine, get `runid` handle",
             "+ status [runid]         - display info about selected machine",
             "+ prepare [runid] [manage=0|1]  - prepare the machine launch",
             "+ launch [runid]          - do the machine launch",
             "+ terminate [runid]       - terminate the running machine",
-            "+ cleanup [runid]         - cleanup after the vm run",
+            "+ cleanup [runid]         - cleanup after the machine run",
         ])
 
     def dump(self):
@@ -409,7 +409,7 @@ class List(Request):
 class MachineList(Message):
     """
     Lists available machines
-    machines = [(vm_id, (typename, name)), ...]
+    machines = [(machine_id, (typename, name)), ...]
     """
     def __init__(self, machines):
         super().__init__()
@@ -418,13 +418,13 @@ class MachineList(Message):
 
 class Select(Message):
     """
-    Select the VM with given name. This creates an internal handle
+    Select the machine with given name. This creates an internal handle
     and you'll get an RunID answer.
     """
     def __init__(self, name):
         super().__init__()
         if not isinstance(name, str):
-            raise ValueError(f"invalid vm name: {name}")
+            raise ValueError(f"invalid machine name: {name}")
         self.name = name
 
     @classmethod
@@ -488,21 +488,21 @@ class Prepare(Message):
 
 class Launch(RequestID):
     """
-    Launch the VM.
+    Launch the machine.
     """
     pass
 
 
 class Status(RequestID):
     """
-    Request information about the selected VM.
+    Request information about the selected machine.
     """
     pass
 
 
-class VMStatus(Message):
+class MachineStatus(Message):
     """
-    Shows status information about a selected VM.
+    Shows status information about a selected machine.
     """
     def __init__(self, run_id, running):
         super().__init__()
@@ -512,14 +512,14 @@ class VMStatus(Message):
 
 class GetConnectionInfo(RequestID):
     """
-    Request connection information about the selected VM.
+    Request connection information about the selected machine.
     """
     pass
 
 
 class ConnectionInfo(Message):
     """
-    Shows connection information about a selected VM.
+    Shows connection information about a selected machine.
     """
     def __init__(self, ssh_user, ssh_host, ssh_port, ssh_known_host_key):
         super().__init__()
@@ -531,7 +531,7 @@ class ConnectionInfo(Message):
 
 class ShutdownWait(RequestID):
     """
-    Wait until the VM exits on its own.
+    Wait until the machine exits on its own.
     """
     def __init__(self, run_id, timeout):
         super().__init__(run_id)
@@ -540,14 +540,14 @@ class ShutdownWait(RequestID):
 
 class Terminate(RequestID):
     """
-    Kill the VM.
+    Kill the machine.
     """
     pass
 
 
 class Cleanup(RequestID):
     """
-    Remove leftover files from the VM run, e.g. the the temporary disk image.
+    Remove leftover files from the machine run, e.g. the the temporary disk image.
     """
     pass
 

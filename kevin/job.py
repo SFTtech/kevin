@@ -64,13 +64,13 @@ class JobAction(Action):
         super().__init__(cfg, project)
         self.job_name = cfg["name"]
         self.descripton = cfg.get("description")
-        self.vm_name = cfg["machine"]
+        self.machine_name = cfg["machine"]
 
     async def get_watcher(self, build: Build, completed) -> Watcher | None:
         if completed:
             return None
 
-        return await build.create_job(self.job_name, self.vm_name)
+        return await build.create_job(self.job_name, self.machine_name)
 
 
 class Job(Watcher, Watchable):
@@ -82,7 +82,7 @@ class Job(Watcher, Watchable):
           not happen. for that, a "reset" must be implemented.
           The restart is not implemented either, though.
     """
-    def __init__(self, build: Build, project: Project, name: str, vm_name: str):
+    def __init__(self, build: Build, project: Project, name: str, machine_name: str):
         super().__init__()
 
         # the project and build this job is invoked by
@@ -92,8 +92,8 @@ class Job(Watcher, Watchable):
         # name of this job within a build.
         self.name = name
 
-        # name of the vm where the job shall run.
-        self.vm_name = vm_name
+        # name of the machine where the job shall run.
+        self.machine_name = machine_name
 
         # No more tasks to perform for this job?
         # If the job is completed, stores the completion timestamp (float).
@@ -460,7 +460,7 @@ class Job(Watcher, Watchable):
 
             # figure out which machine to run the job on
             machine = await asyncio.wait_for(
-                job_manager.get_machine(self.vm_name),
+                job_manager.get_machine(self.machine_name),
                 timeout=10
             )
 

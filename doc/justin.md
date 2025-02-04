@@ -5,7 +5,7 @@ Justin is the daemon which executes the containers/virtual machines.
 
 Justin starts them when Kevin requests a machine and cleans them up afterwards.
 
-The backends are implemented in [`justin/vm/`](/justin/vm), and there's a [configuration guide for each backend](container/).
+The backends are implemented in [`justin/machine/`](/justin/machine), and there's a [configuration guide for each backend](machine/).
 
 
 Managing VMs
@@ -18,7 +18,7 @@ The `justin.manage` helper boots the machine in management mode
 and opens an ssh shell in it.
 
 ``` bash
-python -m justin.manage unix:///run/kevin/justin my-vm-id $optional-command
+python -m justin.manage unix:///run/kevin/justin my-machine-name $optional-command
 ```
 
 It uses the exact same access kevin would use,

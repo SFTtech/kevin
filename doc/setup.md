@@ -72,7 +72,7 @@ Each project can spawn as many "jobs" as you like to have.
 #### Component setup
 
 We support different container backends.
-Have a look inside [`justin/vm/`](/justin/vm) to see which ones and to add more container types.
+Have a look inside [`justin/machine/`](/justin/machine) to see which ones and to add more container types.
 
 
 ##### Host system (Kevin)
@@ -120,10 +120,10 @@ Justin starts and cleans up containers when Kevin requests them.
 
 Setting up the guest system depends on the container technology you use.
 
-* [Qemu](container/vm.md)
-* [Podman](container/podman.md)
-* [LXD](container/lxd.md)
-* Your [favorite-to-be-implemented](/justin/vm) backend
+* [Qemu](machine/vm.md)
+* [Podman](machine/podman.md)
+* [LXD](machine/lxd.md)
+* Your [favorite-to-be-implemented](/justin/machine) backend
 
 
 ##### Project

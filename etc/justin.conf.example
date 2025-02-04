@@ -21,10 +21,10 @@ vm_ports = [7888,8000]
 
 #[some-random-vm-id]
 
-# VM name, which is requested by a job of some project.
+# machine name, which is requested by a job of some project.
 #name = machine-which-the-job-requests
 
-# VM type, see justin/vm/ for supported backends.
+# machine type, see justin/machine/ for supported backends.
 #type = qemu
 
 # user used for ssh login
@@ -126,7 +126,7 @@ vm_ports = [7888,8000]
 
 # custom commands for container control.
 # when the launch command terminates, the container is assumed to be shut down.
-# see justin/vm/custom.py for implementation.
+# see justin/machine/custom.py for implementation.
 #prepare = sh -c 'echo preparing manage=$JUSTIN_MANAGE'
 #launch = sh -c 'echo launching manage=$JUSTIN_MANAGE; nc -lp $JUSTIN_SSH_PORT'
 #cleanup = echo "cleaning up"

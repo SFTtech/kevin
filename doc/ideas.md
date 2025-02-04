@@ -26,8 +26,7 @@ ask on our IRC (freenode.net #sfttech) for assistance.
 
 #### More containers
 
-* Implement the stubs in the `justin/vm` folder to support other containers
-* Maybe add `virtmanager` support
+* Implement the stubs in the `justin/machine` folder to support other machines
 
 
 #### VM management

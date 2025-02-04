@@ -7,7 +7,7 @@ import logging
 import time
 
 from justin import messages
-from justin.vm import Container
+from justin.machine import Container
 
 from .process import SSHProcess, ProcTimeoutError
 

@@ -30,7 +30,7 @@ setup(
         "kevin.simulator",
         "chantal",
         "justin",
-        "justin.vm",
+        "justin.machine",
     ],
     data_files=[
         ("/usr/lib/systemd/system/", [

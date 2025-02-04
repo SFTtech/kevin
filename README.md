@@ -78,7 +78,7 @@ Requires:
   * [X] [GitHub](https://github.com/),
   * [ ] [GitLab](https://gitlab.com/),
   * [ ] ...
-* [Support for more container types](/justin/vm/)
+* [Support for more container/vm types](/justin/machine/)
   * [X] [qemu](http://qemu-project.org)
   * [X] [podman](https://podman.io/)
   * [x] [lxd](https://linuxcontainers.org/lxd)

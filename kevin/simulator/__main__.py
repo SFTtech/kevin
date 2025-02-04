@@ -28,7 +28,7 @@ def main():
                            "beware: provide the .git of that repo! "
                            "`git update-server-info` is called on that!"))
     cmd.add_argument("--local-repo-address", default="10.0.2.2",
-                     help=("the vm can reach this simulator "
+                     help=("the builder machine can reach this simulator "
                            "under the given address."))
     cmd.add_argument("-d", "--debug", action="store_true",
                      help="enable asyncio debugging")

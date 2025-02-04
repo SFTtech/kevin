@@ -97,9 +97,9 @@ class BuildJobCreated(Update):
     """
     Update that notifies the creation of a job.
     """
-    def __init__(self, job_name, vm_name):
+    def __init__(self, job_name, machine_name):
         self.job_name = job_name
-        self.vm_name = vm_name
+        self.machine_name = machine_name
 
 
 class BuildSource(Update):

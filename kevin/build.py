@@ -80,7 +80,7 @@ class Build(Watchable, Watcher):
 
         # jobs that were once running
         # (we remember them to re-create jobs when this build is reconstructed)
-        # {job_name -> vm_name, ...}
+        # {job_name -> machine_name, ...}
         self._jobs_to_reconstruct: dict[str, str] = dict()
 
         # URL where the repo containing this commit can be cloned from
@@ -199,11 +199,11 @@ class Build(Watchable, Watcher):
         else:
             jobs = self._jobs_to_reconstruct
 
-        for job_name, vm_name in jobs.items():
+        for job_name, machine_name in jobs.items():
             if job_name in self.jobs:
                 raise Exception(f"Job to reconstruct {job_name!r} is already registered")
 
-            job = Job(self, self.project, job_name, vm_name)
+            job = Job(self, self.project, job_name, machine_name)
 
             # bypass the `RegisterActions`-message and register directly
             await job.register_to_build()
@@ -314,7 +314,7 @@ class Build(Watchable, Watcher):
         await self.send_update(QueueActions(self.commit_hash, queue,
                                             self.project.name))
 
-    async def create_job(self, job_name: str, vm_name: str) -> Job:
+    async def create_job(self, job_name: str, machine_name: str) -> Job:
         """
         creates a job, triggered by when a projects' `JobAction` are attached for a build.
         it's not yet registered, this happens by the build emitting RegisterActions
@@ -323,8 +323,8 @@ class Build(Watchable, Watcher):
         if self.finished:
             raise Exception("job created after build was finished!")
 
-        new_job = Job(self, self.project, job_name, vm_name)
-        await self.send_update(BuildJobCreated(job_name, vm_name))
+        new_job = Job(self, self.project, job_name, machine_name)
+        await self.send_update(BuildJobCreated(job_name, machine_name))
 
         return new_job
 
@@ -374,7 +374,7 @@ class Build(Watchable, Watcher):
                 if update.job_name in self._jobs_to_reconstruct:
                     raise Exception(f"duplicate job name {update.job_name!r}")
                 logging.debug("register job %s for reconstruction", update.job_name)
-                self._jobs_to_reconstruct[update.job_name] = update.vm_name
+                self._jobs_to_reconstruct[update.job_name] = update.machine_name
 
         # stored the update to be sent to a new subscriber
         self.updates.append(update)
