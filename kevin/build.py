@@ -31,7 +31,7 @@ class Build(Watchable, Watcher):
     by the commit hash. The build then launches multiple jobs, as required
     by the associated project.
 
-    The Jobs are then executed on some falk instance, where all the steps
+    The Jobs are then executed on some justin instance, where all the steps
     for the job are run.
     """
 

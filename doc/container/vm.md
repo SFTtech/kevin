@@ -21,6 +21,6 @@ Basically, you'll have a full system installation (Linux, ...) that is then reac
 - Setup password-less SSH access (`ssh-copy-id`) for above `kevin` user to `chantal@container_vm`
   - Add `kevin`'s `id_rsa.pub` into `~chantal/.ssh/authorized_keys`
 - Store the contents of the container's `/etc/ssh/ssh_host_ed25519_key.pub`
-  to the `falk.conf` so the key for this VM can be verified
+  to the `justin.conf` so the key for this VM can be verified
 - **Set up the container** in the way you'd like to test your project
   - If your build involves graphical things, you could set up `tigervnc` or `x11vnc`

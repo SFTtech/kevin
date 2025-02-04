@@ -1,9 +1,9 @@
 ###############################################################################
-# configuration for falk, which provides build machines
+# configuration for justin, which provides build machines
 ###############################################################################
-[falk]
-name = test-falk
-control_socket = /run/kevin/falk
+[justin]
+name = test-justin
+control_socket = /run/kevin/justin
 control_socket_permissions = 770
 #control_socket_group = kevin
 
@@ -24,14 +24,14 @@ vm_ports = [7888,8000]
 # VM name, which is requested by a job of some project.
 #name = machine-which-the-job-requests
 
-# VM type, see falk/vm/ for supported backends.
+# VM type, see justin/vm/ for supported backends.
 #type = qemu
 
 # user used for ssh login
 #ssh_user = chantal
 
 # host used by kevin to connect to.
-# special value: "localhost" => kevin connects to falk machine
+# special value: "localhost" => kevin connects to justin machine
 #ssh_host = localhost
 
 # public key of the VM's ssh server so we can verify we connected to the right one.
@@ -60,7 +60,7 @@ vm_ports = [7888,8000]
 # remote desktop:
 #   QEMU:          -vnc 127.0.0.1:1    instead of -display none
 #   then use a vncclient to connect to port 5901
-#   (maybe forward the port to your machine with `ssh -L 12345:localhost:5901 youruser@falkhost`,
+#   (maybe forward the port to your machine with `ssh -L 12345:localhost:5901 youruser@justinhost`,
 #    then connect with a vncviewer: e.g. `vinagre localhost:12345`)
 
 
@@ -121,14 +121,14 @@ vm_ports = [7888,8000]
 #ssh_user = chantal
 
 # kevin's ssh connects to this host.
-# special value: "localhost" => kevin connects to falk machine
+# special value: "localhost" => kevin connects to justin machine
 #ssh_host = localhost
 
 # custom commands for container control.
 # when the launch command terminates, the container is assumed to be shut down.
-# see falk/vm/custom.py for implementation.
-#prepare = sh -c 'echo preparing manage=$FALK_MANAGE'
-#launch = sh -c 'echo launching manage=$FALK_MANAGE; nc -lp $FALK_SSH_PORT'
+# see justin/vm/custom.py for implementation.
+#prepare = sh -c 'echo preparing manage=$JUSTIN_MANAGE'
+#launch = sh -c 'echo launching manage=$JUSTIN_MANAGE; nc -lp $JUSTIN_SSH_PORT'
 #cleanup = echo "cleaning up"
 
 

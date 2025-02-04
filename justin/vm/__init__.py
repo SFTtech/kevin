@@ -40,10 +40,10 @@ class ContainerConfig:
 
 class ContainerConfigFile(ContainerConfig):
     """
-    Configuration for a falk-managed container.
+    Configuration for a justin-managed container.
     Guarantees the existence of:
      * VM access data (SSH)
-     * Machine ID     (id unique in this falk instance)
+     * Machine ID     (id unique in this justin instance)
      * Machine Name   (to match for)
 
     Created from a config dict that contains key-value pairs.
@@ -94,7 +94,7 @@ class ContainerConfigFile(ContainerConfig):
                 # either the key is a file, or a line from the known hosts file.
                 path = Path(os.path.expanduser(value))
 
-                # determine location relative to the falk.conf
+                # determine location relative to the justin.conf
                 if not path.is_absolute():
                     path = cfgpath / path
 
@@ -131,7 +131,7 @@ class ContainerConfigFile(ContainerConfig):
 
         # set default values for missing entries
         if not self.ssh_host:
-            # if host is not specified, assume the falk localhost
+            # if host is not specified, assume the justin localhost
             logging.warning("[vm] \x1b[33mwarning\x1b[m: "
                             "'%s' has no ssh_host specified, "
                             "assuming localhost",

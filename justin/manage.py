@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
 
 """
-SSH client for a VM managed by falk.
+SSH client for a VM managed by justin.
 """
 
 import argparse
 import asyncio
 import logging
 
-from kevin.falk import FalkSSH, FalkSocket
+from kevin.justin import JustinSSH, JustinSocket
 from kevin.process import SSHProcess
 from kevin.util import parse_listen_entry, log_setup
 
 
-async def spawn_shell(falk, vm_id, volatile, command):
+async def spawn_shell(justin, vm_id, volatile, command):
     """
-    Spawns an interactive shell with falk.
+    Spawns an interactive shell with justin.
     """
 
-    logging.debug("connecting to falk...")
-    await falk.create()
+    logging.debug("connecting to justin...")
+    await justin.create()
 
     logging.debug("looking up machine '%s'...", vm_id)
-    vm = await falk.create_vm(vm_id)
+    vm = await justin.create_vm(vm_id)
 
     if vm is None:
-        raise Exception("vm '%s' was not found on falk '%s'. "
+        raise Exception("vm '%s' was not found on justin '%s'. "
                         "available:\n%s" % (
-                            vm_id, falk, await falk.get_vms()))
+                            vm_id, justin, await justin.get_vms()))
 
     manage = not volatile
     logging.debug("preparing and launching machine (manage=%s)..." % manage)
@@ -60,13 +60,13 @@ async def spawn_shell(falk, vm_id, volatile, command):
 
 
 def main():
-    """ Connect to a pty of some vm provided by falk """
+    """ Connect to a pty of some vm provided by justin """
 
     cmd = argparse.ArgumentParser()
     cmd.add_argument("--volatile", action="store_true",
                      help="don't start the VM in management mode")
-    cmd.add_argument("falk_id",
-                     help=("falk connection information: "
+    cmd.add_argument("justin_id",
+                     help=("justin connection information: "
                            "unix://socketpath, unix://user@socket "
                            "or ssh://user@host:port"))
     cmd.add_argument("vm_id", help="machine identification")
@@ -90,25 +90,25 @@ def main():
     loop.set_debug(args.debug)
 
     user, connection, location, key = parse_listen_entry(
-        "falk_id", args.falk_id, require_key=False)
+        "justin_id", args.justin_id, require_key=False)
 
     if connection == "ssh":
         host, port = location
-        falk = FalkSSH("manage", host, port, user, key)
+        justin = JustinSSH("manage", host, port, user, key)
 
     elif connection == "unix":
-        falk = FalkSocket("manage", location, user)
+        justin = JustinSocket("manage", location, user)
 
     else:
-        raise Exception("unknown falk connection type: %s" % connection)
+        raise Exception("unknown justin connection type: %s" % connection)
 
     ret = 1
     try:
         ret = loop.run_until_complete(
-            spawn_shell(falk, args.vm_id, args.volatile, args.command))
+            spawn_shell(justin, args.vm_id, args.volatile, args.command))
 
     except KeyboardInterrupt:
-        print("\nfalk.manage killed by keyboard interrupt\n")
+        print("\njustin.manage killed by keyboard interrupt\n")
 
     loop.stop()
     loop.run_forever()

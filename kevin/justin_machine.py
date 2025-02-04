@@ -1,20 +1,20 @@
 """
-Controlling interface for machines hosted on falk
+Controlling interface for machines hosted on justin
 """
 
 import asyncio
 import logging
 import time
 
-from falk import messages
-from falk.vm import Container
+from justin import messages
+from justin.vm import Container
 
 from .process import SSHProcess, ProcTimeoutError
 
 
-class FalkError(Exception):
+class JustinError(Exception):
     """
-    Error that occurs when Falk does something fishy,
+    Error that occurs when Justin does something fishy,
     for example provide nonsense, talk garbage or cook salmon.
     """
 
@@ -22,27 +22,27 @@ class FalkError(Exception):
         super().__init__(msg)
 
 
-class VMError(FalkError):
+class MachineError(JustinError):
     """
     Raised when a request to a Container was not successful.
     """
     pass
 
 
-class FalkVM(Container):
+class JustinMachine(Container):
     """
     Provides the same interface as any machine container,
-    but instead relays the commands to a falk server.
+    but instead relays the commands to a justin server.
 
     Use this handle to interact with the VM, i.e. boot it, terminate it, ...
 
-    An instance of this class is created by falk, it also provides cfg.
+    An instance of this class is created by justin, it also provides cfg.
     """
-    def __init__(self, cfg, run_id, falk):
+    def __init__(self, cfg, run_id, justin):
         super().__init__(cfg)
 
         self.run_id = run_id
-        self.falk = falk
+        self.justin = justin
 
     @classmethod
     def dynamic_ssh_config(cls):
@@ -53,19 +53,19 @@ class FalkVM(Container):
         raise Exception("config() on the VM controller called")
 
     async def prepare(self, manage=False):
-        msg = await self.falk.query(messages.Prepare(run_id=self.run_id,
-                                                     manage=manage))
+        msg = await self.justin.query(messages.Prepare(run_id=self.run_id,
+                                                       manage=manage))
         if not isinstance(msg, messages.OK):
-            raise VMError(f"Failed to prepare: {msg.msg}")
+            raise MachineError(f"Failed to prepare: {msg.msg}")
 
     async def launch(self):
-        msg = await self.falk.query(messages.Launch(run_id=self.run_id))
+        msg = await self.justin.query(messages.Launch(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
-            raise VMError(f"Failed to launch machine: {msg.msg}")
+            raise MachineError(f"Failed to launch machine: {msg.msg}")
 
-        msg = await self.falk.query(messages.GetConnectionInfo(run_id=self.run_id))
+        msg = await self.justin.query(messages.GetConnectionInfo(run_id=self.run_id))
         if not isinstance(msg, messages.ConnectionInfo):
-            raise VMError(f"Failed to get connection info: {msg.msg}")
+            raise MachineError(f"Failed to get connection info: {msg.msg}")
 
         # this is used to connect to the remote container instance!
         self.ssh_host = msg.ssh_host
@@ -74,7 +74,7 @@ class FalkVM(Container):
         self.ssh_user = msg.ssh_user
 
     async def status(self):
-        return await self.falk.query(messages.Status(run_id=self.run_id))
+        return await self.justin.query(messages.Status(run_id=self.run_id))
 
     async def is_running(self):
         # we have to implement it because @abstractmethod, but
@@ -82,14 +82,14 @@ class FalkVM(Container):
         raise Exception("VM proxy 'is_running' should never be called!")
 
     async def terminate(self):
-        msg = await self.falk.query(messages.Terminate(run_id=self.run_id))
+        msg = await self.justin.query(messages.Terminate(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
-            raise VMError(f"Failed to kill machine: {msg.msg}")
+            raise MachineError(f"Failed to kill machine: {msg.msg}")
 
     async def cleanup(self):
-        msg = await self.falk.query(messages.Cleanup(run_id=self.run_id))
+        msg = await self.justin.query(messages.Cleanup(run_id=self.run_id))
         if not isinstance(msg, messages.OK):
-            raise VMError(f"Failed to clean up: {msg.msg}")
+            raise MachineError(f"Failed to clean up: {msg.msg}")
         return msg
 
     async def wait_for_ssh_port(self, timeout=60, retry_delay=0.2,
@@ -176,11 +176,11 @@ class FalkVM(Container):
 
     async def wait_for_shutdown(self, timeout=20):
         """
-        Request from falk so he tells us when the machine is dead.
+        Request from justin so he tells us when the machine is dead.
         """
-        msg = await self.falk.query(messages.ShutdownWait(run_id=self.run_id,
+        msg = await self.justin.query(messages.ShutdownWait(run_id=self.run_id,
                                                           timeout=timeout))
         if not isinstance(msg, messages.OK):
-            raise VMError(f"Failed to wait for shutdown: {msg.msg}")
+            raise MachineError(f"Failed to wait for shutdown: {msg.msg}")
 
         return msg

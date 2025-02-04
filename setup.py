@@ -13,8 +13,8 @@ setup(
     long_description=(
         "Components for running a continuous integration service "
         "right on your own servers.\n"
-        "Kevin interacts with the Internet, falk manages the virtual machines "
-        "and containers, chantal executes your build jobs.\n\n"
+        "Kevin interacts with the Internet, Justin manages the virtual machines "
+        "and containers, Chantal executes your build jobs.\n\n"
         "It's designed to interact with a code hosting platform like GitHub "
         "but can easily be extended for others.\n"
         "Pull requests are build in temporary containers that are deleted"
@@ -29,13 +29,13 @@ setup(
         "kevin.service",
         "kevin.simulator",
         "chantal",
-        "falk",
-        "falk.vm",
+        "justin",
+        "justin.vm",
     ],
     data_files=[
         ("/usr/lib/systemd/system/", [
             "etc/kevin.service",
-            "etc/falk.service",
+            "etc/justin.service",
         ]),
         ("/usr/lib/tmpfiles.d", [
             "etc/tmpfiles.d/kevin.conf",
@@ -43,7 +43,7 @@ setup(
         ("/etc/kevin", [
             "etc/kevinfile.example",
             "etc/kevin.conf.example",
-            "etc/falk.conf.example",
+            "etc/justin.conf.example",
         ]),
         ("/etc/kevin/projects", [
             "etc/project.conf.example",

@@ -1,7 +1,7 @@
 LXD Containers
 ==============
 
-Falk can manage [LXD](https://linuxcontainers.org/lxd/) containers.
+Justin can manage [LXD](https://linuxcontainers.org/lxd/) containers.
 The launched container must run a SSH server such that the buildsystem is able to execute the build steps via remote commands.
 
 
@@ -59,7 +59,7 @@ ex(f"lxc publish {template_container} --alias '{template_image}'")
 ex(f"lxc rm {template_container}")
 ```
 
-Running this script creates you a container image (named after `template_image`), which Falk can then use to spawn temporary CI containers from.
+Running this script creates you a container image (named after `template_image`), which Justin can then use to spawn temporary CI containers from.
 
 
 ## Run a Temporary CI Container

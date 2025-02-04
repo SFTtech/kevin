@@ -4,7 +4,7 @@ Kevin setup guide
 Components needed for a smooth experience\*:
 
 * `Kevin`: Main daemon
-* `Falk`: Container provider daemon
+* `Justin`: Container provider daemon
 * `Chantal`: In-container agent to run the job
 * `Mandy`: Webinterface
 
@@ -15,10 +15,10 @@ tl;dr
 -----
 
 * Install `kevin` on a server
-* Create/edit `kevin.conf`, `falk.conf` and add a config for all your projects to be built
-* Set up a VM or container with active SSH and add it to `falk.conf`
+* Create/edit `kevin.conf`, `justin.conf` and add a config for all your projects to be built
+* Set up a VM or container with active SSH and add it to `justin.conf`
 * Add `kevin-ci` as github webhook
-* Run `kevin` and `falk` (e.g. as `systemd` service)
+* Run `kevin` and `justin` (e.g. as `systemd` service)
 * Add the `kevinfile` control file to your project repo
 * Pull requests are built inside a temporary container copy
 * Set up a webserver to serve the `mandy` webinterface and your build output folder
@@ -30,11 +30,11 @@ Data flow
 * `kevin` interacts with the outside world (your git hoster).
   It gets notified by pull requests. You need a server for it.
 
-* `kevin` contacts `falk` to start a VM. You need a server for `falk` again,
+* `kevin` contacts `justin` to start a VM. You need a server for `justin` again,
   but it can be the same machine where `kevin` is running on.
-  There can be multiple `falk`s.
+  There can be multiple `justin`s.
 
-* `falk` launches a container/virtual machine provided by **you**. You
+* `justin` launches a container/virtual machine provided by **you**. You
   create the machine template (just set up a debian...) or use docker, etc.
   Your pull request is then built inside that container by `chantal`.
 
@@ -72,12 +72,12 @@ Each project can spawn as many "jobs" as you like to have.
 #### Component setup
 
 We support different container backends.
-Have a look inside [`falk/vm/`](/falk/vm) to see which ones and to add more container types.
+Have a look inside [`justin/vm/`](/justin/vm) to see which ones and to add more container types.
 
 
 ##### Host system (Kevin)
 
-Kevin gets a notification that it should build something, and kevin then notifies falk to provide a container.
+Kevin gets a notification that it should build something, and kevin then notifies justin to provide a container.
 
 - Install
   - `python >=3.11`
@@ -88,31 +88,31 @@ Kevin gets a notification that it should build something, and kevin then notifie
 - Install the `kevin` Python module (ideally, as a [systemd unit](/etc/kevin.service) or whatever)
 
 
-##### Container provider (Falk)
+##### Container provider (Justin)
 
-Falk starts and cleans up containers when Kevin requests them.
+Justin starts and cleans up containers when Kevin requests them.
 
 - Install
   - `python >=3.6`
   - your container implementation of choice: `qemu`, `libpod`, `docker`, ...
 
-- Create `/etc/kevin/falk.conf` from [`falk.conf.example`](/etc/falk.conf.example)
+- Create `/etc/kevin/justin.conf` from [`justin.conf.example`](/etc/justin.conf.example)
 
-- Register this `falk` by adding it to the `kevin.conf` `[falk]` section.
-  - If this `falk` is on the same machine as `kevin`:
-    - add `falk_name=userid@/run/kevin/falk`
-      and `kevin` will use this Unix socket to contact `falk`
+- Register this `justin` by adding it to the `kevin.conf` `[justin]` section.
+  - If this `justin` is on the same machine as `kevin`:
+    - add `justin_name=userid@/run/kevin/justin`
+      and `kevin` will use this Unix socket to contact `justin`
 
-  - If this `falk` is a **different physical machine** than the host for `kevin`:
-    - Create user `falk` on the `falk` host
-    - In `kevin.conf`, section `[falk]`, add `falk_name=falk@vmserver.name`,
-      `kevin` will then contact falk via SSH
-    - In `~falk/.ssh/authorized_keys`, force the ssh command to
-      `command="python3 -m falk.shell useridentifier" ssh-rsa kevinkeyblabla...`
+  - If this `justin` is a **different physical machine** than the host for `kevin`:
+    - Create user `justin` on the `justin` host
+    - In `kevin.conf`, section `[justin]`, add `justin_name=justin@vmserver.name`,
+      `kevin` will then contact justin via SSH
+    - In `~justin/.ssh/authorized_keys`, force the ssh command to
+      `command="python3 -m justin.shell useridentifier" ssh-rsa kevinkeyblabla...`
       This sets up password-less SSH access (`ssh-copy-id`..)
-      for `kevin` to `falk@vmserver.name` and forces the falk shell.
+      for `kevin` to `justin@vmserver.name` and forces the justin shell.
 
-- optional: create firewall rules to prevent the VMs launched by `falk`
+- optional: create firewall rules to prevent the VMs launched by `justin`
    from talking to internals of your network
 
 
@@ -123,7 +123,7 @@ Setting up the guest system depends on the container technology you use.
 * [Qemu](container/vm.md)
 * [Podman](container/podman.md)
 * [LXD](container/lxd.md)
-* Your [favorite-to-be-implemented](/falk/vm) backend
+* Your [favorite-to-be-implemented](/justin/vm) backend
 
 
 ##### Project
@@ -183,15 +183,15 @@ The project config determines active Kevin plugins and their configuration.
   * There's no cleanup mechanism yet (you may implemente it :)
 * [systemd](https://www.freedesktop.org/wiki/Software/systemd/) setup
   * copy and adjust `etc/kevin.service` to `/etc/systemd/system/kevin.service`
-  * copy and adjust `etc/falk.service` to `/etc/systemd/system/falk.service`
+  * copy and adjust `etc/justin.service` to `/etc/systemd/system/justin.service`
   * copy and adjust `etc/tmpfiles.d/kevin.conf` to `/etc/tmpfiles.d/kevin.conf`
   * enable the service with `systemctl enable $name.service`
   * start them with `systemctl start $name.service`
 * Non-daemon launch
   * Run `kevin` with `python3 -m kevin`
-  * Run `falk` with `python3 -m falk`
-* After setup, [manage a container](falk.md#managing-vms) with `python3 -m falk.manage`
-  * For example: `python3 -m falk.manage unix:///run/kevin/falk your_vm_id`
+  * Run `justin` with `python3 -m justin`
+* After setup, [manage a container](justin.md#managing-vms) with `python3 -m justin.manage`
+  * For example: `python3 -m justin.manage unix:///run/kevin/justin your_vm_id`
 
 * We recommend to first test with a dummy repository that just contains a simple `kevinfile`, instead of the "real" project.
 * Test without `github`: Try using the [Kevin Simulator](simulator.md)

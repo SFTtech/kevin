@@ -61,7 +61,7 @@ Requires:
 ### Components
 
 * **Kevin**: Receives triggers and launches the builds
-* **Falk**: Provides temporary containers to Kevin
+* **Justin**: Provides temporary containers to Kevin
 * **Chantal**: Run inside the container to execute the Job
 * **Mandy**: Webinterface to view live-results
 
@@ -78,7 +78,7 @@ Requires:
   * [X] [GitHub](https://github.com/),
   * [ ] [GitLab](https://gitlab.com/),
   * [ ] ...
-* [Support for more container types](/falk/vm/)
+* [Support for more container types](/justin/vm/)
   * [X] [qemu](http://qemu-project.org)
   * [X] [podman](https://podman.io/)
   * [x] [lxd](https://linuxcontainers.org/lxd)

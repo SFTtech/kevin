@@ -16,7 +16,7 @@ from collections import defaultdict
 from .action import Action
 from .chantal import Chantal
 from .config import CFG
-from .falkvm import VMError
+from .justin_machine import MachineError
 from .process import (ProcTimeoutError, ProcessFailed, ProcessError)
 from .update import (Update, JobState, JobUpdate, StepState,
                      StdOut, OutputItem, QueueActions, UpdateStep,
@@ -76,7 +76,7 @@ class JobAction(Action):
 class Job(Watcher, Watchable):
     """
     Holds all info for one job, which runs a commit SHA of a project
-    in a falk machine.
+    in a justin machine.
 
     TODO: when "restarting" the job, the reconstruction from fs must
           not happen. for that, a "reset" must be implemented.
@@ -455,7 +455,7 @@ class Job(Watcher, Watchable):
             if self.completed:
                 raise Exception("tried to run a completed job!")
 
-            # falk contact
+            # justin contact
             await self.set_state("waiting", "requesting machine")
 
             # figure out which machine to run the job on
@@ -581,7 +581,7 @@ class Job(Watcher, Watchable):
                     # bad step is unknown:
                     await self.error("Silence for > %.2fs!" % (exc.timeout))
 
-        except VMError as exc:
+        except MachineError as exc:
             logging.error("\x1b[31;1mMachine action failed\x1b[m "
                           "%s.%s [\x1b[33m%s\x1b[m]",
                           self.build.project.name,

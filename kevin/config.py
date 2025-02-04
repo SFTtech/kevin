@@ -32,7 +32,7 @@ class Config:
         self.output_folder = None
 
         self.projects = dict()
-        self.falks = dict()
+        self.justins = dict()
 
         self.args = None
 
@@ -133,15 +133,15 @@ class Config:
                 raise ValueError("dyn_frontend_ssl must be either true or false.")
 
             # vm providers
-            current_section = "falk"
-            falk_entries = raw[current_section]
-            for name, url in falk_entries.items():
-                if name in self.falks:
-                    raise ValueError("Falk double-defined: %s" % name)
+            current_section = "justin"
+            justin_entries = raw[current_section]
+            for name, url in justin_entries.items():
+                if name in self.justins:
+                    raise ValueError("Justin double-defined: %s" % name)
 
                 result = parse_connection_entry(name, url, cfglocation)
 
-                self.falks[name] = {
+                self.justins[name] = {
                     "user": result[0],
                     "connection": result[1],
                     "location": result[2],

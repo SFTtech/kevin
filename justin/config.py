@@ -1,5 +1,5 @@
 """
-Falk daemon config parsing
+Justin daemon config parsing
 """
 
 from configparser import ConfigParser
@@ -32,19 +32,19 @@ class Config:
         cfg.read(filename)
 
         try:
-            falkcfg = cfg["falk"]
+            justincfg = cfg["justin"]
 
-            self.name = falkcfg["name"]
-            self.control_socket = falkcfg["control_socket"]
+            self.name = justincfg["name"]
+            self.control_socket = justincfg["control_socket"]
 
             self.control_socket_permissions = (
-                falkcfg.get("control_socket_permissions"))
+                justincfg.get("control_socket_permissions"))
 
             self.control_socket_group = (
-                falkcfg.get("control_socket_group"))
+                justincfg.get("control_socket_group"))
 
             # ssh ports may be a range or a single port
-            ssh_port_range = falkcfg["vm_ports"]
+            ssh_port_range = justincfg["vm_ports"]
             mat = re.match(r"\[(\d+),(\d+)\]", ssh_port_range)
             if mat:
                 # port range
@@ -71,7 +71,7 @@ class Config:
 
     def load_machines(self, cfg, cfgpath):
         for machineid, machinecfg in cfg.items():
-            if machineid in ("falk", "DEFAULT"):
+            if machineid in ("justin", "DEFAULT"):
                 # is for the main config above.
                 continue
             elif machineid in self.machines:
@@ -108,5 +108,5 @@ class Config:
         pass
 
 
-# global falk configuration instance
+# global justin configuration instance
 CFG = Config()

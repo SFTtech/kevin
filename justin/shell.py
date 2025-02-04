@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 """
-SSH -> unix socket bridge for falk.
+SSH -> unix socket bridge for justin.
 
-sends the ssh-forced user as login message to falk.
+sends the ssh-forced user as login message to justin.
 """
 
 import argparse
@@ -15,7 +15,7 @@ import sys
 
 from enum import Enum
 
-from .protocol import FalkProto
+from .protocol import JustinProto
 from .config import CFG
 from .messages import Login
 
@@ -23,13 +23,13 @@ from .messages import Login
 
 def main():
     """
-    Spawns a shell that relays the messages to the falk unix socket.
+    Spawns a shell that relays the messages to the justin unix socket.
     """
 
     cmd = argparse.ArgumentParser()
-    cmd.add_argument("user", help="the user that connected to falk")
-    cmd.add_argument("-c", "--config", default="/etc/kevin/falk.conf",
-                     help="corresponding falk daemon config file")
+    cmd.add_argument("user", help="the user that connected to justin")
+    cmd.add_argument("-c", "--config", default="/etc/kevin/justin.conf",
+                     help="corresponding justin daemon config file")
 
     args = cmd.parse_args()
 
@@ -41,13 +41,13 @@ def main():
     # connection relay
     sel = selectors.DefaultSelector()
 
-    # connect to falk unix socket.
+    # connect to justin unix socket.
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
     try:
         sock.connect(CFG.control_socket)
     except FileNotFoundError:
-        print("falk socket not found: '%s' missing" % CFG.control_socket)
+        print("justin socket not found: '%s' missing" % CFG.control_socket)
         return
 
     class Buf(Enum):
@@ -125,9 +125,9 @@ def main():
     for pipe in read_pipes.keys():
         sel.register(pipe, selectors.EVENT_READ)
 
-    # send user login message to falk
+    # send user login message to justin
     msg = Login(user, peer)
-    data = msg.pack(FalkProto.DEFAULT_MODE)
+    data = msg.pack(JustinProto.DEFAULT_MODE)
     inbuf += data
     add_writer(write_pipes[Buf.inbuf], inbuf, Buf.inbuf)
 

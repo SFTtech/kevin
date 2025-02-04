@@ -40,7 +40,7 @@ class Custom(Container):
         self.manage = manage
 
         prepare_env = os.environ.copy()
-        prepare_env["FALK_MANAGE"] = "true" if self.manage else ""
+        prepare_env["JUSTIN_MANAGE"] = "true" if self.manage else ""
 
         command = shlex.split(self.cfg.prepare)
         proc = await asyncio.create_subprocess_exec(*command, env=prepare_env)
@@ -59,8 +59,8 @@ class Custom(Container):
                       "on ssh port %d", self.ssh_port)
 
         launch_env = os.environ.copy()
-        launch_env["FALK_SSH_PORT"] = str(self.ssh_port)
-        launch_env["FALK_MANAGE"] = "true" if self.manage else ""
+        launch_env["JUSTIN_SSH_PORT"] = str(self.ssh_port)
+        launch_env["JUSTIN_MANAGE"] = "true" if self.manage else ""
 
         command = []
         for part in shlex.split(self.cfg.launch):
@@ -114,7 +114,7 @@ class Custom(Container):
     async def cleanup(self):
         command = shlex.split(self.cfg.cleanup)
         cleanup_env = os.environ.copy()
-        cleanup_env["FALK_MANAGE"] = "true" if self.manage else ""
+        cleanup_env["JUSTIN_MANAGE"] = "true" if self.manage else ""
 
         proc = await asyncio.create_subprocess_exec(*command, env=cleanup_env)
 

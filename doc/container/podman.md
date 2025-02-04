@@ -1,7 +1,7 @@
 Podman Containers
 =================
 
-In order to make falk be able to manage podman containers you need to provide it with
+In order to make justin be able to manage podman containers you need to provide it with
 a suitable container image. This image must run a ssh server such that the buildsystem
 is able to execute the build steps via remote commands.
 
@@ -41,9 +41,9 @@ CMD ["/usr/sbin/sshd", "-D", "-p", "22"]
 Podman needs its [own preparation](https://github.com/containers/libpod/tree/master/docs/tutorials):
 * e.g. the subuids and subgids described in [their rootless guide](https://github.com/containers/libpod/blob/master/docs/tutorials/rootless_tutorial.md).
 
-This image would then be built as the user running the falk daemon like
+This image would then be built as the user running the justin daemon like
 ```shell script
-su <falk-user> podman build -t <your-image-tag> --build-arg authorized_keys="<kevin-ci-user ssh key>" .
+su <justin-user> podman build -t <your-image-tag> --build-arg authorized_keys="<kevin-ci-user ssh key>" .
 ```
 Instead of passing the build users (the one running the kevin deamon) ssh key via container build args it is
 also possible to just copy the public key from the host system.

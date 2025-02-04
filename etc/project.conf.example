@@ -4,7 +4,7 @@
 # each [section] configures a module
 # to have multiple instances of the same module,
 # the module name is suffixed with .0, .1, ...
-# e.g. to have multiple compile jobs (maybe on different falk machines)
+# e.g. to have multiple compile jobs (maybe on different justin machines)
 
 [project]
 # general project configuration
@@ -41,12 +41,12 @@ repos = any
 #repos = yourkitteh/mice_reloaded, macrohard/doors
 
 
-# "job" module configuration, which performs a build via falk.
+# "job" module configuration, which performs a build via justin.
 [job.0]
 # invokes a container launch
 name = GNU-debian-hurd     # this name is passed to chantal!
 description = launch the vm and give me freedom
-machine = name-which-the-job-requests-from-falk
+machine = name-which-the-job-requests-from-justin
 # use a different control file for this job.
 # default otherwise: use project setting.
 #job_desc_file = kevin/hurdbuild

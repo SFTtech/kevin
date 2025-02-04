@@ -1,5 +1,5 @@
 """
-Falk interaction message definitions
+Justin interaction message definitions
 """
 
 import json
@@ -45,7 +45,7 @@ class MessageMeta(ABCMeta):
 
 class Message(metaclass=MessageMeta):
     """
-    Base class for all falk communication messages.
+    Base class for all justin communication messages.
 
     It support json and plaintext transmission.
     For plaintext, the `shelldump` method sends, `parse_args` receives.
@@ -354,7 +354,7 @@ class Welcome(Message):
             msg = argvk.get("msg") or argv[0]
             name = argvk.get("name") or argv[1]
         except IndexError:
-            raise ValueError("usage: welcome 'message' falkname") from None
+            raise ValueError("usage: welcome 'message' justinname") from None
 
         return cls(msg=msg, name=name)
 
@@ -376,7 +376,7 @@ class HelpText(Message):
 
         self.text = "\n".join([
             "",
-            "falk shell",
+            "justin shell",
             "----------",
             "",
             " available commands:",

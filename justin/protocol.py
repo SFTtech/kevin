@@ -1,5 +1,5 @@
 """
-Falk communication protocol.
+Justin communication protocol.
 """
 
 import asyncio
@@ -17,9 +17,9 @@ from .messages import ProtoType
 from kevin.util import strflazy
 
 
-class FalkProto(asyncio.Protocol):
+class JustinProto(asyncio.Protocol):
     """
-    Communication protocol for falks control socket.
+    Communication protocol for justins control socket.
     This is created for each connection on the socket.
 
     If the connection dies, all associated containers will be killed.
@@ -31,15 +31,15 @@ class FalkProto(asyncio.Protocol):
     # message protocol version
     VERSION = 0
 
-    def __init__(self, falk, loop=None):
-        self.falk = falk
+    def __init__(self, justin, loop=None):
+        self.justin = justin
         self.loop = loop or asyncio.get_event_loop()
 
         # line buffer
         self.buf = bytearray()
         self.maxbuf = (8 * 1024 * 1024)  # 8 MiB max buffer
 
-        # falk user identification
+        # justin user identification
         self.user = None
         self.ip = None
         self.source = None
@@ -71,7 +71,7 @@ class FalkProto(asyncio.Protocol):
 
     def connection_made(self, transport):
         self.connected = True
-        self.conn_id = self.falk.get_connection_id()
+        self.conn_id = self.justin.get_connection_id()
 
         socket = transport.get_extra_info('socket')
         who = socket.getsockopt(SOL_SOCKET, SO_PEERCRED, struct.calcsize('3i'))
@@ -129,7 +129,7 @@ class FalkProto(asyncio.Protocol):
 
     def send(self, msg, force_mode=None):
         """
-        Sends a protocol message to the falk client.
+        Sends a protocol message to the justin client.
         """
 
         data = msg.pack(force_mode or self.mode)
@@ -193,7 +193,7 @@ class FalkProto(asyncio.Protocol):
         """
         Fetch the running machine instance with given id.
         """
-        return self.falk.get_machine(self.get_machine_id(run_id))
+        return self.justin.get_machine(self.get_machine_id(run_id))
 
     async def kill_containers(self):
         """
@@ -213,7 +213,7 @@ class FalkProto(asyncio.Protocol):
                 await container.cleanup()
 
             # remove the handle
-            self.falk.delete_handle(handle_id)
+            self.justin.delete_handle(handle_id)
             deleted_handles.append(handle_id)
 
         for handle_id in deleted_handles:
@@ -293,8 +293,8 @@ class FalkProto(asyncio.Protocol):
 
     async def control_message(self, msg):
         """
-        Parse and handle falk control messages.
-        This defines falks behavior!
+        Parse and handle justin control messages.
+        This defines justins behavior!
 
         """
 
@@ -371,7 +371,7 @@ class FalkProto(asyncio.Protocol):
                 # since each container has to have a distinct port.
                 if not machinecls.dynamic_ssh_config():
 
-                    free_port = self.falk.register_free_port(cfg.ssh_host)
+                    free_port = self.justin.register_free_port(cfg.ssh_host)
 
                     if free_port is not None:
                         cfg.ssh_port = free_port
@@ -380,7 +380,7 @@ class FalkProto(asyncio.Protocol):
                             "no free port found for %s" % msg.name)
 
                 # create new container and handle, then store it
-                handle_id = self.falk.create_handle(machinecls(cfg))
+                handle_id = self.justin.create_handle(machinecls(cfg))
                 self.current_machine = handle_id
                 self.running[handle_id] = msg.name
 
@@ -416,7 +416,7 @@ class FalkProto(asyncio.Protocol):
 
                 # and remove the handle.
                 handle_id = self.get_machine_id(msg.run_id)
-                self.falk.delete_handle(handle_id)
+                self.justin.delete_handle(handle_id)
                 self.current_machine = None
                 del self.running[handle_id]
 

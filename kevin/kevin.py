@@ -1,5 +1,5 @@
 """
-Main Queue and Falk management entity.
+Main Queue and Justin management entity.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ async def run(config: Config):
     This is Kevin. He will build your job. Guaranteed to be bug-free(*).
 
     Jobs from various sources are put into the Queue,
-    which is processed by running each jobs via Falk with Chantal.
+    which is processed by running each jobs via Justin with Chantal.
 
     (*) Disclaimer: May not actually be bug-free.
 

@@ -217,7 +217,7 @@ def parse_connection_entry(name, entry, cfglocation=None, require_key=True,
                 re.compile(r"ssh://(.+)@(.+):(\d+)\s*(=\s*(.*))?"),
                 parse_ssh),
 
-        "unix": ("unix://falkuser@/path/to/socket",
+        "unix": ("unix://justinuser@/path/to/socket",
                  re.compile(r"unix://((.+)@)?(.+)"),
                  parse_unix),
     }

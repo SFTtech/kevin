@@ -1,5 +1,5 @@
 """
-Falk module properties
+Justin module properties
 """
 
 import asyncio
@@ -9,12 +9,12 @@ import os
 from collections import defaultdict
 
 from .config import CFG
-from .protocol import FalkProto
+from .protocol import JustinProto
 
 
-class Falk:
+class Justin:
     """
-    Global state storage for this falk daemon.
+    Global state storage for this justin daemon.
     """
 
     def __init__(self):
@@ -54,7 +54,7 @@ class Falk:
 
         def create_proto():
             """ creates the asyncio protocol instance """
-            proto = FalkProto(self)
+            proto = JustinProto(self)
 
             # create message "worker" task
             proto_task = loop.create_task(proto.process_messages())

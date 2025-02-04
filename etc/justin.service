@@ -1,11 +1,11 @@
 [Unit]
-Description=Falk VM provider for Kevin
+Description=Justin VM provider for Kevin
 After=network.target
 
 [Service]
 Type=simple
-User=falk
-ExecStart=/usr/bin/env python3 -u -m falk
+User=justin
+ExecStart=/usr/bin/env python3 -u -m justin
 Restart=on-failure
 
 [Install]

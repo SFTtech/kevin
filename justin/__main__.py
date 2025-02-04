@@ -1,5 +1,5 @@
 """
-Falk is the VM provider for Kevin CI.
+Justin is the VM provider for Kevin CI.
 """
 
 import argparse
@@ -8,17 +8,17 @@ import logging
 
 from kevin.util import log_setup
 
-from . import Falk
+from . import Justin
 from .config import CFG
 
 
 def main():
-    """ Falk service launch """
+    """ Justin service launch """
 
     cmd = argparse.ArgumentParser(
-        description="Kevin CI Falk - VM provider")
+        description="Kevin CI Justin - VM provider")
 
-    cmd.add_argument("-c", "--config", default="/etc/kevin/falk.conf",
+    cmd.add_argument("-c", "--config", default="/etc/kevin/justin.conf",
                      help="file name of the configuration to use.")
     cmd.add_argument("-d", "--debug", action="store_true",
                      help="enable asyncio debugging")
@@ -29,7 +29,7 @@ def main():
 
     args = cmd.parse_args()
 
-    print("\x1b[1;32mFalk machine service initializing...\x1b[m")
+    print("\x1b[1;32mJustin machine service initializing...\x1b[m")
 
     log_setup(args.verbose - args.quiet)
 
@@ -42,13 +42,13 @@ def main():
     logging.debug("[cfg] loading...")
     CFG.load(args.config)
 
-    logging.error("\x1b[1;32mstarting falk...\x1b[m")
+    logging.error("\x1b[1;32mstarting justin...\x1b[m")
 
     # state storage
-    falk = Falk()
-    falk.prepare_socket()
+    justin = Justin()
+    justin.prepare_socket()
     try:
-        asyncio.run(falk.run(), debug=args.debug)
+        asyncio.run(justin.run(), debug=args.debug)
     except KeyboardInterrupt:
         pass
 

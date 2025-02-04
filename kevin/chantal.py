@@ -140,7 +140,7 @@ class Chantal(AsyncWith):
                 await self.machine.cleanup()
                 logging.debug("cleanup complete for machine %s..." % self.machine)
             except subprocess.SubprocessError:
-                logging.warning("[chantal] failed telling falk about VM "
+                logging.warning("[chantal] failed telling justin about VM "
                                 "teardown, but he'll do that on its own.")
 
     async def __aenter__(self):
