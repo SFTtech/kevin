@@ -348,7 +348,7 @@ class GitHubHookHandler(HookHandler):
         clone_url = json_data["repository"]["clone_url"]
         repo_url = json_data["repository"]["html_url"]
         user = json_data["pusher"]["name"]
-        branch = json_data["ref"]        # e.g. "refs/heads/master"
+        branch = json_data["ref"].lstrip("refs/heads/")  # e.g. "refs/heads/master"
 
         status_update_url = json_data["repository"]["statuses_url"].replace(
             "{sha}", commit_sha
