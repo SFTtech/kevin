@@ -24,6 +24,14 @@ Requires:
 - and some container/vm to run jobs in
 
 
+### Components
+
+* **Kevin**: Receives triggers and launches the builds
+* **Justin**: Provides temporary containers to Kevin
+* **Chantal**: Run inside the container to execute the Job
+* **Mandy**: Webinterface to view live-results
+
+
 ### How?
 
 * `kevin` is notified by a GitHub webhook
@@ -56,14 +64,6 @@ Requires:
 * Container management
   * Jobs are built in temporary throwaway VMs
   * Easily change and update the base images
-
-
-### Components
-
-* **Kevin**: Receives triggers and launches the builds
-* **Justin**: Provides temporary containers to Kevin
-* **Chantal**: Run inside the container to execute the Job
-* **Mandy**: Webinterface to view live-results
 
 
 ### Setup
