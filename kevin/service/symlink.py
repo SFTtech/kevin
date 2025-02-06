@@ -6,6 +6,7 @@ Used to maintain branch pointers to commits.
 from __future__ import annotations
 
 import logging
+import os.path
 import typing
 from pathlib import Path
 
@@ -112,7 +113,8 @@ class SymlinkCreator(Watcher):
         tmp_branch_link = branch_link.parent / f".{branch_link.name}.tmp"
 
         try:
-            build_path = self._build.path.resolve().relative_to(branch_link.parent, walk_up=True)
+            # TODO python3.12 use relative_to(..., walk_up=True)
+            build_path = Path(os.path.relpath(self._build.path.resolve(), branch_link.parent))
         except ValueError:
             # absolute path needed for filesystem boundary
             build_path = self._build.path.resolve()

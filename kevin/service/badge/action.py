@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import enum
 import logging
+import os.path
 import typing
+
+from pathlib import Path
 
 from .generator import BadgeGenerator
 
@@ -95,7 +98,8 @@ class _BadgeCreator(Watcher):
 
     def _link_badge(self, badgetype: BadgeType) -> None:
         try:  # try forming a relative path on the same FS
-            badges_path = self._cfg._badges_path.relative_to(self._build.path, walk_up=True)
+            # TODO python3.12 use relative_to(..., walk_up=True)
+            badges_path = Path(os.path.relpath(self._cfg._badges_path.resolve(), self._build.path.resolve()))
         except ValueError:
             badges_path = self._cfg._badges_path
 
