@@ -351,7 +351,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
                         ("\x1b[32msuccess:\x1b[m %s\n" %
                          (update.text)).encode()
                     )
-                elif update.is_finished():
+                elif update.is_completed():
                     # if finished but not errored or succeeded,
                     # this must be a failure.
                     # TODO: is this a good way to implement this?

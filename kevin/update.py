@@ -122,9 +122,9 @@ class State(Update):
     """ Overall state change """
     def __init__(self, project_name, build_id, state, text, time=None):
         if state not in ALLOWED_BUILD_STATES:
-            raise ValueError("Illegal state: " + repr(state))
+            raise ValueError(f"Illegal state: {state!r}")
         if not text.isprintable():
-            raise ValueError("State.text not printable: " + repr(text))
+            raise ValueError(f"State.text not printable: {text!r}")
         if time is None:
             time = clock.time()
         elif not (isinstance(time, int) or isinstance(time, float)):
@@ -143,7 +143,7 @@ class State(Update):
         """ return if the build succeeded """
         return self.state in SUCCESS_STATES
 
-    def is_finished(self):
+    def is_completed(self):
         """ return if the build is no longer running """
         return self.state in FINISH_STATES
 

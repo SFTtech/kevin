@@ -56,10 +56,6 @@ class JobAction(Action):
     due to the BuildJobCreated updates it persisted.
     """
 
-    @classmethod
-    def name(cls):
-        return "job"
-
     def __init__(self, cfg, project: Project):
         super().__init__(cfg, project)
         self.job_name = cfg["name"]
@@ -146,7 +142,7 @@ class Job(Watcher, Watchable):
 
         # check if the job was completed.
         # this means we can do a reconstruction.
-        if not CFG.args.volatile:
+        if not CFG.volatile:
             try:
                 self.completed = self.path.joinpath("_completed").stat().st_mtime
             except FileNotFoundError:
@@ -248,7 +244,7 @@ class Job(Watcher, Watchable):
         returns: is it was reconstructed.
         """
 
-        if CFG.args.volatile:
+        if CFG.volatile:
             return False
 
         if not self._all_loaded:
@@ -297,7 +293,7 @@ class Job(Watcher, Watchable):
         Remove all the files from this build.
         """
 
-        if CFG.args.volatile:
+        if CFG.volatile:
             return False
 
         # make sure that there are no remains
@@ -358,7 +354,7 @@ class Job(Watcher, Watchable):
         if isinstance(update, GeneratedUpdate):
             fs_save = False
 
-        if not fs_save or CFG.args.volatile:
+        if not fs_save or CFG.volatile:
             # don't write the update to the job storage
             return
 
@@ -637,7 +633,7 @@ class Job(Watcher, Watchable):
             # the job is completed!
             self.completed = clock.time()
 
-            if not CFG.args.volatile:
+            if not CFG.volatile:
                 # the job is now officially completed
                 self.path.joinpath("_completed").touch()
 
@@ -793,12 +789,12 @@ class Job(Watcher, Watchable):
                 raise ValueError("output size limit exceeded")
 
             pathobj = self.path.joinpath(path)
-            if pathobj.exists() and not CFG.args.volatile:
+            if pathobj.exists() and not CFG.volatile:
                 raise ValueError("duplicate output path: " + path)
 
             self.raw_remaining = size
 
-            if CFG.args.volatile:
+            if CFG.volatile:
                 logging.warning("'%s' ignored because of "
                                 "volatile mode active: %s", cmd, pathobj)
                 self.raw_file = open("/dev/null", 'wb')

@@ -5,11 +5,10 @@ Code for loading and parsing config options.
 from collections import defaultdict
 from configparser import ConfigParser
 from pathlib import Path
-import ipaddress
+
 import logging
 import os
 
-from .project import Project
 from .util import parse_connection_entry
 
 
@@ -35,6 +34,7 @@ class Config:
         self.justins = dict()
 
         self.args = None
+        self.volatile = True
 
         # maps {HookHandler class -> {kwargname -> argvalue}}
         # this basically determines the constructor arguments
@@ -46,6 +46,7 @@ class Config:
     def set_cmdargs(self, args):
         """ Set runtime arguments """
         self.args = args
+        self.volatile = args.volatile
 
         if self.args.volatile:
             logging.warning("\x1b[1;31mYou are running in volatile mode, "
@@ -76,6 +77,8 @@ class Config:
             self.max_jobs_running = int(kevin["max_jobs_running"])
 
             # project configurations.
+            from .project import Project
+
             current_section = "projects"
             projects = raw[current_section]
 
@@ -102,7 +105,7 @@ class Config:
                     continue
 
                 # create the project
-                newproj = Project(str(projectfile))
+                newproj = Project(projectfile, self)
                 if newproj.name in self.projects:
                     raise NameError("Project '%s' defined twice!" % (
                         newproj.name))

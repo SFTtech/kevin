@@ -40,6 +40,20 @@ token = tokentokentokenbaby
 repos = any
 #repos = yourkitteh/mice_reloaded, macrohard/doors
 
+#[status_badge]
+## create status.svg for a build
+#base_text = build status
+#success_text = success
+#fail_text = failed
+#error_text = errored
+
+#[symlink_branch]
+## link commits to branch names
+#only =
+#exclude =
+## where the branch symlinks will be placed,
+##relative to project directory (or absolute)
+#target_dir = branches/
 
 # "job" module configuration, which performs a build via justin.
 [job.0]

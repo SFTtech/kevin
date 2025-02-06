@@ -7,7 +7,7 @@ from __future__ import annotations
 import typing
 from abc import abstractmethod
 
-from .service_meta import Service
+from .service import Service
 
 if typing.TYPE_CHECKING:
     from .watcher import Watcher
@@ -21,7 +21,7 @@ class Action(Service):
     some actions, e.g. sending mail, setting status, etc.
     """
 
-    def __init__(self, cfg, project: Project):
+    def __init__(self, cfg: dict[str, str], project: Project):
         super().__init__(cfg, project)
 
     @abstractmethod

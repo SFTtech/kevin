@@ -37,11 +37,11 @@ def main():
     # set up log level
     log_setup(args.verbose - args.quiet)
 
-    # load all config files
-    CFG.load(args.config)
-
     # pass commandline args
     CFG.set_cmdargs(args)
+
+    # load all config files
+    CFG.load(args.config)
 
     # print proxy environment variables
     proxy_vars = [env_var for env_var in os.environ.keys()

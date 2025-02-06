@@ -87,11 +87,9 @@ class Build(Watchable, Watcher):
         # during the 'building' phase.
         self.clone_url = None
 
-        project_path = CFG.output_folder / self.project.name
-
         # $dir/$project/jobs/hash[:3]/hash
         # -> 4096 folders with 2**148 files max, as long as git uses sha1
-        self.path = (project_path / "jobs" /
+        self.path = (self.project.storage_path / "jobs" /
                      self.commit_hash[:3] /  # -> 4096 folders with 2**148 files max
                      self.commit_hash[3:])
 
@@ -132,7 +130,7 @@ class Build(Watchable, Watcher):
         the job can either be on-disk, in-memory or just in progress.
         """
 
-        if CFG.args.volatile:
+        if CFG.volatile:
             return
 
         try:
@@ -172,7 +170,7 @@ class Build(Watchable, Watcher):
         Remove the whole build directory (and create a fresh one).
         """
 
-        if CFG.args.volatile:
+        if CFG.volatile:
             return
 
         try:
@@ -294,8 +292,8 @@ class Build(Watchable, Watcher):
         if not self.completed:
             self.purge_fs()
 
-            # restore updates like the build sources
-            # to the file storage.
+            # we just deleted the storage, but we have emitted updates before.
+            # persist them to the new file storage.
             for update in self.updates:
                 self._save_update(update)
 
@@ -388,7 +386,7 @@ class Build(Watchable, Watcher):
         if isinstance(update, GeneratedUpdate):
             store_to_disk = False
 
-        if not store_to_disk or CFG.args.volatile:
+        if not store_to_disk or CFG.volatile:
             # don't write the update to the job storage
             return
 
@@ -399,7 +397,7 @@ class Build(Watchable, Watcher):
         Save an update to disk for later reconstruction.
         """
 
-        if CFG.args.volatile:
+        if CFG.volatile:
             return
 
         # whitelist for stored build updates
@@ -454,7 +452,7 @@ class Build(Watchable, Watcher):
             job = self.jobs[update.job_name]
 
             if job in self.jobs_pending:
-                if update.is_finished():
+                if update.is_completed():
                     self.jobs_pending.remove(job)
 
                 if update.is_succeeded():
@@ -510,7 +508,7 @@ class Build(Watchable, Watcher):
                         count, "s" if count > 1 else ""))
         finally:
             # build is completed now!
-            if not CFG.args.volatile:
+            if not CFG.volatile:
                 self.path.joinpath("_completed").touch()
             self.completed = time.time()
             self.finished = True

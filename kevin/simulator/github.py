@@ -11,7 +11,7 @@ import json
 import pathlib
 import traceback
 
-from aiohttp import web, ClientSession, ClientTimeout
+from aiohttp import web, ClientSession
 from aiohttp.web import Request, Response
 
 from . import util
@@ -123,11 +123,11 @@ class GitHub(service.Service):
                         "clone_url": repo,
                     },
                     "sha": head_commit,
-                    "label": "lol:epic_update",
+                    "label": "lol:epic_update",  # branch name
                 },
                 "html_url": repo,
                 "statuses_url": status_url,
-                "issue_url": repo+"/issues/1",
+                "issue_url": f"{repo}/issues/1",
                 "labels": [
                     {
                         "name": "mylabel",
@@ -150,10 +150,10 @@ class GitHub(service.Service):
 
         target_url = f"http://{self.cfg.dyn_frontend_host}:{self.cfg.dyn_frontend_port}/hooks/github"
         print(f"submitting pullreq webhook to {target_url!r}...")
-        async with ClientSession(timeout=ClientTimeout(total=5.0)) as session:
+        async with ClientSession() as session:
             async with session.post(target_url,
                                     data=payload, headers=headers) as resp:
-                print(f"hook answer {'ok' if resp.ok else 'bad'}: {await resp.text()}")
+                print(f"hook answer {'ok' if resp.ok else 'bad'}: {await resp.text()!r}")
 
     async def handle_status(self, request: Request) -> Response:
         print(f"\x1b[34mUpdate from {request.remote}:\x1b[m", end=" ")
@@ -200,4 +200,4 @@ class GitHub(service.Service):
         This output is plattform-independent, it may even work on windows.
         TODO: write testcases
         """
-        print("%s" % data)
+        print(data)

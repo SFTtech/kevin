@@ -170,7 +170,7 @@ class GitHubPullManager(Watcher):
 
         elif isinstance(update, BuildState):
             # build state to remove a running pull request
-            if update.is_finished():
+            if update.is_completed():
                 for key, (build_id, queue) in self.running_pull_builds.items():
                     if update.build_id == build_id:
                         # remove the build from the run list
@@ -186,10 +186,6 @@ class GitHubHook(HookTrigger):
 
     Having one of those for each project is the normal case.
     """
-
-    @classmethod
-    def name(cls):
-        return "github_webhook"
 
     def __init__(self, cfg, project):
         super().__init__(cfg, project)
@@ -487,10 +483,6 @@ class GitHubStatus(Action):
     GitHub status updater action, enable in a project to
     allow real-time build updates via the github api.
     """
-    @classmethod
-    def name(cls):
-        return "github_status"
-
     def __init__(self, cfg, project):
         super().__init__(cfg, project)
         self.auth_user = cfg["user"]

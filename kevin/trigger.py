@@ -2,9 +2,14 @@
 Build trigger base class definition.
 """
 
-from abc import abstractmethod
+from __future__ import annotations
 
-from .service_meta import Service
+import typing
+
+from .service import Service
+
+if typing.TYPE_CHECKING:
+    from .project import Project
 
 
 class Trigger(Service):
@@ -14,12 +19,7 @@ class Trigger(Service):
     or by active polling.
     """
 
-    @classmethod
-    @abstractmethod
-    def name(cls):
-        pass
-
-    def __init__(self, cfg, project):
+    def __init__(self, cfg: dict[str, str], project: Project):
         super().__init__(cfg, project)
 
     def get_watchers(self):

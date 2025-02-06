@@ -9,11 +9,12 @@ import logging
 import re
 import typing
 
-from .service_meta import SERVICES
-from .service import import_all as import_all_services
+
+from .service_meta import get_service
 from .util import parse_size, parse_time
 
 if typing.TYPE_CHECKING:
+    from pathlib import Path
     from .service_meta import Service
     from .project import Project
 
@@ -29,22 +30,19 @@ class Config:
     with the followed config.
     """
 
-    def __init__(self, filename: str, project: Project):
-        # parse the project config file
-        raw = ConfigParser()
-        raw.read(filename)
+    def __init__(self, cfg_path: Path):
+        self._cfg_path = cfg_path
 
-        self.services: list[Service] = list()
+        # parse the project config file
+        self._raw: ConfigParser | None = ConfigParser()
+        self._raw.read(cfg_path)
 
         current_section = None
-
-        # import the available services
-        import_all_services()
 
         try:
             # general project config in [project]
             current_section = "project"
-            projcfg = raw[current_section]
+            projcfg = self._raw[current_section]
             self.project_name = projcfg["name"]
             self.job_max_output = parse_size(projcfg["job_max_output"])
             self.job_timeout = parse_time(projcfg["job_timeout"])
@@ -53,10 +51,23 @@ class Config:
             self.job_desc_file = projcfg["job_desc_file"]
             self.git_fetch_depth = projcfg["git_fetch_depth"]
 
+        except KeyError as exc:
+            logging.exception(f"\x1b[31mConfig file '{self._cfg_path}' section [{current_section}] "
+                              f"is missing entry {exc!r}\x1b[m")
+            exit(1)
+
+    def get_services(self, project: Project) -> list[Service]:
+        services: list[Service] = list()
+
+        if self._raw is None:
+            raise Exception("config not parsed")
+        try:
+            current_section = None
+
             # configuration for triggers and actions
             # these define what can trigger a project job,
             # and what should be done then.
-            for modulename, config in raw.items():
+            for modulename, config in self._raw.items():
                 if modulename in {"DEFAULT", "project"}:
                     continue
 
@@ -71,11 +82,7 @@ class Config:
 
                 # fetch the service class by the section name
                 # this is a child class of "Service".
-                modulecls = SERVICES.get(modulename)
-                if not modulecls:
-                    raise ValueError("%s is not a valid module, "
-                                     "these are: %s" % (
-                                         modulename, SERVICES.keys()))
+                modulecls = get_service(modulename)
 
                 # TODO: cross references with some "include" statement
                 #       to use [modulename] of some other file stated
@@ -83,12 +90,15 @@ class Config:
                 # create the service with the config section
                 # e.g. GitHubHook(config, project)
                 # or job.0 becomes JobAction
-                module = modulecls(config, project)
+                module = modulecls(dict(config), project)
 
-                self.services.append(module)
+                services.append(module)
+
+            self._raw = None
 
         except KeyError as exc:
-            logging.exception("\x1b[31mConfig file '%s' section [%s] "
-                              "is missing entry: %s\x1b[m",
-                              filename, current_section, exc)
+            logging.exception(f"\x1b[31mConfig file '{self._cfg_path}' section [{current_section}] "
+                              f"is missing entry {exc!r}\x1b[m")
             exit(1)
+
+        return services

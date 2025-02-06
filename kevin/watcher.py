@@ -19,7 +19,7 @@ class Watcher:
     each update will be supplied to the watcher then.
     """
 
-    async def on_update(self, update: UpdateStep):
+    async def on_update(self, update: UpdateStep) -> None:
         """
         Process the update here.
         """

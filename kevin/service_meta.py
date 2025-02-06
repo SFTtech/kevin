@@ -4,61 +4,26 @@ Supported service base definitions.
 
 from __future__ import annotations
 
-import typing
 
-if typing.TYPE_CHECKING:
-    from .project import Project
-
-
-from abc import ABCMeta, abstractmethod
-
-# service name => service class mapping
-# the name equals the key in your [triggers] and [actions]
-# config sections.
-# the name is fetched with the name() method of a service.
-SERVICES = dict()
+from .job import JobAction
+from .service import Service, github, badge, symlink
 
 
-class ServiceMeta(ABCMeta):
+def get_service(service_name: str) -> type[Service]:
     """
-    Service metaclass.
-    Adds the service message types to the lookup dict.
-
-    It creates entries in the SERVICES dict to allow easy fetching by
-    name.
-    """
-    def __init__(cls, name, bases, classdict):
-        super().__init__(name, bases, classdict)
-        # ignore the abstract classes
-        if name not in {"Service", "Trigger", "HookTrigger", "Action"}:
-            entry = cls.name()
-            if entry in SERVICES:
-                raise Exception("redefinition of service '%s'" % entry)
-            SERVICES[entry] = cls
-
-
-class Service(metaclass=ServiceMeta):
-    """
-    Base class for all services for a project.
-    A service is e.g. a IRC notification,
-    a build trigger via some webhook, etc.
+    get the service class for a service name
     """
 
-    @classmethod
-    @abstractmethod
-    def name(cls) -> str:
-        """
-        Return the service name.
-        This is the key that has to be placed in the project config.
-        the value of that key is the config filename containing
-        stuff about this service.
-        """
-        pass
-
-    def __init__(self, cfg, project: Project):
-        del cfg  # unused here. subclasses use it, though.
-        self.project = project
-
-    def get_project(self) -> Project:
-        """ Return the associated project """
-        return self.project
+    match service_name:
+        case "job":
+            return JobAction
+        case "status_badge":
+            return badge.StatusBadge
+        case "symlink_branch":
+            return symlink.SymlinkBranch
+        case "github_webhook":
+            return github.GitHubHook
+        case "github_status":
+            return github.GitHubStatus
+        case _:
+            raise ValueError(f"unknown service {service_name!r} requested")
