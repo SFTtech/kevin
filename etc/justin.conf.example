@@ -78,15 +78,10 @@ vm_ports = [7888,8000]
 #ssh_user = chantal
 ## ssh_host can be '__dynamic__', then the container IP is dynamically fetched
 #ssh_host = __dynamic__
+#ssh_port = 22
 #ssh_known_host_key = ssh-ed25519 AAAA_lxd-container's_/etc/ssh/ssh_host_ed25519_key.pub_CONTENT
 ## alternatively, load host key from filesystem dynamically:
 #ssh_known_host_key_file = /the/mounted/container/filesystem/etc/ssh/ssh_host_ed25519_key.pub
-
-## configure how to start the container
-## substitutions:
-##   BASE_IMAGE: with base_image configuration value from above config
-##   CONTAINERNAME: generated name to give the container
-#command = lxc launch {BASE_IMAGE} {CONTAINERNAME}
 
 
 ###############################################################################

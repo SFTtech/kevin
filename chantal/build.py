@@ -41,8 +41,8 @@ def build_job(args):
     if args.clone_source:
         job_state("running", "cloning repo")
 
-        if args.clone_depth > 0:
-            shallow = ("--depth %d" % args.clone_depth)
+        if args.fetch_depth > 0:
+            shallow = ("--depth %d" % args.fetch_depth)
         else:
             shallow = None
 

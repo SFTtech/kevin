@@ -136,10 +136,6 @@ class Job(Watcher, Watchable):
         # are all updates from the job in the update list already?
         self._all_loaded = False
 
-        self.git_config = {
-            "shallow": self.project.cfg.git_fetch_depth,
-        }
-
         # check if the job was completed.
         # this means we can do a reconstruction.
         if not CFG.volatile:
@@ -463,7 +459,7 @@ class Job(Watcher, Watchable):
             # machine was acquired, now boot it.
             await self.set_state("waiting", "booting machine")
 
-            async with Chantal(machine, self.git_config) as chantal:
+            async with Chantal(machine) as chantal:
 
                 # wait for the machine to be reachable
                 await chantal.wait_for_connection(timeout=60, try_timeout=20)

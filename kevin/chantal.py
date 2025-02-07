@@ -18,16 +18,15 @@ class Chantal(AsyncWith):
 
     # TODO: different connection methods (e.g. agent, non-ssh commands)
     """
-    def __init__(self, machine, git_config, loop=None):
+    def __init__(self, machine, loop=None):
         self.machine = machine
-        self.loop = loop or asyncio.get_event_loop()
-        self.ssh_worked = self.loop.create_future()
-        self.git_config = git_config
+        self._loop = loop or asyncio.get_event_loop()
+        self._ssh_worked = self._loop.create_future()
 
     def can_connect(self):
         """ return if the vm ssh connection was successful once. """
-        if self.ssh_worked.done():
-            return self.ssh_worked.result()
+        if self._ssh_worked.done():
+            return self._ssh_worked.result()
 
         return False
 
@@ -169,10 +168,10 @@ class Chantal(AsyncWith):
             await self.machine.wait_for_ssh_port(timeout,
                                                  retry_delay, try_timeout)
         except ProcTimeoutError:
-            self.ssh_worked.set_result(False)
+            self._ssh_worked.set_result(False)
             raise
 
-        self.ssh_worked.set_result(True)
+        self._ssh_worked.set_result(True)
 
     async def install(self, timeout=10):
         """
@@ -196,6 +195,9 @@ class Chantal(AsyncWith):
             "--clone", job.build.clone_url,
             "--checkout", job.build.commit_hash,
         ]
+
+        if depth := job.build.project.cfg.git_fetch_depth:
+            chantal_command.extend(["--fetch-depth", depth])
 
         if job.build.branch:
             chantal_command.extend([

@@ -49,7 +49,7 @@ class Config:
             self.job_silence_timeout = parse_time(
                 projcfg["job_silence_timeout"])
             self.job_desc_file = projcfg["job_desc_file"]
-            self.git_fetch_depth = projcfg["git_fetch_depth"]
+            self.git_fetch_depth = projcfg.get("git_fetch_depth")
 
         except KeyError as exc:
             logging.exception(f"\x1b[31mConfig file '{self._cfg_path}' section [{current_section}] "

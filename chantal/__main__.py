@@ -39,7 +39,7 @@ def main():
         cmd.add_argument("job",
                          help=("Job id to let the control file "
                                "perform conditionals"))
-        cmd.add_argument("--clone-depth", type=int, default=0,
+        cmd.add_argument("--fetch-depth", type=int, default=0,
                          help=("Depth of commits to clone the repo, "
                                "use 1 to only download the latest commit"))
         cmd.add_argument("--folder", dest="work_location", default="repo",
