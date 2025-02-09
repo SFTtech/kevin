@@ -1,4 +1,4 @@
-# example control file
+# kevin control file
 # syntax similar to makefiles
 
 # * each step can depend on other steps

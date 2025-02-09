@@ -3,12 +3,18 @@ Driver for building a job.
 All output is reported via the output() module.
 """
 
+from __future__ import annotations
+
 import os
-import pathlib
 import shlex
+import typing
+from pathlib import Path
 from time import time
 
-from .controlfile import parse_control_file, ParseError
+from .controlfile import ControlFile
+from .controlfile.python import PythonControlFile
+from .controlfile.makeish import MakeishControlFile
+
 from .msg import (
     job_state, step_state, stdout,
     output_item as msg_output_item,
@@ -16,17 +22,15 @@ from .msg import (
     output_file as msg_output_file,
     raw_msg
 )
-from .util import FatalBuildError, run_command, CommandError, filter_t
+from .util import run_command, filter_t
+from .error import CommandError, OutputError
+
+if typing.TYPE_CHECKING:
+    from . import Args
+    from .controlfile import Step
 
 
-class OutputError(Exception):
-    """
-    Raised when a file output fails.
-    """
-    pass
-
-
-def build_job(args):
+def build_job(args: Args) -> None:
     """
     Main entry point for building a job.
     """
@@ -39,51 +43,62 @@ def build_job(args):
     })
 
     if args.clone_source:
-        job_state("running", "cloning repo")
+        _clone_repo(args, base_env)
 
-        if args.fetch_depth > 0:
-            shallow = ("--depth %d" % args.fetch_depth)
+    control_file: ControlFile
+    if args.format == "python":
+        control_file = PythonControlFile(Path(args.filename), args)
+    elif args.format == "makeish":
+        control_file = MakeishControlFile(Path(args.filename), args)
+    else:
+        raise ValueError(f"unhandled control file format {args.control_file_format!r}")
+
+    steps = control_file.get_steps()
+
+    _process_steps(steps, base_env, args)
+
+
+def _clone_repo(args: Args, env) -> None:
+    job_state("running", "cloning repo")
+
+    if args.fetch_depth > 0:
+        shallow = ("--depth %d" % args.fetch_depth)
+    else:
+        shallow = None
+
+    if args.treeish:
+        refname = f"kevin-{args.branch.replace(':', '/')}" if args.branch else "kevin-build"
+
+        run_command(f"git init '{args.work_location}'", env=env)
+        os.chdir(args.work_location)
+        run_command(f"git remote add origin {shlex.quote(args.clone_source)}", env=env)
+        run_command(filter_t(("git", "fetch", shallow, "--no-tags", "--prune", "origin",
+                                f"{args.treeish}:{refname}")),
+                    env=env)
+        run_command(f"git checkout -q '{refname}'", env=env)
+
+    else:
+        if args.branch:
+            branch = f"--branch '{args.branch}' --single-branch"
         else:
-            shallow = None
+            branch = None
 
-        if args.treeish:
-            refname = f"kevin-{args.branch.replace(':', '/')}" if args.branch else "kevin-build"
+        run_command(filter_t(("git clone", shallow, branch, shlex.quote(args.clone_source), args.work_location)), env=env)
+        os.chdir(args.work_location)
 
-            run_command(f"git init '{args.work_location}'", env=base_env)
-            os.chdir(args.work_location)
-            run_command(f"git remote add origin {shlex.quote(args.clone_source)}", env=base_env)
-            run_command(filter_t(("git", "fetch", shallow, "--no-tags", "--prune", "origin",
-                                  f"{args.treeish}:{refname}")),
-                        env=base_env)
-            run_command(f"git checkout -q '{refname}'", env=base_env)
 
-        else:
-            if args.branch:
-                branch = f"--branch '{args.branch}' --single-branch"
-            else:
-                branch = None
-
-            run_command(filter_t(("git clone", shallow, branch, shlex.quote(args.clone_source), args.work_location)), env=base_env)
-            os.chdir(args.work_location)
-
-    try:
-        with open(args.filename) as controlfile:
-            steps = parse_control_file(controlfile.read(), args)
-    except FileNotFoundError:
-        raise FatalBuildError(
-            "no kevin config file named '%s' was found" % (args.filename))
-    except ParseError as exc:
-        raise FatalBuildError("%s:%d: %s" % (args.filename, exc.args[0],
-                                             exc.args[1]))
-
+def _process_steps(steps: list[Step], base_env: dict[str, str], args: Args) -> None:
     for step in steps:
         if not step.skip:
             step_state(step, "waiting", "waiting")
 
     jobtimer = time()
 
-    errors = []
-    success = set()
+    # steps that errored
+    errors: list[str] = []
+    # steps that succeeded
+    success: set[str] = set()
+
     for step in steps:
         depend_issues = set(step.depends) - success
 
@@ -143,11 +158,11 @@ def build_job(args):
         job_state("success", "completed in %.2f s" % (time() - jobtimer))
 
 
-def output_item(source_name, output_name):
+def output_item(source_name: str, output_name: str) -> None:
     """
     Outputs one output item, as listed in the config.
     """
-    source_path = pathlib.Path(source_name)
+    source_path = Path(source_name)
 
     # announce file or dir transfer
     if source_path.is_file():
@@ -161,7 +176,7 @@ def output_item(source_name, output_name):
     msg_output_item(output_name)
 
 
-def output_file(path, targetpath):
+def output_file(path: Path, targetpath: str) -> None:
     """
     Outputs a single raw file. Temporarily switches the control stream
     to binary mode.
@@ -178,13 +193,13 @@ def output_file(path, targetpath):
             data = fileobj.read(chunksize)
             if not data:
                 # the file size has changed... but we promised to deliver!
-                data = '\0' * chunksize
+                data = b'\0' * chunksize
 
             raw_msg(data)
             remaining -= len(data)
 
 
-def output_dir(path, targetpath):
+def output_dir(path: Path, targetpath: str) -> None:
     """
     Recursively outputs a directory.
     """
@@ -195,3 +210,5 @@ def output_dir(path, targetpath):
             output_file(entry, entrytargetpath)
         elif entry.is_dir():
             output_dir(entry, entrytargetpath)
+        else:
+            pass

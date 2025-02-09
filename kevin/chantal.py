@@ -206,6 +206,7 @@ class Chantal(AsyncWith):
 
         chantal_command.extend([
             "--desc-file", job.build.project.cfg.job_desc_file,
+            "--desc-format", job.build.project.cfg.job_desc_format,
             job.name
         ])
 

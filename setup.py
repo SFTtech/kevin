@@ -29,6 +29,7 @@ setup(
         "kevin.service",
         "kevin.simulator",
         "chantal",
+        "chantal.controlfile",
         "justin",
         "justin.machine",
     ],

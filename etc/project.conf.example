@@ -15,6 +15,8 @@ job_max_output = 100MiB
 
 # name of the build job task configuration file within the repo
 job_desc_file = kevinfile
+# file format: 'makeish' (declarative make-like steps) or 'python'
+job_desc_format = makeish
 
 # git configuration
 git_fetch_depth = 0

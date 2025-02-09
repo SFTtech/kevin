@@ -49,6 +49,10 @@ class Config:
             self.job_silence_timeout = parse_time(
                 projcfg["job_silence_timeout"])
             self.job_desc_file = projcfg["job_desc_file"]
+            self.job_desc_format = projcfg.get("job_desc_format", "makeish")
+            if self.job_desc_format not in ("makeish", "python"):
+                raise ValueError("job_desc_format must be either 'makeish' or 'python', "
+                                 f"not {self.job_desc_format}")
             self.git_fetch_depth = projcfg.get("git_fetch_depth")
 
         except KeyError as exc:

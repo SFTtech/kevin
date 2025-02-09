@@ -2,11 +2,17 @@
 Code for sending messages to Kevin on stdout.
 """
 
+from __future__ import annotations
+
 import json
 import sys
+import typing
+
+if typing.TYPE_CHECKING:
+    from .controlfile import Step
 
 
-def msg(**kwargs):
+def msg(**kwargs) -> None:
     """
     Writes a JSON-ified version of kwargs to the msg stream.
     """
@@ -15,7 +21,7 @@ def msg(**kwargs):
     sys.stdout.buffer.flush()
 
 
-def raw_msg(data):
+def raw_msg(data: bytes):
     """
     Writes a raw bytes object to the msg stream.
 
@@ -26,21 +32,21 @@ def raw_msg(data):
     sys.stdout.buffer.flush()
 
 
-def stdout(text):
+def stdout(text: str):
     """
     Sends a stdout message.
     """
     msg(cmd="stdout", text=text)
 
 
-def job_state(state, text):
+def job_state(state: str, text: str):
     """
     Sends a job state message.
     """
     msg(cmd="job-state", state=state, text=text)
 
 
-def step_state(step, state, text):
+def step_state(step: Step, state: str, text: str):
     """
     Sends a step state message, if the step was not marked hidden.
     """
@@ -50,14 +56,14 @@ def step_state(step, state, text):
     msg(cmd="step-state", step=step.name, state=state, text=text)
 
 
-def output_item(name):
+def output_item(name: str):
     """
     Sends an output-item message.
     """
     msg(cmd="output-item", name=name)
 
 
-def output_file(path, size):
+def output_file(path: str, size: int):
     """
     Sends an output file message.
     Send 'size' bytes of raw data using raw_msg immediately afterwards.
@@ -65,7 +71,7 @@ def output_file(path, size):
     msg(cmd="output-file", path=path, size=size)
 
 
-def output_dir(path):
+def output_dir(path: str):
     """
     Sends an output dir message.
     """

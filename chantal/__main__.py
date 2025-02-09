@@ -4,13 +4,16 @@ CLI entry point for chantal.
 
 import argparse
 import traceback
+import typing
+
+from . import Args
 
 from .build import build_job
-from .util import FatalBuildError, CommandError
+from .error import FatalBuildError, CommandError
 from .msg import job_state, stdout
 
 
-def main():
+def main() -> None:
     """
     Takes clone url and commit sha from sys.argv,
     builds the project,
@@ -36,6 +39,8 @@ def main():
         cmd.add_argument("--desc-file", dest="filename", default="kevinfile",
                          help=("Filename of the control file ('%(default)s') "
                                "within the repo folder"))
+        cmd.add_argument("--desc-format", dest="format", default="makeish",
+                         help="Format of the control file ('%(default)s') ")
         cmd.add_argument("job",
                          help=("Job id to let the control file "
                                "perform conditionals"))
@@ -47,7 +52,7 @@ def main():
                                "cloned and chantal will `cd` to. "
                                "default is ./%(default)s"))
 
-        args = cmd.parse_args()
+        args: Args = typing.cast(Args, cmd.parse_args())
 
         build_job(args)
 
@@ -57,11 +62,11 @@ def main():
 
     except SystemExit as exc:
         if exc.code != 0:
-            job_state("error", "chantal exited with %d" % exc.code)
-            stdout("\x1b[31;1mexit with\x1b[m %d\n" % exc.code)
+            job_state("error", f"chantal exited with {exc.code}")
+            stdout(f"\x1b[31;1mexit with\x1b[m {exc.code}\n")
 
     except BaseException as exc:
-        job_state("error", "Internal error in Chantal: %r" % exc)
+        job_state("error", f"Internal error in Chantal: {exc!r}")
         stdout("\x1b[31;1;5minternal error\x1b[m\n")
         traceback.print_exc()
 

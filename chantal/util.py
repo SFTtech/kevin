@@ -7,16 +7,10 @@ import os
 import shlex
 
 from .msg import stdout
+from .error import CommandError
 
 
-class CommandError(Exception):
-    """
-    Raised when a command to be executed fails.
-    """
-    pass
-
-
-def filter_t(input: list[str] | tuple[str]) -> list[str]:
+def filter_t(input: list[str | None] | tuple[str | None, ...]) -> list[str]:
     return [elem for elem in input if elem]
 
 
@@ -75,11 +69,3 @@ def run_command(cmd, env, cwd=None, shell=False):
     if retval != 0:
         stdout("\x1b[31;1mcommand returned %d\x1b[m\n" % retval)
         raise CommandError("command failed: %s [%d]" % (cmd_str, retval))
-
-
-class FatalBuildError(Exception):
-    """
-    Used to terminate the build with a nice error message.
-    (as opposed to internal build errors, which yield a stack trace)
-    """
-    pass
