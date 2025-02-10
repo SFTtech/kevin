@@ -112,7 +112,7 @@ class Job(Watcher, Watchable):
         self.output_items: set[OutputItem] = set()
 
         # current uncommited output item
-        self.current_output_item = None
+        self._current_output_item = None
 
         # current step name of the job
         self._current_step: str | None = None
@@ -121,8 +121,8 @@ class Job(Watcher, Watchable):
         self.remaining_output_size = self.project.cfg.job_max_output
 
         # receive files from chantal
-        self.raw_file = None
-        self.raw_remaining = 0
+        self._output_raw_file = None
+        self._output_raw_remaining = 0
 
         # storage folder for this job.
         self.path = build.path.joinpath(self.name)
@@ -151,6 +151,9 @@ class Job(Watcher, Watchable):
         """
 
         if self._updates_merged:
+            return
+
+        if CFG.volatile:
             return
 
         # last JobState
@@ -664,25 +667,25 @@ class Job(Watcher, Watchable):
         while True:
 
             # transfer files through raw binary mode
-            if self.raw_file is not None:
+            if self._output_raw_file is not None:
                 if not data:
                     # wait for more data
                     data += yield
 
-                if len(data) >= self.raw_remaining:
+                if len(data) >= self._output_raw_remaining:
                     # the file is nearly complete,
                     # the remaining data is the next control message
 
-                    self.raw_file.write(data[:self.raw_remaining])
-                    self.raw_file.close()
-                    self.raw_file = None
+                    self._output_raw_file.write(data[:self._output_raw_remaining])
+                    self._output_raw_file.close()
+                    self._output_raw_file = None
 
-                    del data[:self.raw_remaining]
+                    del data[:self._output_raw_remaining]
 
                 else:
                     # all the data currently buffered shall go into the file
-                    self.raw_file.write(data)
-                    self.raw_remaining -= len(data)
+                    self._output_raw_file.write(data)
+                    self._output_raw_remaining -= len(data)
                     del data[:]
 
                 continue
@@ -702,11 +705,11 @@ class Job(Watcher, Watchable):
             # after the newline may be raw data or the next control message
             msg = data[:newline + 1].decode().strip()
             if msg:
-                await self.control_message(msg)
+                await self._control_message(msg)
 
             del data[:newline + 1]
 
-    async def control_message(self, msg):
+    async def _control_message(self, msg):
         """
         control message parser, chantal sends state through this channel.
         """
@@ -734,16 +737,16 @@ class Job(Watcher, Watchable):
         elif cmd == 'output-item':
             name = msg["name"]
 
-            if self.current_output_item is None:
+            if self._current_output_item is None:
                 raise ValueError("no data received for " + name)
-            if self.current_output_item.name != name:
+            if self._current_output_item.name != name:
                 raise ValueError(
                     "wrong output item name: " + name + ", "
-                    "expected: " + self.current_output_item.name
+                    "expected: " + self._current_output_item.name
                 )
 
-            await self.send_update(self.current_output_item)
-            self.current_output_item = None
+            await self.send_update(self._current_output_item)
+            self._current_output_item = None
 
         # file or folder transfer is announced
         elif cmd in {'output-dir', 'output-file'}:
@@ -758,15 +761,15 @@ class Job(Watcher, Watchable):
             if '/' in path:
                 # a file with / is emitted, it must be some subdirectory/file
                 # -> ensure this happens as part of an output item.
-                if self.current_output_item is None:
+                if self._current_output_item is None:
                     raise ValueError("no current output item")
-                self.current_output_item.validate_path(path)
+                self._current_output_item.validate_path(path)
 
             else:
-                if self.current_output_item is not None:
+                if self._current_output_item is not None:
                     raise ValueError("an output item is already present")
 
-                self.current_output_item = OutputItem(
+                self._current_output_item = OutputItem(
                     self.name,
                     path,
                     isdir=(cmd == 'output-dir')
@@ -780,23 +783,23 @@ class Job(Watcher, Watchable):
 
             # also account for metadata size
             # (prevent DOSers from creating billions of empty files)
-            self.current_output_item.size += (size + 512)
-            if self.current_output_item.size > self.remaining_output_size:
+            self._current_output_item.size += (size + 512)
+            if self._current_output_item.size > self.remaining_output_size:
                 raise ValueError("output size limit exceeded")
 
             pathobj = self.path.joinpath(path)
             if pathobj.exists() and not CFG.volatile:
                 raise ValueError("duplicate output path: " + path)
 
-            self.raw_remaining = size
+            self._output_raw_remaining = size
 
             if CFG.volatile:
                 logging.warning("'%s' ignored because of "
                                 "volatile mode active: %s", cmd, pathobj)
-                self.raw_file = open("/dev/null", 'wb')
+                self._output_raw_file = open("/dev/null", 'wb')
 
             elif cmd == 'output-file':
-                self.raw_file = pathobj.open('wb')
+                self._output_raw_file = pathobj.open('wb')
 
             elif cmd == 'output-dir':
                 pathobj.mkdir(parents=True, exist_ok=True)

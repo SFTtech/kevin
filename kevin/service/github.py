@@ -4,10 +4,13 @@ GitHub backend for Kevin.
 All github interaction originates from this module.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hmac
 import json
 import logging
+import typing
 from hashlib import sha1
 from urllib.parse import quote
 
@@ -19,6 +22,9 @@ from ..httpd import HookHandler, HookTrigger
 from ..update import (BuildState, JobState,
                       StepState, GeneratedUpdate, QueueActions)
 from ..watcher import Watcher
+
+if typing.TYPE_CHECKING:
+    from ..build_manager import BuildManager
 
 
 # translation lookup-table for kevin states -> github states
@@ -229,7 +235,7 @@ class GitHubHookHandler(HookHandler):
     The configuration takes place in many GitHubHook instances.
     """
 
-    def initialize(self, queue, build_manager, triggers):
+    def initialize(self, queue, build_manager: BuildManager, triggers):
         self.queue = queue
         self.build_manager = build_manager
 
@@ -405,7 +411,7 @@ class GitHubHookHandler(HookHandler):
         clone_url = pull["head"]["repo"]["clone_url"]
         repo_url = pull["html_url"]
         commit_sha = pull["head"]["sha"]
-        branch = pull["head"]["label"]
+        branch = pull["head"]["ref"]
 
         status_update_url = pull["statuses_url"]
         issue_url = pull["issue_url"]
@@ -460,7 +466,7 @@ class GitHubHookHandler(HookHandler):
         build = await self.build_manager.new_build(project, commit_sha,
                                                    force_rebuild=force_rebuild)
 
-        # the github push is a source for the build
+        # register source for the build
         await build.add_source(clone_url, repo_url, user, branch,
                                "GitHub source")
 

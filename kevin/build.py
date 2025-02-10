@@ -240,8 +240,11 @@ class Build(Watchable, Watcher):
         await self.send_update(BuildState(self.project.name, self.commit_hash,
                                           state, text, timestamp))
 
-    async def add_source(self, clone_url, repo_url=None, user=None, branch=None,
-                         comment=None):
+    async def add_source(self, clone_url: str,
+                         repo_url: str | None = None,
+                         user: str | None = None,
+                         branch: str | None = None,
+                         comment: str | None = None) -> None:
         """
         Store the build source settings, namely the repo url.
         """

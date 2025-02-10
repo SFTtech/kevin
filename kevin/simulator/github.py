@@ -2,6 +2,8 @@
 Simulates the github pull request api.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import hashlib
@@ -10,6 +12,7 @@ import ipaddress
 import json
 import pathlib
 import traceback
+import typing
 
 from aiohttp import web, ClientSession
 from aiohttp.web import Request, Response
@@ -18,11 +21,30 @@ from . import util
 from . import service
 from ..service.github import GitHubHook
 
+if typing.TYPE_CHECKING:
+    from typing import Any
+
 
 class GitHub(service.Service):
     """
     The simlated github service. Uses config from kevin.
     """
+
+    @classmethod
+    def argparser(cls, subparsers):
+        cli = subparsers.add_parser("github", help="simulate github")
+        cli.set_defaults(service=cls)
+        cli.add_argument("--statuspath", default="statusupdate",
+                         help="url component where status updates are sent")
+        cli.add_argument("--user", default="H4ck3r",
+                         help="GitHub user that submitted the repo update")
+
+        sp = cli.add_subparsers(dest="action", required=True)
+        pull_cli = sp.add_parser("pull_request")
+        pull_cli.add_argument("--pull-id", type=int, default=1337,
+                              help="the pull request id number, e.g. 1337")
+
+        _push_cli = sp.add_parser("push")
 
     def __init__(self, args):
         super().__init__(args)
@@ -31,18 +53,18 @@ class GitHub(service.Service):
         self._status_path = "/%s" % args.statuspath
         self._repo_path = "/repo"
 
-        self.pull_id = args.pull_id
+        self._user = args.user
 
-    @classmethod
-    def argparser(cls, subparsers):
-        cli = subparsers.add_parser("github", help="simulate github")
-        cli.add_argument("--statuspath", default="statusupdate",
-                         help="url component where status updates are sent")
-        cli.add_argument("--pull-id", type=int, default=1337,
-                         help="the pull request id number, e.g. 1337")
-        cli.set_defaults(service=cls)
+        self._action = args.action
+        match args.action:
+            case "pull_request":
+                self._pull_id = args.pull_id
+            case "push":
+                pass
+            case _:
+                raise ValueError(f"unknown action {args.action}")
 
-    async def run(self):
+    async def run(self) -> None:
         """
         creates the interaction server
         """
@@ -50,7 +72,7 @@ class GitHub(service.Service):
 
         app = web.Application()
 
-        app.add_routes([web.post(self._status_path, self.handle_status)])
+        app.add_routes([web.post(self._status_path, self._handle_status_msg)])
 
         # add http server to serve a local repo to qemu
         if self.local_repo and pathlib.Path(self.repo).is_dir():
@@ -70,7 +92,7 @@ class GitHub(service.Service):
         await site.start()
 
         # perform the "pull request" trigger
-        await self._submit_pullreq_webhook()
+        await self._submit_webhook()
 
         try:
             # run forever
@@ -79,18 +101,26 @@ class GitHub(service.Service):
             await runner.cleanup()
             raise
 
-    async def _submit_pullreq_webhook(self):
+    async def _submit_webhook(self):
         """
         create the webhook to kevin to trigger it.
         """
 
         if isinstance(self.listen, ipaddress.IPv6Address):
-            ip = "[%s]" % (self.listen)
+            ip = f"[{self.listen}]"
         else:
             ip = str(self.listen)
 
         status_url = "http://%s:%d%s" % (ip, self.port, self._status_path)
-        head_commit = await util.get_hash(self.repo)
+
+        branch_commit = await util.get_hash(self.repo, self.branch)
+        branch_names = await util.get_refnames(self.repo, branch_commit, only_branches=True)
+        if self.branch:
+            branch_name = self.branch  # take the one we know anyway
+        elif branch_names:
+            branch_name = branch_names[0]  # for simplicity just take the first that matches...
+        else:
+            branch_name = "HEAD"
 
         if self.repo_server:
             await util.update_server_info(self.repo)
@@ -112,50 +142,31 @@ class GitHub(service.Service):
         reponame = trigger.repos.pop()
         hooksecret = trigger.hooksecret
 
-        # most basic webhook for a pull request
-        pull_req = {
-            "action": "synchronize",
-            "sender": {"login": "rolf"},
-            "number": self.pull_id,
-            "pull_request": {
-                "head": {
-                    "repo": {
-                        "clone_url": repo,
-                    },
-                    "sha": head_commit,
-                    "label": "lol:epic_update",  # branch name
-                },
-                "html_url": repo,
-                "statuses_url": status_url,
-                "issue_url": f"{repo}/issues/1",
-                "labels": [
-                    {
-                        "name": "mylabel",
-                        "value": "my awesome label",
-                    },
-                ],
-            },
-            "repository": {
-                "full_name": reponame,
-            },
-        }
+        match self._action:
+            case "pull_request":
+                payload = _payload_pull_request(self._user, repo, reponame, branch_name, branch_commit, status_url, self._pull_id)
+                event_type = "pull_request"
+            case "push":
+                payload = _payload_push(self._user, repo, reponame, branch_name, branch_commit, status_url)
+                event_type = "push"
+            case _:
+                raise ValueError(f"unknown action {self._action}")
 
-        payload = json.dumps(pull_req).encode()
+        payload_raw = json.dumps(payload).encode()
 
         # calculate hmac
-        signature = 'sha1=' + hmac.new(hooksecret,
-                                       payload, hashlib.sha1).hexdigest()
+        signature = 'sha1=' + hmac.new(hooksecret, payload_raw, hashlib.sha1).hexdigest()
         headers = {"X-Hub-Signature": signature,
-                   "X-GitHub-Event": "pull_request"}
+                   "X-GitHub-Event": event_type}
 
         target_url = f"http://{self.cfg.dyn_frontend_host}:{self.cfg.dyn_frontend_port}/hooks/github"
         print(f"submitting pullreq webhook to {target_url!r}...")
         async with ClientSession() as session:
             async with session.post(target_url,
-                                    data=payload, headers=headers) as resp:
+                                    data=payload_raw, headers=headers) as resp:
                 print(f"hook answer {'ok' if resp.ok else 'bad'}: {await resp.text()!r}")
 
-    async def handle_status(self, request: Request) -> Response:
+    async def _handle_status_msg(self, request: Request) -> Response:
         print(f"\x1b[34mUpdate from {request.remote}:\x1b[m", end=" ")
         blob = await request.text()
         try:
@@ -176,7 +187,7 @@ class GitHub(service.Service):
                 print("expected: %s" % (authtok,))
                 raise ValueError("wrong authentication")
 
-            self.show_update(blob)
+            self._show_update(blob)
 
         except (ValueError, KeyError) as exc:
             traceback.print_exc()
@@ -191,7 +202,7 @@ class GitHub(service.Service):
 
         return Response(text="ok")
 
-    def show_update(self, data):
+    def _show_update(self, data):
         """
         Process a received update and present it in a shiny way graphically.
         Ensures maximum readability by dynamically formatting the text in
@@ -201,3 +212,51 @@ class GitHub(service.Service):
         TODO: write testcases
         """
         print(data)
+
+
+def _payload_pull_request(user, repo, reponame, branch_name, commit_hash, status_url, pull_id) -> dict[str, Any]:
+    # most basic webhook for a pull request
+    return {
+        "action": "synchronize",
+        "sender": {"login": user},
+        "number": pull_id,
+        "pull_request": {
+            "head": {
+                "repo": {
+                    "clone_url": repo,
+                },
+                "sha": commit_hash,
+                "ref": branch_name,
+            },
+            "html_url": repo,
+            "statuses_url": status_url,
+            "issue_url": f"{repo}/issues/1",
+            "labels": [
+                {
+                    "name": "mylabel",
+                    "value": "my awesome label",
+                },
+            ],
+        },
+        "repository": {
+            "full_name": reponame,
+        },
+    }
+
+
+def _payload_push(user, repo, reponame, branch_name, commit_hash, status_url) -> dict[str, Any]:
+    return {
+        "ref": f"refs/heads/{branch_name}",
+        "repository": {
+            "full_name": reponame,
+            "clone_url": repo,
+            "html_url": repo,
+            "statuses_url": status_url,
+        },
+        "pusher": {
+            "name": user,
+        },
+        "head_commit": {
+            "id": commit_hash,
+        }
+    }
