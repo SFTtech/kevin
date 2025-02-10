@@ -166,13 +166,13 @@ The project config determines active Kevin plugins and their configuration.
 * Kevin would do the same thing in the container/VM.
 * To test, invoke `python3 -m chantal --help` and be enlightnened.
   * You can run Chantal inside your project without cloning it:
-  * `python3 -m chantal --folder /your/project/repo $jobname`
+  * `python3 -m chantal --dir /your/project/repo $jobname`
   * `$jobname` is used for evaluating conditions in the `kevinfile`.
     Later, the `jobname` passed to Chantal will be taken from the job name
     you set up for a project in the its config file `lolmyproject.conf`.
 
   * The same test can be done within your VM/container:
-  * `python3 -m chantal --folder /tmp/clonedest --clone $clone_url --checkout $branchname_or_hashname $jobname`
+  * `python3 -m chantal --dir /tmp/clonedest --clone $clone_url --checkout $branchname_or_hashname $jobname`
 
 
 

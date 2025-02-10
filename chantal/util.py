@@ -14,23 +14,30 @@ def filter_t(input: list[str | None] | tuple[str | None, ...]) -> list[str]:
     return [elem for elem in input if elem]
 
 
-def run_command(cmd, env, cwd=None, shell=False):
+def run_command(cmd: str | list[str],
+                env: dict[str, str],
+                cwd: str | None = None,
+                shell: bool = False,
+                hide_invoc: bool = False):
     """
     Prints the command name, then runs it.
     Throws CommandError on retval != 0.
 
     Env is the environment variables that are passed.
     """
-    if shell:
-        assert isinstance(cmd, str)
+    cmd_list: list
+    cmd_str: str
+    if isinstance(cmd, str):
+        cmd_list = shlex.split(cmd)
         cmd_str = cmd
-    else:
-        if isinstance(cmd, str):
-            cmd = shlex.split(cmd)
-        assert isinstance(cmd, list)
+    elif isinstance(cmd, list):
+        cmd_list = cmd
         cmd_str = shlex.join(cmd)
+    else:
+        raise ValueError(f"cmd not list or str: {cmd!r}")
 
-    stdout("\x1b[32;1m$\x1b[m %s\n" % cmd_str)
+    if not hide_invoc:
+        stdout(f"\x1b[32;1m$\x1b[m {cmd_str}\n")
 
     child_pid, tty_fd = os.forkpty()
     if child_pid < 0:
@@ -46,9 +53,9 @@ def run_command(cmd, env, cwd=None, shell=False):
 
         # launch the subprocess here.
         if shell:
-            os.execve("/bin/sh", ["sh", "-c", cmd], env)
+            os.execve("/bin/sh", ["sh", "-c", cmd_str], env)
         else:
-            os.execvpe(cmd[0], cmd, env)
+            os.execvpe(cmd_list[0], cmd_list, env)
         # we only reach this point if the execve has failed
         print("\x1b[31;1mcould not execve\x1b[m")
         raise SystemExit(1)

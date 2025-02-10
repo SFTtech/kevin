@@ -30,7 +30,7 @@ if typing.TYPE_CHECKING:
     from .controlfile import Step
 
 
-def build_job(args: Args) -> None:
+def run_job(args: Args) -> None:
     """
     Main entry point for building a job.
     """
@@ -40,10 +40,13 @@ def build_job(args: Args) -> None:
         "GCC_COLORS": "yes",
         "KEVIN": "true",
         "CHANTAL": "true",
+        "KEVIN_JOB": args.job or "",
     })
 
     if args.clone_source:
         _clone_repo(args, base_env)
+    elif args.work_location:
+        os.chdir(args.work_location)
 
     control_file: ControlFile
     if args.format == "python":
@@ -69,6 +72,10 @@ def _clone_repo(args: Args, env) -> None:
     if args.treeish:
         refname = f"kevin-{args.branch.replace(':', '/')}" if args.branch else "kevin-build"
 
+        # to silence main/master warnings
+        run_command("git config --global init.defaultBranch kevin-build", env=env, hide_invoc=True)
+
+        # don't clone, instead fetch from remote to select treeish
         run_command(f"git init '{args.work_location}'", env=env)
         os.chdir(args.work_location)
         run_command(f"git remote add origin {shlex.quote(args.clone_source)}", env=env)

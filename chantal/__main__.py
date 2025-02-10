@@ -8,8 +8,8 @@ import typing
 
 from . import Args
 
-from .build import build_job
-from .error import FatalBuildError, CommandError
+from .job import run_job
+from .error import FatalJobError, CommandError
 from .msg import job_state, stdout
 
 
@@ -41,22 +41,22 @@ def main() -> None:
                                "within the repo folder"))
         cmd.add_argument("--desc-format", dest="format", default="makeish",
                          help="Format of the control file ('%(default)s') ")
-        cmd.add_argument("job",
-                         help=("Job id to let the control file "
+        cmd.add_argument("--job", default="",
+                         help=("Job name to let the control file "
                                "perform conditionals"))
         cmd.add_argument("--fetch-depth", type=int, default=0,
                          help=("Depth of commits to clone the repo, "
                                "use 1 to only download the latest commit"))
-        cmd.add_argument("--folder", dest="work_location", default="repo",
+        cmd.add_argument("--dir", dest="work_location", default="repo",
                          help=("Directory where the git repo will be "
                                "cloned and chantal will `cd` to. "
                                "default is ./%(default)s"))
 
         args: Args = typing.cast(Args, cmd.parse_args())
 
-        build_job(args)
+        run_job(args)
 
-    except (FatalBuildError, CommandError) as exc:
+    except (FatalJobError, CommandError) as exc:
         job_state("error", str(exc))
         stdout("\x1b[31;1mFATAL\x1b[m %s\n" % str(exc))
 

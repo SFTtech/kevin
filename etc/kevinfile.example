@@ -10,10 +10,11 @@
 #
 # stepname: other-stepname other-stepname-that-must-suceed-before bla bla
 #     - optional rule setup stuff, e.g.:
-#     - env: variable=value mom="really fat"  # set environment variables
-#     - hidden                                # hide that rule from all output
+#     - env: somekey=somevalue text="can be quoted"  # set environment variables
+#     - hidden                                # hide the step from the active step list
 #     - skip                                  # skip this step
 #     - skip  (? if job == "some_jobname" ?)  # skip only if jobname matches
+#                                             # available vars: all args of chantal.
 #
 #     # there can be one or more output file declarations.
 #     # those also support the if-conditionals
@@ -36,18 +37,16 @@
 tamale:
 	- env: STUFF="hot hot"
 	echo "do you like tamale?"
-	sleep 1
 	echo "$STUFF tamale?"
-	sleep 2
 
-sudo:
+outputgen:
 	- hidden
 	- output: "/tmp/produced_file" as "root_result"
-	sudo echo "i got root!" | tee /tmp/produced_file
+	echo "ohai" | tee /tmp/produced_file
 	echo "running on whitespaceOS"  (? if job == "whitespaceOS" ?)
 
-cpuinfo: tamale sudo
-	echo awsum vm:
+cpuinfo: tamale outputgen
+	echo "we're running on:"
 	lscpu
 
 great_success: cpuinfo
