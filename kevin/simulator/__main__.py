@@ -18,6 +18,7 @@ def main():
     cmd = argparse.ArgumentParser()
     cmd.add_argument("repo", help="clone url/path to the test repo")
     cmd.add_argument("--branch", "-b", help="branch of the repo to use. default: use default branch")
+    cmd.add_argument("--commit", help="commit hash to build. default: use branch head")
     cmd.add_argument("project", help="project to trigger the build for")
     cmd.add_argument("config_file", help="config file of to-be-tested kevin")
     cmd.add_argument("-p", "--port", type=int, default=8423,

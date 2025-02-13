@@ -27,6 +27,7 @@ class Service:
         # repo config
         self.repo = args.repo
         self.branch = args.branch  # name or None
+        self.commit = args.commit  # commit hash or None
         self.project = args.project
         if self.project not in self.cfg.projects:
             raise ValueError("unknown project '%s', available: %s" % (

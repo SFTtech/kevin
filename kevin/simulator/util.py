@@ -12,10 +12,7 @@ from typing import Callable
 
 async def get_hash(repo, branch_name: str | None = None) -> str:
     """
-    return the head hash of the given repo.
-
-    could be way more sophisticated to not only use
-    HEAD but a branch instead if you need it.
+    return the commit hash of the given repo at HEAD or a branch name.
     """
 
     if branch_name:

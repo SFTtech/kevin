@@ -113,14 +113,19 @@ class GitHub(service.Service):
 
         status_url = "http://%s:%d%s" % (ip, self.port, self._status_path)
 
-        branch_commit = await util.get_hash(self.repo, self.branch)
-        branch_names = await util.get_refnames(self.repo, branch_commit, only_branches=True)
+        if self.commit:
+            commit = self.commit
+        else:
+            commit = await util.get_hash(self.repo, self.branch)
+
+        # find branches pointing to commit
+        branch_names = await util.get_refnames(self.repo, commit, only_branches=True)
         if self.branch:
             branch_name = self.branch  # take the one we know anyway
         elif branch_names:
             branch_name = branch_names[0]  # for simplicity just take the first that matches...
         else:
-            branch_name = "HEAD"
+            branch_name = None
 
         if self.repo_server:
             await util.update_server_info(self.repo)
@@ -144,10 +149,10 @@ class GitHub(service.Service):
 
         match self._action:
             case "pull_request":
-                payload = _payload_pull_request(self._user, repo, reponame, branch_name, branch_commit, status_url, self._pull_id)
+                payload = _payload_pull_request(self._user, repo, reponame, branch_name, commit, status_url, self._pull_id, branch_name)
                 event_type = "pull_request"
             case "push":
-                payload = _payload_push(self._user, repo, reponame, branch_name, branch_commit, status_url)
+                payload = _payload_push(self._user, repo, reponame, branch_name, commit, status_url)
                 event_type = "push"
             case _:
                 raise ValueError(f"unknown action {self._action}")
@@ -214,7 +219,7 @@ class GitHub(service.Service):
         print(data)
 
 
-def _payload_pull_request(user, repo, reponame, branch_name, commit_hash, status_url, pull_id) -> dict[str, Any]:
+def _payload_pull_request(user, repo, reponame, branch_name: str | None, commit_hash, status_url, pull_id) -> dict[str, Any]:
     # most basic webhook for a pull request
     return {
         "action": "synchronize",
@@ -244,9 +249,16 @@ def _payload_pull_request(user, repo, reponame, branch_name, commit_hash, status
     }
 
 
-def _payload_push(user, repo, reponame, branch_name, commit_hash, status_url) -> dict[str, Any]:
+def _payload_push(user, repo, reponame, branch_name: str | None, commit_hash, status_url) -> dict[str, Any]:
+    ref: str | None
+    match branch_name:
+        case None | "":
+            ref = None
+        case _:
+            ref = f"refs/heads/{branch_name}"
+
     return {
-        "ref": f"refs/heads/{branch_name}",
+        "ref": ref,
         "repository": {
             "full_name": reponame,
             "clone_url": repo,
