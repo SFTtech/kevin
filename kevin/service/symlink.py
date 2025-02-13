@@ -13,6 +13,7 @@ from pathlib import Path
 from ..action import Action
 from ..config import CFG
 from ..update import BuildSource, BuildState
+from ..util import strlazy
 from ..watcher import Watcher
 
 if typing.TYPE_CHECKING:
@@ -47,20 +48,40 @@ class SymlinkBranch(Action):
             if branch:
                 self._exclude_branches.add(branch)
 
+        self._aliases: dict[str, str] = dict()
+        for branch in cfg.get("alias", "").split(","):
+            branch = branch.strip()
+            if branch:
+                if ":" not in branch:
+                    raise ValueError(f"branch alias format is <branch_spec>:<alias>, missing in {branch!r}")
+                branch, alias = branch.split(":", maxsplit=1)
+                self._aliases[branch] = alias
+
+        if self._only_branches:
+            self._only_branches -= self._exclude_branches
+
         if CFG.volatile:
             return
         self.target_dir.mkdir(exist_ok=True, parents=True)
 
-    def _check_branch(self, branch_name: str) -> bool:
-        if self._only_branches:
-            only_branches = self._only_branches - self._exclude_branches
-            return branch_name in only_branches
-
-        return branch_name not in self._exclude_branches
-
     def source_allowed(self, update: BuildSource) -> bool:
-        # TODO also check for update.repo_name maybe?
-        return self._check_branch(update.branch)
+        if not (update.repo_id and update.branch):
+            return False
+        branch_id = f"{update.repo_id}/{update.branch}"
+        if self._only_branches:
+            return branch_id in self._only_branches
+
+        return branch_id not in self._exclude_branches
+
+    def get_allowed_branches_str(self) -> str:
+        if self._only_branches:
+            return f"only: {', '.join(self._only_branches)}"
+
+        return f"not: {', '.join(self._exclude_branches)}"
+
+    def get_alias(self, branch: str) -> str:
+        alias = self._aliases.get(branch)
+        return alias or branch
 
     async def get_watcher(self, build, completed) -> Watcher | None:
         if not completed:
@@ -88,7 +109,10 @@ class SymlinkCreator(Watcher):
         match update:
             case BuildSource():
                 if self._cfg.source_allowed(update):
+                    logging.debug("[symlink_branch] registering link source %s/%s", update.repo_id, update.branch)
                     self._build_sources.append(update)
+                else:
+                    logging.debug("[symlink_branch] ignoring link source %s/%s due to match rules: '%s'", update.repo_id, update.branch, strlazy(lambda: self._cfg.get_allowed_branches_str()))
 
             case BuildState():
                 if update.is_completed():
@@ -99,32 +123,32 @@ class SymlinkCreator(Watcher):
 
     def _link_source(self, source: BuildSource) -> None:
         """
-        link a build source to a build
-        for now just use the branch name.
-        TODO: also use repo?
+        symlink platform/repo/branch from a build source to the build directory.
         """
-        branch_name = source.branch
+        link_name = self._cfg.get_alias(f"{source.repo_id}/{source.branch}")
 
-        branch_link = (self._cfg.target_dir / branch_name).resolve()
-        if self._cfg.target_dir.resolve() not in branch_link.parents:
+        link_path = (self._cfg.target_dir / link_name).resolve()
+        if self._cfg.target_dir.resolve() not in link_path.parents:
             # if ../ is in branch name...
-            raise ValueError(f"[symlink_branch] branch link would be placed outside target directory: {branch_name!r}")
+            raise ValueError(f"[symlink_branch] branch link would be placed outside target directory: {link_name!r}")
+        if not CFG.volatile:
+            link_path.parent.mkdir(exist_ok=True, parents=True)
 
-        tmp_branch_link = branch_link.parent / f".{branch_link.name}.tmp"
+        tmp_branch_link = link_path.parent / f".{link_path.name}.tmp"
 
         try:
             # TODO python3.12 use relative_to(..., walk_up=True)
-            build_path = Path(os.path.relpath(self._build.path.resolve(), branch_link.parent))
+            build_path = Path(os.path.relpath(self._build.path.resolve(), link_path.parent))
         except ValueError:
             # absolute path needed for filesystem boundary
             build_path = self._build.path.resolve()
 
         if CFG.volatile:
-            logging.debug("[symlink_branch] would link branch %s to %s", branch_link, build_path)
+            logging.debug("[symlink_branch] would link branch %s to %s", link_path, build_path)
             return
 
-        logging.debug("[symlink_branch] linking branch %s to %s", branch_link, build_path)
+        logging.debug("[symlink_branch] linking branch %s to %s", link_path, build_path)
         # allow / in branch names
-        branch_link.parent.mkdir(parents=True, exist_ok=True)
+        link_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_branch_link.symlink_to(build_path)
-        tmp_branch_link.rename(branch_link)
+        tmp_branch_link.rename(link_path)

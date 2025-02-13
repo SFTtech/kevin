@@ -22,6 +22,7 @@ from .watchable import Watchable
 from .watcher import Watcher
 
 if typing.TYPE_CHECKING:
+    from .task_queue import TaskQueue
     from typing import Sequence
 
 
@@ -50,7 +51,7 @@ class Build(Watchable, Watcher):
         # No more jobs required to perform for this build.
         # If the build has been completed, stores the unix timestamp (float).
         # else, it is None.
-        self.completed = None
+        self.completed: float | None = None
 
         # Was the finish() function called?
         self.finished = False
@@ -60,7 +61,7 @@ class Build(Watchable, Watcher):
         self._all_loaded = False
 
         # The Queue where this build was put in
-        self._queue = None
+        self._queue: TaskQueue | None = None
 
         # gathered sources of this build.
         self.sources: set[BuildSource] = set()
@@ -240,25 +241,29 @@ class Build(Watchable, Watcher):
         await self.send_update(BuildState(self.project.name, self.commit_hash,
                                           state, text, timestamp))
 
-    async def add_source(self, clone_url: str,
-                         repo_url: str | None = None,
-                         user: str | None = None,
-                         branch: str | None = None,
-                         comment: str | None = None) -> None:
+    async def add_source(
+        self, clone_url: str,
+        repo_id: str,
+        branch: str | None = None,
+        repo_url: str | None = None,
+        author: str | None = None,
+        comment: str | None = None,
+    ) -> None:
         """
         Store the build source settings, namely the repo url.
         """
         # a primitive duplicate-source filter
         for source in self.sources:
-            if (source.repo_url == repo_url and
+            if (source.repo_id == repo_id and
                 source.branch == branch):
                 return
 
         await self.send_update(BuildSource(
             clone_url=clone_url,   # Where to clone the repo from
+            repo_id=repo_id,       # service/repo_name
+            branch=branch,         # git branch used for the build
             repo_url=repo_url,     # Website of the repo
-            author=user,           # User that triggered the build
-            branch=branch,         # Branchname of this build
+            author=author,         # User that triggered the build
             comment=comment,
         ))
 
@@ -267,8 +272,11 @@ class Build(Watchable, Watcher):
         Returns true if this build requires a run.
         """
 
-        return (not self.completed or
-                self._jobs_to_reconstruct)
+        if not self.completed:
+            return True
+        if self._jobs_to_reconstruct:
+            return True
+        return False
 
     async def run(self, queue):
         """

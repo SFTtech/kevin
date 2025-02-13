@@ -110,11 +110,20 @@ class BuildSource(Update):
     A build must have at least one of these updates in order to be
     buildable (we must know a clone_url).
     """
-    def __init__(self, clone_url, repo_url, author, branch, comment):
+    def __init__(
+        self,
+        clone_url: str,
+        repo_id: str | None = None,
+        repo_url: str | None = None,
+        author: str | None = None,
+        branch: str | None = None,
+        comment: str | None = None
+    ):
         self.clone_url = clone_url
+        self.repo_id = repo_id
+        self.branch = branch
         self.repo_url = repo_url
         self.author = author
-        self.branch = branch
         self.comment = comment
 
 

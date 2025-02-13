@@ -51,11 +51,15 @@ repos = any
 
 #[symlink_branch]
 ## link commits to branch names
+# specify branches separated by comma
+# branch spec: github/yourorg/yourrepo/master, ...
 #only =
 #exclude =
 ## where the branch symlinks will be placed,
 ##relative to project directory (or absolute)
 #target_dir = branches/
+## how to alias branches: <branch_spec>:<alias>, ...
+#alias = github/yourorg/yourrepo/master:master
 
 # "job" module configuration, which performs a build via justin.
 [job.0]

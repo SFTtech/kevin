@@ -24,6 +24,7 @@ from ..update import (BuildState, JobState,
 from ..watcher import Watcher
 
 if typing.TYPE_CHECKING:
+    from ..update import Update
     from ..build_manager import BuildManager
 
 
@@ -193,14 +194,14 @@ class GitHubHook(HookTrigger):
     Having one of those for each project is the normal case.
     """
 
-    def __init__(self, cfg, project):
+    def __init__(self, cfg, project) -> None:
         super().__init__(cfg, project)
 
         # shared secret
-        self.hooksecret = cfg["hooksecret"].encode()
+        self.hooksecret: bytes = cfg["hooksecret"].encode()
 
         # allowed github repos
-        self.repos = set()
+        self.repos: set[str] = set()
         for repo in cfg["repos"].split(","):
             repo = repo.strip()
             if repo:
@@ -451,11 +452,11 @@ class GitHubHookHandler(HookHandler):
                                 repo_name, branch, status_update_url, updates,
                                 force_rebuild)
 
-    async def create_build(self, project, commit_sha, clone_url,
-                           repo_url, user, repo_name, branch,
-                           status_url=None,
-                           initial_updates=None,
-                           force_rebuild=False):
+    async def create_build(self, project: str, commit_sha: str, clone_url: str,
+                           repo_url: str, user: str, repo_name: str, branch: str,
+                           status_url: str | None = None,
+                           initial_updates: list[Update] | None = None,
+                           force_rebuild: bool = False):
         """
         Create a new build for this commit hash.
         This commit may already exist, so a existing Build is retrieved.
@@ -467,8 +468,13 @@ class GitHubHookHandler(HookHandler):
                                                    force_rebuild=force_rebuild)
 
         # register source for the build
-        await build.add_source(clone_url, repo_url, user, branch,
-                               "GitHub source")
+        await build.add_source(
+            clone_url=clone_url,
+            repo_id=f"github/{repo_name}",
+            branch=branch,
+            repo_url=repo_url,
+            author=f"github/{user}",
+        )
 
         if initial_updates:
             for update in initial_updates:
