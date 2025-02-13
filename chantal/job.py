@@ -72,8 +72,8 @@ def _clone_repo(args: Args, env) -> None:
     if args.treeish:
         refname = f"kevin-{args.branch.replace(':', '/')}" if args.branch else "kevin-build"
 
-        # to silence main/master warnings
-        run_command("git config --global init.defaultBranch kevin-build", env=env, hide_invoc=True)
+        # to silence main/master warnings (must be distinct from refname...)
+        run_command("git config --global init.defaultBranch stuff-default", env=env, hide_invoc=True)
 
         # don't clone, instead fetch from remote to select treeish
         run_command(f"git init '{args.work_location}'", env=env)

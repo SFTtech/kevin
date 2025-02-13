@@ -355,7 +355,9 @@ class GitHubHookHandler(HookHandler):
         clone_url = json_data["repository"]["clone_url"]
         repo_url = json_data["repository"]["html_url"]
         user = json_data["pusher"]["name"]
-        branch = json_data["ref"].lstrip("refs/heads/")  # e.g. "refs/heads/master"
+        branch = json_data["ref"]
+        if branch is not None:
+            branch = branch.lstrip("refs/heads/")  # e.g. "refs/heads/master"
 
         status_update_url = json_data["repository"]["statuses_url"].replace(
             "{sha}", commit_sha
@@ -453,7 +455,7 @@ class GitHubHookHandler(HookHandler):
                                 force_rebuild)
 
     async def create_build(self, project: str, commit_sha: str, clone_url: str,
-                           repo_url: str, user: str, repo_name: str, branch: str,
+                           repo_url: str, user: str, repo_name: str, branch: str | None,
                            status_url: str | None = None,
                            initial_updates: list[Update] | None = None,
                            force_rebuild: bool = False):

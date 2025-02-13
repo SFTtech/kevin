@@ -278,7 +278,7 @@ class Build(Watchable, Watcher):
             return True
         return False
 
-    async def run(self, queue):
+    async def run(self, queue: TaskQueue) -> None:
         """
         The actions of this build must now add themselves
         to the given queue.
@@ -310,7 +310,7 @@ class Build(Watchable, Watcher):
 
         # add jobs and other actions defined by the project.
         # some of the actions may be skipped if the build is completed already.
-        await self.project.attach_actions(self, self.completed)
+        await self.project.attach_actions(self, self.completed is not None)
 
         # tell all watchers (e.g. jobs) that they were attached,
         # and may now register themselves at this build.

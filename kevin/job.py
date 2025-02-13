@@ -280,7 +280,7 @@ class Job(Watcher, Watchable):
         if not is_merged:
             self._merge_updates()
 
-        logging.debug(f"reconstructed Job {id(self)} {self} from fs")
+        logging.debug("reconstructed Job %s from fs", self)
 
         # jup, we reconstructed.
         self._all_loaded = True
