@@ -96,10 +96,13 @@ class GeneratedUpdate(Update):
 class BuildJobCreated(Update):
     """
     Update that notifies the creation of a job.
+    compat: vm_name was replaced by machine_name.
     """
-    def __init__(self, job_name, machine_name):
+    def __init__(self, job_name,
+                 machine_name: str | None = None,
+                 vm_name: str | None = None):
         self.job_name = job_name
-        self.machine_name = machine_name
+        self.machine_name = machine_name or vm_name
 
 
 class BuildSource(Update):
