@@ -2,14 +2,19 @@
 Various utility functions.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import re
 import tempfile
+import typing
 
 from pathlib import Path
 
+if typing.TYPE_CHECKING:
+    from typing import Sequence
 
 # convenience infinity.
 INF = float("inf")
@@ -281,3 +286,17 @@ class strflazy:
         self._args = args
     def __str__(self):
         return self._txt % self._args
+
+
+T = typing.TypeVar("T")
+def first_instance[T](seq: Sequence[T], base: type[T]) -> T | None:
+    """
+    give a sequence, return the first element that isinstance of T's subtype `base`.
+    """
+    result: T | None = None
+    for item in seq:
+        if isinstance(item, base):
+            result = item
+            break
+
+    return result

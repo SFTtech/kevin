@@ -19,7 +19,8 @@ from aiohttp.web import Request, Response
 
 from . import util
 from . import service
-from ..service.github import GitHubHook
+from ..service.github import GitHubHook, GitHubStatus
+from ..util import first_instance
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -134,12 +135,7 @@ class GitHub(service.Service):
         project = self.cfg.projects[self.project]
 
         # chose first github trigger in the project config
-        trigger = None
-        for trigger_test in project.triggers:
-            if isinstance(trigger_test, GitHubHook):
-                trigger = trigger_test
-                break
-
+        trigger = first_instance(project.triggers, GitHubHook)
         if trigger is None:
             raise Exception("couldn't find github trigger in project.")
 
@@ -147,9 +143,15 @@ class GitHub(service.Service):
         reponame = trigger.repos.pop()
         hooksecret = trigger.hooksecret
 
+        # to validate messages sent to github status
+        github_status = first_instance(project.actions, GitHubStatus)
+        if not github_status:
+            raise Exception("couldn't find github status action in project.")
+        self._status_auth = (github_status.auth_user, github_status.auth_pass)
+
         match self._action:
             case "pull_request":
-                payload = _payload_pull_request(self._user, repo, reponame, branch_name, commit, status_url, self._pull_id, branch_name)
+                payload = _payload_pull_request(self._user, repo, reponame, branch_name, commit, status_url, self._pull_id)
                 event_type = "pull_request"
             case "push":
                 payload = _payload_push(self._user, repo, reponame, branch_name, commit, status_url)
@@ -184,12 +186,9 @@ class GitHub(service.Service):
 
             auth = base64.b64decode(auth_header[6:]).decode().split(":", 2)
 
-            authcfg = self.cfg.projects[self.project].actions[0]
-            authtok = (authcfg.auth_user, authcfg.auth_pass)
-
-            if tuple(auth) != authtok:
+            if tuple(auth) != self._status_auth:
                 print("wrong auth tried: %s" % (auth,))
-                print("expected: %s" % (authtok,))
+                print("expected: %s" % (self._status_auth,))
                 raise ValueError("wrong authentication")
 
             self._show_update(blob)
@@ -219,7 +218,9 @@ class GitHub(service.Service):
         print(data)
 
 
-def _payload_pull_request(user, repo, reponame, branch_name: str | None, commit_hash, status_url, pull_id) -> dict[str, Any]:
+def _payload_pull_request(user: str, repo: str, repo_id: str,
+                          branch_name: str | None, commit_hash: str,
+                          status_url: str, pull_id: int) -> dict[str, Any]:
     # most basic webhook for a pull request
     return {
         "action": "synchronize",
@@ -244,12 +245,14 @@ def _payload_pull_request(user, repo, reponame, branch_name: str | None, commit_
             ],
         },
         "repository": {
-            "full_name": reponame,
+            "full_name": repo_id,
         },
     }
 
 
-def _payload_push(user, repo, reponame, branch_name: str | None, commit_hash, status_url) -> dict[str, Any]:
+def _payload_push(user: str, repo: str, repo_id: str,
+                  branch_name: str | None, commit_hash: str,
+                  status_url: str) -> dict[str, Any]:
     ref: str | None
     match branch_name:
         case None | "":
@@ -260,7 +263,7 @@ def _payload_push(user, repo, reponame, branch_name: str | None, commit_hash, st
     return {
         "ref": ref,
         "repository": {
-            "full_name": reponame,
+            "full_name": repo_id,
             "clone_url": repo,
             "html_url": repo,
             "statuses_url": status_url,
