@@ -289,7 +289,7 @@ class strflazy:
 
 
 T = typing.TypeVar("T")
-def first_instance[T](seq: Sequence[T], base: type[T]) -> T | None:
+def first_instance(seq: Sequence[T], base: type[T]) -> T | None:
     """
     give a sequence, return the first element that isinstance of T's subtype `base`.
     """
