@@ -125,6 +125,10 @@ class Build(Watchable, Watcher):
 
         self._update_lock = asyncio.Lock()
 
+    def __str__(self) -> str:
+        return (f"<Build {self.project.name} [\x1b[33m{self.commit_hash}\x1b[m] "
+                f"ok={len(self.jobs_succeeded)}/{len(self.jobs)}=jobs>")
+
     async def load(self, preferred_job_name: str | None = None):
         """
         requests to maybe load this job from storage.
@@ -143,6 +147,7 @@ class Build(Watchable, Watcher):
         if self.completed and not self._all_loaded:
             await self._load_from_fs()
             await self._reconstruct_jobs(preferred_job_name)
+            logging.debug("reconstructed %s from fs", self)
 
     async def _load_from_fs(self):
         """

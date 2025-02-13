@@ -280,7 +280,7 @@ class Job(Watcher, Watchable):
         if not is_merged:
             self._merge_updates()
 
-        logging.debug("reconstructed Job %s from fs", self)
+        logging.debug("reconstructed %s from fs", self)
 
         # jup, we reconstructed.
         self._all_loaded = True
@@ -307,10 +307,7 @@ class Job(Watcher, Watchable):
             self.path.mkdir(parents=True)
 
     def __str__(self):
-        return "%s.%s [\x1b[33m%s\x1b[m]" % (
-            self.build.project.name,
-            self.name,
-            self.build.commit_hash)
+        return f"<Job {self.build.project.name}.{self.name} [\x1b[33m{self.build.commit_hash}\x1b[m]>"
 
     def on_send_update(self, update: UpdateStep, **kwargs):
         """
