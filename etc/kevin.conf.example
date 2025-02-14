@@ -4,6 +4,8 @@
 name = kevin-ci
 max_jobs_queued = 50
 max_jobs_running = 2
+# least recently accessed builds to keep in memory
+builds_cached_max = 200
 
 [projects]
 config_folder = /etc/kevin/projects

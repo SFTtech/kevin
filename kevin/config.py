@@ -76,6 +76,8 @@ class Config:
             self.max_jobs_queued = int(kevin["max_jobs_queued"])
             self.max_jobs_running = int(kevin["max_jobs_running"])
 
+            self.builds_cached_max = int(kevin["builds_cached_max"])
+
             # project configurations.
             from .project import Project
 
