@@ -183,8 +183,9 @@ class GitHubStatusSender(Watcher):
         works through the update request queue
         """
 
-        retries = 3
-        retry_delay = 5
+        retries = 5       # max number of attempts
+        retry_delay = 5   # start delay
+        retry_factor = 3  # multiply factor for each further attempt
 
         while True:
             data, url, method = await self._update_send_queue.get()
@@ -200,6 +201,7 @@ class GitHubStatusSender(Watcher):
                                       f" {method} API request to {url!r}")
 
                 await asyncio.sleep(retry_delay)
+                retry_delay *= retry_factor
 
             if not delivered:
                 logging.warning("[github] could not deliver %s request to %s "
@@ -207,15 +209,16 @@ class GitHubStatusSender(Watcher):
                                 "skipping it...",
                                 method, url, retries, retry_delay)
 
-    async def _github_submit(self, data: str | None, url: str, req_method: str, timeout=10.0) -> bool:
+    async def _github_submit(self, data: str | None, url: str,
+                             req_method: str, timeout: float = 10.0) -> bool:
         """ send a request to the github API """
         try:
             authinfo = aiohttp.BasicAuth(self._cfg.auth_user,
                                          self._cfg.auth_pass)
 
-            timeout = aiohttp.ClientTimeout(total=timeout)
+            _timeout = aiohttp.ClientTimeout(total=timeout)
 
-            async with aiohttp.ClientSession(timeout=timeout,
+            async with aiohttp.ClientSession(timeout=_timeout,
                                              trust_env=True) as session:
                 assert req_method in {"post", "get", "delete", "put", "patch"}
 
