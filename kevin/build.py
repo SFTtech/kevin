@@ -300,12 +300,12 @@ class Build(Watchable, Watcher):
     async def enqueue(self, queue: TaskQueue,
                       on_finish: Callable[[Build], None] | None = None) -> None:
         """
-        The actions of this build must now add themselves
-        to the given queue.
-        This is called to actually start the build and its jobs.
+        This is called to actually perform the build and its jobs.
 
-        run is called by the build trigger,
-        not a passive subscriber like the httpd.
+        Build.load() is called previously (in BuildManager).
+        this Build.enqueue() is called in TaskQueue.
+
+        The actions (e.g. jobs) of this build must now add themselves to the given queue.
         """
 
         if self._running:

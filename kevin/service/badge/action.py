@@ -62,9 +62,10 @@ class StatusBadge(Action):
                 badge_file.write(gen.get_svg())
 
     async def get_watcher(self, build: Build, completed: bool) -> Watcher | None:
-        if not completed:
-            return _BadgeCreator(build, self)
-        return None
+        if completed:
+            return None
+
+        return _BadgeCreator(build, self)
 
 class _BadgeCreator(Watcher):
     def __init__(self, build: Build, config: StatusBadge):

@@ -14,8 +14,7 @@ from ...update import (BuildState, JobState, StepState)
 from ...watcher import Watcher
 
 if typing.TYPE_CHECKING:
-    from typing import Any
-    from ...update import Update
+    from ...update import UpdateStep
     from ...build import Build
 
 
@@ -36,28 +35,17 @@ class GitHubBuildStatusUpdater(Watcher):
 
     This is constructed for each build to update.
 
-    remembers all updates.
-    remembers which github-status urls are known.
-    on new url, send all previous updates to that new url.
-    new updates are sent to all urls known.
+    For each GitHub status url (where github accepts messages for displaying to users),
+    launches a GitHubStatuSender.
     """
     def __init__(self, build: Build, config) -> None:
-        self._status_update_urls: set[str] = set()
-
         self._cfg = config
         self._build = build
 
-        # updates that we received.
-        self._updates: list[Update] = list()
+        # target_id -> status sender
+        self._senders: dict[str, GitHubStatusSender] = dict()
 
-        # jsondata, url, method
-        self._update_send_queue: asyncio.Queue[tuple[dict[str, Any], str, str]] = asyncio.Queue(maxsize=1000)
-
-        self._sender_task = asyncio.get_event_loop().create_task(
-            self._github_status_worker()
-        )
-
-    async def on_update(self, update):
+    async def on_update(self, update: UpdateStep):
         """
         Translates the update to a JSON GitHub status update request
 
@@ -68,84 +56,93 @@ class GitHubBuildStatusUpdater(Watcher):
         if update is StopIteration:
             return
 
-        if isinstance(update, GitHubStatusURL):
-            if ("any" not in self._cfg.repos
-                and update.repo_name not in self._cfg.repos):
+        match update:
+            case GitHubStatusURL():
+                if ("any" not in self._cfg.repos
+                    and update.repo not in self._cfg.repos):
 
-                # this status url is not handled by this status updater.
-                # => we don't have the auth token to send valid updates
-                #    to the github API.
+                    # this status url is not handled by this status updater.
+                    # => we don't have the auth token to send valid updates
+                    #    to the github API.
+                    return
+
+                update_target = update.target_id()
+                if update_target in self._senders:
+                    # we already send there
+                    return
+
+                status_sender = GitHubStatusSender(self._cfg, self._build, update.destination)
+                self._senders[update_target] = status_sender
+                await self._build.register_watcher(status_sender)
+
+
+class GitHubStatusSender(Watcher):
+    def __init__(self, config, build: Build, url: str) -> None:
+        self._cfg = config
+        self._build = build
+        self._destination = url
+
+        # jsondatastr, url, method
+        self._update_send_queue: asyncio.Queue[tuple[str | None, str, str]] = asyncio.Queue(maxsize=1000)
+
+        self._sender_task = asyncio.get_event_loop().create_task(
+            self._github_status_worker()
+        )
+
+    async def on_update(self, update: UpdateStep) -> None:
+        match update:
+            case StopIteration():
                 return
 
-            newurl = update.destination
+            case GitHubLabelUpdate():
+                if ("any" not in self._cfg.repos
+                    and update.repo not in self._cfg.repos):
+                    return
 
-            # we got some status update url
-            self._status_update_urls.add(newurl)
-
-            # send all previous updates to that url.
-            for old_update in self._updates:
-                await self._github_notify(old_update, url=newurl)
-
-            return
-
-        elif isinstance(update, GitHubLabelUpdate):
-            if ("any" not in self._cfg.repos
-                and update.repo_name not in self._cfg.repos):
+                if update.action == "remove":
+                    # DELETE /repos/:owner/:repo/issues/:issue_number/labels/:name
+                    url = f"{update.issue_url}/labels/{quote(update.label)}"
+                    await self._github_send_status(None, "delete", custom_url=url)
                 return
-
-            if update.action == "remove":
-                # DELETE /repos/:owner/:repo/issues/:issue_number/labels/:name
-                url = f"{update.issue_url}/labels/{quote(update.label)}"
-                await self._github_send_status(None, url, "delete")
-            return
-
-        # store the update so we can send it to a new client later
-        # even if we don't have an url yet (it may arrive later)
-        self._updates.append(update)
 
         # then actually notify github.
         await self._github_notify(update)
 
-    async def _github_notify(self, update, url=None):
+    async def _github_notify(self, update: UpdateStep) -> None:
         """ prepare sending an update to github. """
 
-        if not (url or self._status_update_urls):
-            # no status update url known
-            # we discard the update as we have nowhere to send it.
-            # once somebody wants to known them, we stored it already.
-            return
-
         # craft the update message
-        if isinstance(update, BuildState):
-            state, description = update.state, update.text
-            context = CFG.ci_name
-            target_url = None
+        match update:
+            case BuildState():
+                state, description = update.state, update.text
+                context = CFG.ci_name
+                target_url = None
 
-        elif isinstance(update, JobState):
-            state, description = update.state, update.text
-            context = "%s: %s" % (CFG.ci_name,
-                                  update.job_name)
-            target_url = "%s&job=%s" % (
-                self._build.target_url,
-                update.job_name
-            )
+            case JobState():
+                state, description = update.state, update.text
+                context = "%s: %s" % (CFG.ci_name,
+                                    update.job_name)
+                target_url = "%s&job=%s" % (
+                    self._build.target_url,
+                    update.job_name
+                )
 
-        elif isinstance(update, StepState):
-            state, description = update.state, update.text
-            context = "%s: %s-%02d %s" % (CFG.ci_name,
-                                          update.job_name,
-                                          update.step_number,
-                                          update.step_name)
+            case StepState():
+                state, description = update.state, update.text
+                context = "%s: %s-%02d %s" % (CFG.ci_name,
+                                              update.job_name,
+                                              update.step_number,
+                                              update.step_name)
 
-            target_url = "%s&job=%s#%s" % (
-                self._build.target_url,
-                update.job_name,
-                update.step_name
-            )
+                target_url = "%s&job=%s#%s" % (
+                    self._build.target_url,
+                    update.job_name,
+                    update.step_name
+                )
 
-        else:
-            # unhandled update
-            return
+            case _:
+                # unhandled update
+                return
 
         if len(description) > 140:
             logging.warning("[github] update description too long, truncating")
@@ -158,23 +155,22 @@ class GitHubBuildStatusUpdater(Watcher):
             "target_url": target_url
         })
 
-        if not url:
-            for destination in self._status_update_urls:
-                await self._github_send_status(data, destination, "post")
-        else:
-            await self._github_send_status(data, url, "post")
+        await self._github_send_status(data, "post")
 
-    async def _github_send_status(self, data, url, req_method):
+    async def _github_send_status(self, data: str | None, req_method: str, custom_url: str | None = None) -> None:
         """
         send a single github status update
 
         data: the payload
-        url: http url
         req_method: http method, e.g. get, post, ...
+        custom_url: http url if needed
 
         this request is put into a queue, where it is
         processed by the worker task.
         """
+
+        # have a custom_url so the GitHubLabelUpdate can enqueue the label modification
+        url = custom_url or self._destination
 
         try:
             self._update_send_queue.put_nowait((data, url, req_method))
@@ -182,7 +178,7 @@ class GitHubBuildStatusUpdater(Watcher):
         except asyncio.QueueFull:
             logging.error("[github] request queue full! wtf!?")
 
-    async def _github_status_worker(self):
+    async def _github_status_worker(self) -> None:
         """
         works through the update request queue
         """
@@ -211,7 +207,7 @@ class GitHubBuildStatusUpdater(Watcher):
                                 "skipping it...",
                                 method, url, retries, retry_delay)
 
-    async def _github_submit(self, data, url, req_method, timeout=10.0):
+    async def _github_submit(self, data: str | None, url: str, req_method: str, timeout=10.0) -> bool:
         """ send a request to the github API """
         try:
             authinfo = aiohttp.BasicAuth(self._cfg.auth_user,

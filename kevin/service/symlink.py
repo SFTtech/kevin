@@ -83,10 +83,11 @@ class SymlinkBranch(Action):
         alias = self._aliases.get(branch)
         return alias or branch
 
-    async def get_watcher(self, build, completed) -> Watcher | None:
-        if not completed:
-            return SymlinkCreator(build, self)
-        return None
+    async def get_watcher(self, build: Build, completed: bool) -> Watcher | None:
+        if completed:
+            return None
+
+        return SymlinkCreator(build, self)
 
 
 class SymlinkCreator(Watcher):

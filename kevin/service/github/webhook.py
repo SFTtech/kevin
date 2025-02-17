@@ -8,7 +8,8 @@ import json
 import logging
 import typing
 
-from .update import GitHubBranchUpdate, GitHubStatusURL, GitHubPullRequest, GitHubLabelUpdate
+from .update import (GitHubBranchUpdate, GitHubPullRequestStatusURL,
+                     GitHubBranchStatusURL, GitHubPullRequest, GitHubLabelUpdate)
 from .util import verify_secret
 from ...httpd import HookHandler
 
@@ -158,10 +159,11 @@ class GitHubHookHandler(HookHandler):
         )
         updates: list[Update] = [
             GitHubBranchUpdate(project.name, repo_name, branch, commit_sha),
+            GitHubBranchStatusURL(status_update_url, repo_name, branch),
         ]
 
         await self.create_build(project, commit_sha, clone_url, repo_url, user,
-                                repo_name, branch, status_update_url, updates)
+                                repo_name, branch, updates)
 
     async def handle_pull_request(self, trigger, project: Project, json_data) -> None:
         """
@@ -215,6 +217,11 @@ class GitHubHookHandler(HookHandler):
 
         updates: list[Update] = [
             GitHubPullRequest(project.name, repo_name, pull_id, commit_sha),
+
+            # notify actions that this status url would like to have updates.
+            # this will most likely tell the GitHubBuildStatusUpdater
+            # where to send updates to.
+            GitHubPullRequestStatusURL(status_update_url, repo_name, pull_id),
         ]
 
         labels = pull["labels"]
@@ -245,12 +252,11 @@ class GitHubHookHandler(HookHandler):
             return
 
         await self.create_build(project, commit_sha, clone_url, repo_url, user,
-                                repo_name, branch, status_update_url, updates,
+                                repo_name, branch, updates,
                                 force_rebuild)
 
     async def create_build(self, project: Project, commit_sha: str, clone_url: str,
                            repo_url: str, user: str, repo_name: str, branch: str | None,
-                           status_url: str | None = None,
                            initial_updates: list[Update] | None = None,
                            force_rebuild: bool = False):
         """
@@ -275,12 +281,6 @@ class GitHubHookHandler(HookHandler):
         if initial_updates:
             for update in initial_updates:
                 await build.send_update(update)
-
-        if status_url:
-            # notify actions that this status url would like to have updates.
-            # this will most likely tell the GitHubBuildStatusUpdater
-            # where to send updates to.
-            await build.send_update(GitHubStatusURL(status_url, repo_name))
 
         # add the build to the queue
         await self.queue.add_build(build)

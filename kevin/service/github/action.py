@@ -73,4 +73,6 @@ class GitHubStatus(Action):
                 self.repos.add(repo)
 
     async def get_watcher(self, build: Build, completed: bool) -> Watcher | None:
+        # we return a watcher even if the build is completed already
+        # -> a second pull request for the same build is reported as completed without a rebuild..
         return GitHubBuildStatusUpdater(build, self)
