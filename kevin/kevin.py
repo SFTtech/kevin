@@ -32,7 +32,7 @@ async def run(config: Config):
     job_manager = JobManager(asyncio.get_running_loop(), config)
 
     # build creation
-    build_manager = BuildManager()
+    build_manager = BuildManager(max_cached=config.builds_cached_max)
 
     # queue where build jobs will end up in
     queue = TaskQueue(asyncio.get_running_loop(), job_manager,

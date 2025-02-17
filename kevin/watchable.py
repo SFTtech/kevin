@@ -9,6 +9,7 @@ import asyncio
 import typing
 
 from .watcher import Watcher
+from .update import Update
 
 if typing.TYPE_CHECKING:
     from .update import UpdateStep
@@ -44,9 +45,12 @@ class Watchable:
         """
         pass
 
-    def deregister_watcher(self, watcher: Watcher):
+    def deregister_watcher(self, watcher: Watcher, missing_ok: bool = False):
         """ Un-subscribe a watcher from the notification list """
-        self._watchers.remove(watcher)
+        if missing_ok:
+            self._watchers.discard(watcher)
+        else:
+            self._watchers.remove(watcher)
 
     def on_watcher_deregistered(self, watcher: Watcher):
         """ Custom actions when a watcher unsubscribes """
@@ -60,11 +64,17 @@ class Watchable:
         Exclude: callable that can exclude subscribers from
         receiving the update. (called with func(subscriber))
         """
+
+        if isinstance(update, Update):
+            print(f"{self} => {type(update)}= {update.dump()}")
+
+        if self._updates_concluded:
+            raise Exception("this watcher sent something after StopIteration")
+
         if update is StopIteration:
-            if self._updates_concluded:
-                raise Exception("this watcher sent StopIteration again")
-            else:
-                self._updates_concluded = True
+            import traceback
+            traceback.print_stack()
+            self._updates_concluded = True
 
         self.on_send_update(update, **kwargs)
 
@@ -74,6 +84,8 @@ class Watchable:
                 continue
 
             await watcher.on_update(update)
+            if update is StopIteration:
+                self.deregister_watcher(watcher)
 
     def on_send_update(self, update: UpdateStep, **kwargs):
         """ Called when an update is about to be sent """

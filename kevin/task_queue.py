@@ -11,6 +11,7 @@ import typing
 
 if typing.TYPE_CHECKING:
     from .build import Build
+    from .project import Project
     from .job import Job
     from .job_manager import JobManager
 
@@ -35,11 +36,8 @@ class TaskQueue:
         # builds that should be run
         self._build_queue: asyncio.Queue[Build] = asyncio.Queue(maxsize=max_queued)
 
-        # all Builds that are pending
-        self._pending_builds: set[Build] = set()
-
-        # build_id -> Build
-        self._build_ids: dict[int, Build] = dict()
+        # (project_name, commit_hash) -> Build
+        self._builds: dict[tuple[str, str], Build] = dict()
 
         # jobs that should be run
         self._job_queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=max_queued)
@@ -63,54 +61,58 @@ class TaskQueue:
             await self.cancel()
             raise
 
-    async def process_builds(self):
+    async def process_builds(self) -> None:
         """
         process items from the build queue
         """
         while True:
             build = await self._build_queue.get()
-            await build.run(self)
 
-    async def add_build(self, build):
+            build_key = (build.project.name, build.commit_hash)
+            # it's in the dict if it wasn't aborted in the meantime
+            if build_key in self._builds:
+                try:
+                    def remove_build(build: Build):
+                        self._builds.pop(build_key, None)
+
+                    # this blocks just as long as it needs to schedule jobs
+                    await build.enqueue(self, on_finish=remove_build)
+                except Exception:
+                    logging.exception("failed to run build %s", build)
+
+    async def add_build(self, build: Build):
         """
         Add a build to be processed.
         Called from where a new build was created and should now be run.
         """
 
-        if build in self._pending_builds:
-            return
+        build_key = (build.project.name, build.commit_hash)
 
-        if build.requires_run():
+        if build_key not in self._builds and build.requires_run():
             logging.info("[queue] adding build: [\x1b[33m%s\x1b[m] @ %s",
                          build.commit_hash,
                          build.clone_url)
 
-            self._pending_builds.add(build)
-            self._build_ids[build.commit_hash] = build
+            self._builds[build_key] = build
 
             # the build shall now run.
             # this is done by adding jobs to this queue.
-            await build.run(self)
+            await self._build_queue.put(build)
 
-    def remove_build(self, build):
+    def remove_build(self, build: Build):
         """ Remove a finished build """
-        del self._build_ids[build.commit_hash]
-        self._pending_builds.remove(build)
+        del self._builds[(build.project.name, build.commit_hash)]
 
-    async def abort_build(self, build_id):
+    async def abort_build(self, project_name: str, commit_hash: str):
         """ Abort a running build by aborting all pending jobs """
 
-        build = self._build_ids.get(build_id)
+        build_key = (project_name, commit_hash)
+        build = self._builds.get(build_key)
 
         if build:
             if not build.completed:
                 await build.abort()
-
-    def is_pending(self, commit_hash):
-        """ Test if a commit hash is currently being built """
-        # TODO: what if a second project wants the same hash?
-        #       we can't reuse the build then!
-        return commit_hash in self._build_ids.keys()
+            del self._builds[build_key]
 
     async def add_job(self, job):
         """ Add a job to the queue """

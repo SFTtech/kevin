@@ -24,8 +24,12 @@ from ..update import (BuildState, JobState,
 from ..watcher import Watcher
 
 if typing.TYPE_CHECKING:
+    from typing import Any
     from ..update import Update
+    from ..build import Build
     from ..build_manager import BuildManager
+    from ..project import Project
+    from ..task_queue import TaskQueue
 
 
 # translation lookup-table for kevin states -> github states
@@ -115,13 +119,13 @@ class GitHubPullManager(Watcher):
     Subscribes to all builds.
     """
 
-    def __init__(self, repos):
+    def __init__(self, repos: set[str]) -> None:
         # repos this pullmanager is responsible for
         self.repos = repos
 
         # all the pulls that we triggered
-        # (project, repo, pull_id) -> (build_id, queue)
-        self.running_pull_builds = dict()
+        # (project_name, repo, pull_id) -> (commit_hash, queue)
+        self._running_pull_builds: dict[tuple[str, str, int], tuple[str, TaskQueue | None]] = dict()
 
     async def on_update(self, update):
         if isinstance(update, GitHubPullRequest):
@@ -134,19 +138,19 @@ class GitHubPullManager(Watcher):
                 return
 
             # get the running build id for this pull request
-            entry = self.running_pull_builds.get(key)
+            entry = self._running_pull_builds.get(key)
 
             if entry is not None:
-                build_id, queue = entry
+                commit_hash, queue = entry
 
             else:
                 # that pull is not running currently, so
                 # store that it's running.
                 # the queue is unknown, set it to None.
-                self.running_pull_builds[key] = (update.commit_hash, None)
+                self._running_pull_builds[key] = (update.commit_hash, None)
                 return
 
-            if build_id == update.commit_hash:
+            if commit_hash == update.commit_hash:
                 # the same build is running currently, just ignore it
                 pass
 
@@ -161,27 +165,27 @@ class GitHubPullManager(Watcher):
 
                 else:
                     # abort it
-                    await queue.abort_build(build_id)
+                    await queue.abort_build(update.project_name, commit_hash)
 
                 # and store the new build id for that pull request
-                self.running_pull_builds[key] = (update.commit_hash, None)
+                self._running_pull_builds[key] = (update.commit_hash, None)
 
         elif isinstance(update, QueueActions):
             # catch the queue of the build actions
             # only if we track that build, we store the queue
 
             # select the tracked build and store the learned queue
-            for key, (build_id, _) in self.running_pull_builds.items():
-                if update.build_id == build_id:
-                    self.running_pull_builds[key] = (build_id, update.queue)
+            for key, (commit_hash, _) in self._running_pull_builds.items():
+                if update.build_id == commit_hash:
+                    self._running_pull_builds[key] = (commit_hash, update.queue)
 
         elif isinstance(update, BuildState):
             # build state to remove a running pull request
             if update.is_completed():
-                for key, (build_id, queue) in self.running_pull_builds.items():
-                    if update.build_id == build_id:
+                for key, (commit_hash, queue) in self._running_pull_builds.items():
+                    if update.build_id == commit_hash:
                         # remove the build from the run list
-                        del self.running_pull_builds[key]
+                        del self._running_pull_builds[key]
                         return
 
 
@@ -248,7 +252,7 @@ class GitHubHookHandler(HookHandler):
         self.set_status(400)
         self.finish()
 
-    async def post(self):
+    async def post(self) -> None:
         logging.info("[github] \x1b[34mGot webhook from %s\x1b[m",
                      self.request.remote_ip)
         blob = self.request.body
@@ -269,7 +273,7 @@ class GitHubHookHandler(HookHandler):
             # verify the shared secret.
             # at least one of the triggers must have it.
             # triggers is a list of GitHubHooks.
-            project = None
+            project: Project | None = None
             tried_repos = set()
 
             # find the trigger responsible for the pull request.
@@ -345,7 +349,7 @@ class GitHubHookHandler(HookHandler):
 
         self.finish()
 
-    async def handle_push(self, project, json_data):
+    async def handle_push(self, project: Project, json_data) -> None:
         """
         github push webhook parser.
         """
@@ -362,14 +366,14 @@ class GitHubHookHandler(HookHandler):
         status_update_url = json_data["repository"]["statuses_url"].replace(
             "{sha}", commit_sha
         )
-        updates = [
+        updates: list[Update] = [
             GitHubBranchUpdate(project.name, repo_name, branch, commit_sha),
         ]
 
         await self.create_build(project, commit_sha, clone_url, repo_url, user,
                                 repo_name, branch, status_update_url, updates)
 
-    async def handle_pull_request(self, trigger, project, json_data):
+    async def handle_pull_request(self, trigger, project: Project, json_data) -> None:
         """
         github pull_request webhook parser.
         """
@@ -419,7 +423,7 @@ class GitHubHookHandler(HookHandler):
         status_update_url = pull["statuses_url"]
         issue_url = pull["issue_url"]
 
-        updates = [
+        updates: list[Update] = [
             GitHubPullRequest(project.name, repo_name, pull_id, commit_sha),
         ]
 
@@ -454,7 +458,7 @@ class GitHubHookHandler(HookHandler):
                                 repo_name, branch, status_update_url, updates,
                                 force_rebuild)
 
-    async def create_build(self, project: str, commit_sha: str, clone_url: str,
+    async def create_build(self, project: Project, commit_sha: str, clone_url: str,
                            repo_url: str, user: str, repo_name: str, branch: str | None,
                            status_url: str | None = None,
                            initial_updates: list[Update] | None = None,
@@ -497,7 +501,7 @@ class GitHubStatus(Action):
     GitHub status updater action, enable in a project to
     allow real-time build updates via the github api.
     """
-    def __init__(self, cfg, project):
+    def __init__(self, cfg, project: Project) -> None:
         super().__init__(cfg, project)
         self.auth_user = cfg["user"]
         self.auth_pass = cfg["token"]
@@ -507,34 +511,35 @@ class GitHubStatus(Action):
             if repo:
                 self.repos.add(repo)
 
-    async def get_watcher(self, build, completed):
+    async def get_watcher(self, build: Build, completed: bool) -> Watcher | None:
         return GitHubBuildStatusUpdater(build, self)
 
 
 class GitHubBuildStatusUpdater(Watcher):
     """
-    Sets the GitHub build/build step statuses from job updates.
+    Sets the GitHub build and job/step statuses from job updates.
 
-    Constructed for each job to update.
+    This is constructed for each build to update.
 
-    remember all updates.
-    remember which urls are known.
+    remembers all updates.
+    remembers which github-status urls are known.
     on new url, send all previous updates to that new url.
     new updates are sent to all urls known.
     """
-    def __init__(self, build, config):
-        # TODO: add urls from the config file?
-        self.status_update_urls = set()
-        self.cfg = config
-        self.build = build
+    def __init__(self, build: Build, config) -> None:
+        self._status_update_urls: set[str] = set()
+
+        self._cfg = config
+        self._build = build
 
         # updates that we received.
-        self.known_updates = list()
+        self._updates: list[Update] = list()
 
-        self.update_send_queue = asyncio.Queue(maxsize=1000)
+        # jsondata, url, method
+        self._update_send_queue: asyncio.Queue[tuple[dict[str, Any], str, str]] = asyncio.Queue(maxsize=1000)
 
-        self.send_task = asyncio.get_event_loop().create_task(
-            self.github_status_worker()
+        self._sender_task = asyncio.get_event_loop().create_task(
+            self._github_status_worker()
         )
 
     async def on_update(self, update):
@@ -549,8 +554,8 @@ class GitHubBuildStatusUpdater(Watcher):
             return
 
         if isinstance(update, GitHubStatusURL):
-            if ("any" not in self.cfg.repos
-                and update.repo_name not in self.cfg.repos):
+            if ("any" not in self._cfg.repos
+                and update.repo_name not in self._cfg.repos):
 
                 # this status url is not handled by this status updater.
                 # => we don't have the auth token to send valid updates
@@ -560,36 +565,36 @@ class GitHubBuildStatusUpdater(Watcher):
             newurl = update.destination
 
             # we got some status update url
-            self.status_update_urls.add(newurl)
+            self._status_update_urls.add(newurl)
 
             # send all previous updates to that url.
-            for old_update in self.known_updates:
-                await self.github_notify(old_update, url=newurl)
+            for old_update in self._updates:
+                await self._github_notify(old_update, url=newurl)
 
             return
 
         elif isinstance(update, GitHubLabelUpdate):
-            if ("any" not in self.cfg.repos
-                and update.repo_name not in self.cfg.repos):
+            if ("any" not in self._cfg.repos
+                and update.repo_name not in self._cfg.repos):
                 return
 
             if update.action == "remove":
                 # DELETE /repos/:owner/:repo/issues/:issue_number/labels/:name
                 url = f"{update.issue_url}/labels/{quote(update.label)}"
-                await self.github_send_status(None, url, "delete")
+                await self._github_send_status(None, url, "delete")
             return
 
         # store the update so we can send it to a new client later
         # even if we don't have an url yet (it may arrive later)
-        self.known_updates.append(update)
+        self._updates.append(update)
 
         # then actually notify github.
-        await self.github_notify(update)
+        await self._github_notify(update)
 
-    async def github_notify(self, update, url=None):
+    async def _github_notify(self, update, url=None):
         """ prepare sending an update to github. """
 
-        if not (url or self.status_update_urls):
+        if not (url or self._status_update_urls):
             # no status update url known
             # we discard the update as we have nowhere to send it.
             # once somebody wants to known them, we stored it already.
@@ -606,7 +611,7 @@ class GitHubBuildStatusUpdater(Watcher):
             context = "%s: %s" % (CFG.ci_name,
                                   update.job_name)
             target_url = "%s&job=%s" % (
-                self.build.target_url,
+                self._build.target_url,
                 update.job_name
             )
 
@@ -618,7 +623,7 @@ class GitHubBuildStatusUpdater(Watcher):
                                           update.step_name)
 
             target_url = "%s&job=%s#%s" % (
-                self.build.target_url,
+                self._build.target_url,
                 update.job_name,
                 update.step_name
             )
@@ -639,12 +644,12 @@ class GitHubBuildStatusUpdater(Watcher):
         })
 
         if not url:
-            for destination in self.status_update_urls:
-                await self.github_send_status(data, destination, "post")
+            for destination in self._status_update_urls:
+                await self._github_send_status(data, destination, "post")
         else:
-            await self.github_send_status(data, url, "post")
+            await self._github_send_status(data, url, "post")
 
-    async def github_send_status(self, data, url, req_method):
+    async def _github_send_status(self, data, url, req_method):
         """
         send a single github status update
 
@@ -657,12 +662,12 @@ class GitHubBuildStatusUpdater(Watcher):
         """
 
         try:
-            self.update_send_queue.put_nowait((data, url, req_method))
+            self._update_send_queue.put_nowait((data, url, req_method))
 
         except asyncio.QueueFull:
             logging.error("[github] request queue full! wtf!?")
 
-    async def github_status_worker(self):
+    async def _github_status_worker(self):
         """
         works through the update request queue
         """
@@ -671,12 +676,12 @@ class GitHubBuildStatusUpdater(Watcher):
         retry_delay = 5
 
         while True:
-            data, url, method = await self.update_send_queue.get()
+            data, url, method = await self._update_send_queue.get()
 
             delivered = False
             for _ in range(retries):
                 try:
-                    delivered = await self.github_submit(data, url, method)
+                    delivered = await self._github_submit(data, url, method)
                     if delivered:
                         break
                 except Exception:
@@ -691,11 +696,11 @@ class GitHubBuildStatusUpdater(Watcher):
                                 "skipping it...",
                                 method, url, retries, retry_delay)
 
-    async def github_submit(self, data, url, req_method, timeout=10.0):
+    async def _github_submit(self, data, url, req_method, timeout=10.0):
         """ send a request to the github API """
         try:
-            authinfo = aiohttp.BasicAuth(self.cfg.auth_user,
-                                         self.cfg.auth_pass)
+            authinfo = aiohttp.BasicAuth(self._cfg.auth_user,
+                                         self._cfg.auth_pass)
 
             timeout = aiohttp.ClientTimeout(total=timeout)
 

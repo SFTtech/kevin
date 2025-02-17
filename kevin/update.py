@@ -1,8 +1,16 @@
 """ The various job update objects """
 
+from __future__ import annotations
+
 import json
 import time as clock
+import typing
 from abc import ABCMeta
+
+if typing.TYPE_CHECKING:
+    from .project import Project
+    from .task_queue import TaskQueue
+
 
 ALLOWED_BUILD_STATES = {
     "waiting", "running",
@@ -79,6 +87,7 @@ class Update(metaclass=_UpdateMeta):
             raise Exception("Failed reconstructing %s: %r" % (
                 classname, err)) from err
 
+# when StopIteration is sent, signals end of stream to trigger unsubscription/closing of connection.
 UpdateStep = Update | type[StopIteration]
 
 
@@ -209,6 +218,18 @@ class JobEmergencyAbort(JobState):
                          "error", text, time, version)
 
 
+class JobStarted(JobUpdate, GeneratedUpdate):
+    """ Sent when a job starts processing """
+    def __init__(self, job_name):
+        JobUpdate.__init__(self, job_name)
+
+
+class JobFinished(JobUpdate, GeneratedUpdate):
+    """ Sent when a job is finished processing """
+    def __init__(self, job_name):
+        JobUpdate.__init__(self, job_name)
+
+
 class StepState(JobUpdate, State):
     """ Step build state change """
 
@@ -284,10 +305,10 @@ class StdOut(JobUpdate):
 class QueueActions(GeneratedUpdate):
     """ Actions of a build can now be enqueued. """
 
-    def __init__(self, build_id, queue, project):
-        self.build_id = build_id
-        self.queue = queue
-        self.project = project
+    def __init__(self, build_id: str, queue: TaskQueue, project: Project):
+        self.build_id: str = build_id
+        self.queue: TaskQueue = queue
+        self.project: Project = project
 
 
 class RegisterActions(GeneratedUpdate):

@@ -127,12 +127,9 @@ class SymlinkCreator(Watcher):
         """
         link_name = self._cfg.get_alias(f"{source.repo_id}/{source.branch}")
 
-        link_path = (self._cfg.target_dir / link_name).resolve()
-        if self._cfg.target_dir.resolve() not in link_path.parents:
-            # if ../ is in branch name...
-            logging.error("[symlink_branch] link_path '%s' not a subdir of '%s', not creating link.",
-                          link_path, self._cfg.target_dir.resolve())
-            raise ValueError(f"[symlink_branch] branch link {link_name!r} would be placed outside target directory")
+        link_path = self._cfg.target_dir / link_name
+        if '..' in Path(link_name).parts:
+            raise ValueError(f"[symlink_branch] branch link {link_name!r} contains '..', could be placed outside target directory")
         if not CFG.volatile:
             link_path.parent.mkdir(exist_ok=True, parents=True)
 

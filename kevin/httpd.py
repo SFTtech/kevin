@@ -23,6 +23,7 @@ from .watcher import Watcher
 
 if typing.TYPE_CHECKING:
     from typing import Callable, Any
+    from .build import Build
     from .task_queue import TaskQueue
     from .build_manager import BuildManager
 
@@ -154,7 +155,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         del queue  # unused
 
         self.build_manager = build_manager
-        self.build = None
+        self.build: Build | None = None
         self._filter = None
 
     def select_subprotocol(self, subprotocols):
@@ -164,14 +165,14 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             return None
         return preferred
 
-    async def open(self):
+    async def open(self, *args, **kwargs) -> None:
         project = CFG.projects[self.get_parameter("project")]
-        build_id = self.get_parameter("hash")
+        commit_hash = self.get_parameter("hash")
         try:
-            self.build = await self.build_manager.get_build(project, build_id)
+            self.build = await self.build_manager.get_build(project, commit_hash)
 
             if not self.build:
-                logging.warning(f"unknown build {build_id} "
+                logging.warning(f"unknown build {commit_hash} "
                                 f"of {project} requested.")
 
                 self.send_error("Unknown build requested.")
@@ -196,6 +197,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             # get all previous and new updates
             await self.build.register_watcher(self)
 
+            # maybe trigger load from disk
             await self.build.load(self.get_parameter("filter"))
 
         except Exception as exc:
@@ -227,7 +229,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
 
     def on_close(self):
         if self.build is not None:
-            self.build.deregister_watcher(self)
+            self.build.deregister_watcher(self, missing_ok=True)
 
     async def on_message(self, message):
         # TODO: handle user messages
@@ -307,7 +309,7 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
                 project_name, build_id)).encode())
             return
 
-        self.job = build.jobs.get(job_name)
+        self.job = build.get_job(job_name)
         if not self.job:
             self.write(("unknown job in project %s [%s]: %s\n" % (
                 project_name, build_id, job_name)).encode())

@@ -8,8 +8,8 @@ import asyncio
 import json
 import logging
 import shutil
+import shlex
 import time as clock
-import traceback
 import typing
 from collections import defaultdict
 
@@ -18,8 +18,8 @@ from .chantal import Chantal
 from .config import CFG
 from .justin_machine import MachineError
 from .process import (ProcTimeoutError, ProcessFailed, ProcessError)
-from .update import (Update, JobState, JobUpdate, StepState,
-                     StdOut, OutputItem, QueueActions, UpdateStep,
+from .update import (Update, JobState, JobUpdate, JobStarted, JobFinished,
+                     StdOut, OutputItem, QueueActions, UpdateStep, StepState,
                      GeneratedUpdate, JobEmergencyAbort, RegisterActions)
 from .watchable import Watchable
 from .watcher import Watcher
@@ -62,8 +62,9 @@ class JobAction(Action):
         self.descripton = cfg.get("description")
         self.machine_name = cfg["machine"]
 
-    async def get_watcher(self, build: Build, completed) -> Watcher | None:
+    async def get_watcher(self, build: Build, completed: bool) -> Watcher | None:
         if completed:
+            # when the build is completed, jobs don't need to re-run
             return None
 
         return await build.create_job(self.job_name, self.machine_name)
@@ -425,7 +426,7 @@ class Job(Watcher, Watchable):
         if self.completed:
             await watcher.on_update(StopIteration)
 
-    async def register_to_build(self):
+    async def register_to_build(self) -> None:
         """
         Register this job to its build.
         """
@@ -446,6 +447,8 @@ class Job(Watcher, Watchable):
 
             if self.completed:
                 raise Exception("tried to run a completed job!")
+
+            await self.send_update(JobStarted(self.name))
 
             # justin contact
             await self.set_state("waiting", "requesting machine")
@@ -487,7 +490,7 @@ class Job(Watcher, Watchable):
 
                         # wait for chantal termination
                         await run.wait()
-                        logging.debug("chantal exited with %s", run.returncode)
+                        logging.debug("chantal exited with %s", run.returncode())
 
                 except ProcTimeoutError as exc:
                     raise JobTimeoutError(exc.timeout, exc.was_global)
@@ -527,10 +530,9 @@ class Job(Watcher, Watchable):
                 silence = "Silence time"
 
             logging.error("[job] \x1b[31;1mTimeout:\x1b[m %s", self)
-            logging.error(" $ %s", " ".join(exc.cmd))
-            logging.error("\x1b[31;1m%s longer than limit "
-                          "of %.2fs.\x1b[m", silence, exc.timeout)
-            traceback.print_exc()
+            logging.error(" $ %s", shlex.join(exc.cmd))
+            logging.exception("\x1b[31;1m%s longer than limit "
+                              "of %.2fs.\x1b[m", silence, exc.timeout)
 
             await self.error("Process %s took > %.02fs." % (exc.cmd[0],
                                                             exc.timeout))
@@ -574,22 +576,20 @@ class Job(Watcher, Watchable):
                     await self.error("Silence for > %.2fs!" % (exc.timeout))
 
         except MachineError as exc:
-            logging.error("\x1b[31;1mMachine action failed\x1b[m "
-                          "%s.%s [\x1b[33m%s\x1b[m]",
-                          self.build.project.name,
-                          self.name,
-                          self.build.commit_hash)
-            traceback.print_exc()
+            logging.exception("\x1b[31;1mMachine action failed\x1b[m "
+                              "%s.%s [\x1b[33m%s\x1b[m]",
+                              self.build.project.name,
+                              self.name,
+                              self.build.commit_hash)
 
             await self.error("VM Error: %s" % (exc))
 
         except Exception as exc:
-            logging.error("\x1b[31;1mexception in Job.run()\x1b[m "
-                          "%s.%s [\x1b[33m%s\x1b[m]",
-                          self.build.project.name,
-                          self.name,
-                          self.build.commit_hash)
-            traceback.print_exc()
+            logging.exception("\x1b[31;1mexception in Job.run()\x1b[m "
+                              "%s.%s [\x1b[33m%s\x1b[m]",
+                              self.build.project.name,
+                              self.name,
+                              self.build.commit_hash)
 
             try:
                 # make sure the job dies
@@ -599,10 +599,9 @@ class Job(Watcher, Watchable):
                 # because one of our watchers has a programming error.
                 # some emergency handling is required.
 
-                logging.error(
+                logging.exception(
                     "\x1b[31;1mjob failure status update failed again! "
                     "Performing emergency abort, waaaaaah!\x1b[m")
-                traceback.print_exc()
 
                 try:
                     # make sure the job really really dies
@@ -615,10 +614,9 @@ class Job(Watcher, Watchable):
                         )
                     )
                 except Exception as exc:
-                    logging.error(
+                    logging.exception(
                         "\x1b[31;1mOk, I give up. The job won't die. "
                         "I'm so Sorry.\x1b[m")
-                    traceback.print_exc()
 
         finally:
             # error the leftover steps
@@ -633,11 +631,12 @@ class Job(Watcher, Watchable):
                 # the job is now officially completed
                 self.path.joinpath("_completed").touch()
 
-            await self.send_update(StopIteration)
-
             if self._updates_fd:
                 self._updates_fd.close()
                 self._updates_fd = None
+
+            await self.send_update(JobFinished(self.name))
+            await self.send_update(StopIteration)
 
             # perform state compression
             await self._merge_updates()

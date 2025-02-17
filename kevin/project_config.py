@@ -90,6 +90,7 @@ class Config:
 
                 # TODO: cross references with some "include" statement
                 #       to use [modulename] of some other file stated
+                #       or: use a python config...
 
                 # create the service with the config section
                 # e.g. GitHubHook(config, project)

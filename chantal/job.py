@@ -1,6 +1,6 @@
 """
 Driver for building a job.
-All output is reported via the output() module.
+Status and output is reported on stdout via json messages.
 """
 
 from __future__ import annotations

@@ -9,21 +9,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-import time
 import typing
 
 from .config import CFG
 from .job import Job
 from .project import Project
 from .update import (BuildState, BuildSource, QueueActions, JobState,
-                     BuildJobCreated, JobUpdate, RegisterActions,
-                     Update, GeneratedUpdate, JobEmergencyAbort)
+                     BuildJobCreated, JobUpdate, RegisterActions, Update,
+                     GeneratedUpdate, JobEmergencyAbort, JobStarted, JobFinished)
 from .watchable import Watchable
 from .watcher import Watcher
 
 if typing.TYPE_CHECKING:
     from .task_queue import TaskQueue
-    from typing import Sequence
+    from typing import Sequence, Callable
 
 
 class Build(Watchable, Watcher):
@@ -34,6 +33,11 @@ class Build(Watchable, Watcher):
 
     The Jobs are then executed on some justin instance, where all the steps
     for the job are run.
+
+    A build can be created and run several ways:
+    - unknown project/commit -> load fails. run to generate updates.
+    - known project/commit -> during run: updates are resent
+                              after run: load succeeds, updates are resent.
     """
 
     def __init__(self, project: Project, commit_hash: str):
@@ -48,17 +52,16 @@ class Build(Watchable, Watcher):
             raise TypeError("invalid project type: %s" % type(project))
         self.project = project
 
-        # No more jobs required to perform for this build.
-        # If the build has been completed, stores the unix timestamp (float).
-        # else, it is None.
-        self.completed: float | None = None
+        # The build ran completely or was loaded from storage completely.
+        self._completed: bool = False
+        # called when the build is complete
+        self._on_complete: dict[object, Callable[[Build], None]] = dict()
 
         # Was the finish() function called?
-        self.finished = False
+        self._finished = False
 
-        # If completed is true, but this is false,
-        # then we can load updates from disk.
-        self._all_loaded = False
+        # Is this build currently being processed
+        self._running = False
 
         # The Queue where this build was put in
         self._queue: TaskQueue | None = None
@@ -72,12 +75,13 @@ class Build(Watchable, Watcher):
 
         # jobs required for this build to succeeed.
         # job_name -> Job
-        self.jobs: dict[str, Job] = dict()
+        self._jobs: dict[str, Job] = dict()
 
         # job status collections
-        self.jobs_pending: set[Job] = set()
-        self.jobs_succeeded: set[Job] = set()
-        self.jobs_errored: set[Job] = set()
+        self._jobs_pending: set[Job] = set()
+        self._jobs_succeeded: set[Job] = set()
+        self._jobs_errored: set[Job] = set()
+        self._jobs_running: set[Job] = set()
 
         # jobs that were once running
         # (we remember them to re-create jobs when this build is reconstructed)
@@ -127,27 +131,34 @@ class Build(Watchable, Watcher):
 
     def __str__(self) -> str:
         return (f"<Build {self.project.name} [\x1b[33m{self.commit_hash}\x1b[m] "
-                f"ok={len(self.jobs_succeeded)}/{len(self.jobs)}=jobs>")
+                f"ok={len(self._jobs_succeeded)}/{len(self._jobs)}=jobs>")
 
     async def load(self, preferred_job_name: str | None = None):
         """
         requests to maybe load this job from storage.
         the job can either be on-disk, in-memory or just in progress.
+
+        load is called by read-only history watchers,
+        e.g. the http api when viewing an old build.
+
+        `run` may be called on the same build if it's still cached,
+        and a trigger requested a build for that project/commit.
         """
 
         if CFG.volatile:
             return
 
-        try:
-            # check if the build was completed (ok/failed) already.
-            self.completed = self.path.joinpath("_completed").stat().st_mtime
-        except FileNotFoundError:
-            pass
+        # check if the build was completed (ok/failed) already.
+        reconstructable = self.path.joinpath("_completed").is_file()
 
-        if self.completed and not self._all_loaded:
+        # only a completed build can be reconstructed
+        if not self.completed and reconstructable:
+            logging.debug("reconstructing %s from fs...", self)
             await self._load_from_fs()
             await self._reconstruct_jobs(preferred_job_name)
-            logging.debug("reconstructed %s from fs", self)
+            logging.debug("reconstruction complete")
+
+            self.completed = True
 
     async def _load_from_fs(self):
         """
@@ -155,9 +166,6 @@ class Build(Watchable, Watcher):
 
         the BuildJobCreated updates will trigger job recreations in on_send_update.
         """
-
-        if self._all_loaded:
-            raise Exception("already loaded build is loading again")
 
         updates_file = self.path.joinpath("_updates")
 
@@ -168,8 +176,6 @@ class Build(Watchable, Watcher):
             for json_line in updates_file:
                 await self.send_update(Update.construct(json_line),
                                        reconstruct=True)
-
-        self._all_loaded = True
 
     def purge_fs(self):
         """
@@ -195,16 +201,17 @@ class Build(Watchable, Watcher):
         if preferred_job_name:
             preferred_job = self._jobs_to_reconstruct.pop(preferred_job_name, None)
             if preferred_job is not None:
-                jobs = {preferred_job_name: preferred_job, **self._jobs_to_reconstruct}
+                job_names = {preferred_job_name: preferred_job, **self._jobs_to_reconstruct}
             else:
                 logging.debug("preferred job '%s' not found", preferred_job_name)
-                jobs = self._jobs_to_reconstruct
+                job_names = self._jobs_to_reconstruct
 
         else:
-            jobs = self._jobs_to_reconstruct
+            job_names = self._jobs_to_reconstruct
 
-        for job_name, machine_name in jobs.items():
-            if job_name in self.jobs:
+        jobs: list[Job] = list()
+        for job_name, machine_name in job_names.items():
+            if job_name in self._jobs:
                 raise Exception(f"Job to reconstruct {job_name!r} is already registered")
 
             job = Job(self, self.project, job_name, machine_name)
@@ -212,6 +219,9 @@ class Build(Watchable, Watcher):
             # bypass the `RegisterActions`-message and register directly
             await job.register_to_build()
 
+            jobs.append(job)
+
+        for job in jobs:
             # reconstruct this job
             # this emits the updates and we get them in on_update
             job_reconstructed = await job.load()
@@ -277,13 +287,18 @@ class Build(Watchable, Watcher):
         Returns true if this build requires a run.
         """
 
+        # if it's completed, we may still re-run
+        # because another trigger requested the same project/commit
+        if self._running:
+            return False
         if not self.completed:
             return True
         if self._jobs_to_reconstruct:
             return True
         return False
 
-    async def run(self, queue: TaskQueue) -> None:
+    async def enqueue(self, queue: TaskQueue,
+                      on_finish: Callable[[Build], None] | None = None) -> None:
         """
         The actions of this build must now add themselves
         to the given queue.
@@ -293,19 +308,19 @@ class Build(Watchable, Watcher):
         not a passive subscriber like the httpd.
         """
 
-        if self._all_loaded:
-            raise Exception(f"attempted to run already loaded build {self}")
-        self._all_loaded = True
+        if self._running:
+            return
+
+        self._running = True
+        if on_finish:
+            self._on_complete[self] = on_finish
 
         # memorize the queue
         self._queue = queue
 
-        if self.completed is None:
-            # TODO send more fine-grained build progress states
+        if not self.completed:
             await self.set_state("waiting", "enqueued")
 
-        # prepare the output folder
-        if not self.completed:
             self.purge_fs()
 
             # we just deleted the storage, but we have emitted updates before.
@@ -314,8 +329,8 @@ class Build(Watchable, Watcher):
                 self._save_update(update)
 
         # add jobs and other actions defined by the project.
-        # some of the actions may be skipped if the build is completed already.
-        await self.project.attach_actions(self, self.completed is not None)
+        # some of the actions (like jobs) may be skipped if the build is completed already.
+        await self.project.attach_actions(self, self.completed)
 
         # tell all watchers (e.g. jobs) that they were attached,
         # and may now register themselves at this build.
@@ -326,15 +341,17 @@ class Build(Watchable, Watcher):
         # or, if they're "new" jobs, to enqueue their execution.
         # this will trigger a call to Job.run
         await self.send_update(QueueActions(self.commit_hash, queue,
-                                            self.project.name))
+                                            self.project))
 
     async def create_job(self, job_name: str, machine_name: str) -> Job:
         """
-        creates a job, triggered by when a projects' `JobAction` are attached for a build.
-        it's not yet registered, this happens by the build emitting RegisterActions
+        creates a job, this is called when a projects' `JobAction` are attached for a build.
+        it's not yet registered, this happens by the build emitting `RegisterActions`
         which the job then uses to call `register_job`.
+
+        the returned job will watch the build directly.
         """
-        if self.finished:
+        if self._finished:
             raise Exception("job created after build was finished!")
 
         new_job = Job(self, self.project, job_name, machine_name)
@@ -342,7 +359,7 @@ class Build(Watchable, Watcher):
 
         return new_job
 
-    def register_job(self, job):
+    def register_job(self, job: Job) -> None:
         """
         Registers a job that is run for this build.
 
@@ -350,19 +367,24 @@ class Build(Watchable, Watcher):
         Or, on reconstruction, the build calls job.register_to_build().
         """
 
-        if job.name in self.jobs:
+        if job.name in self._jobs:
             # the job is already registered if the build is reconstructed
             # and a job in the reconstruction was attached by
-            # project settings previously!
-            return
+            # project settings previously?
+            raise Exception(f"job {job.name} re-registered at build")
+
+        logging.debug("register %s at build %s", job, self)
 
         # store the job in the build.
-        self.jobs[job.name] = job
+        self._jobs[job.name] = job
 
         # put it into pending, even if it's actually finished.
         # we'll soon get a JobState update which will put
         # it into the right queue.
-        self.jobs_pending.add(job)
+        self._jobs_pending.add(job)
+
+    def get_job(self, job_name: str) -> Job | None:
+        return self._jobs.get(job_name)
 
     async def on_watcher_registered(self, watcher):
         """
@@ -387,7 +409,7 @@ class Build(Watchable, Watcher):
             if reconstruct:
                 if update.job_name in self._jobs_to_reconstruct:
                     raise Exception(f"duplicate job name {update.job_name!r}")
-                logging.debug("register job %s for reconstruction", update.job_name)
+                logging.debug("remember job %s for reconstruction", update.job_name)
                 self._jobs_to_reconstruct[update.job_name] = update.machine_name
 
         # stored the update to be sent to a new subscriber
@@ -434,6 +456,10 @@ class Build(Watchable, Watcher):
         now relay it to watchers that may want to see it.
         """
 
+        # e.g. a job is done
+        if update is StopIteration:
+            return
+
         # shall we relay the message to the watchers of the build?
         distribute = False
 
@@ -459,40 +485,44 @@ class Build(Watchable, Watcher):
         if isinstance(update, JobState):
             # TODO: if one step of a job failed,
             # the build must wait until the remaining steps are run.
-            if update.job_name not in self.jobs:
+            if update.job_name not in self._jobs:
                 raise Exception("unknown state update for job '%s' "
                                 "in project '%s'" % (update.job_name,
                                                      self.project.name))
 
             # a job reports its status:
-            job = self.jobs[update.job_name]
+            job = self._jobs[update.job_name]
 
-            if job in self.jobs_pending:
+            if job in self._jobs_pending:
                 if update.is_completed():
-                    self.jobs_pending.remove(job)
+                    self._jobs_pending.remove(job)
 
                 if update.is_succeeded():
-                    self.jobs_succeeded.add(job)
+                    self._jobs_succeeded.add(job)
 
                 if update.is_errored():
-                    self.jobs_errored.add(job)
-            else:
-                # update for a non-pending job.
-                # this happens e.g. for further failure
-                # notifications from chantal.
-                pass
+                    self._jobs_errored.add(job)
 
-            if not self.jobs_pending:
-                await self._finish()
+        match update:
+            case JobStarted():
+                job = self._jobs[update.job_name]
+                self._jobs_running.add(job)
+
+            case JobFinished():
+                job = self._jobs[update.job_name]
+                self._jobs_running.remove(job)
+
+                if not self._jobs_pending and not self._jobs_running:
+                    await self._finish()
 
     async def _finish(self):
         """ no more jobs are pending  """
-        if self.finished:
+        if self._finished:
             # finish message already sent.
             logging.warning("build %s finished again, wtf?", self)
             return
 
-        logging.debug("build %s finished", self)
+        logging.debug("build %s finished processing", self)
 
         if self._queue is not None:
             self._queue.remove_build(self)
@@ -502,41 +532,63 @@ class Build(Watchable, Watcher):
 
         try:
             # TODO: we may wanna have allowed-to-fail jobs.
-            if self.jobs_succeeded == set(self.jobs.values()):
-                count = len(self.jobs)
+            if self._jobs_succeeded == set(self._jobs.values()):
+                count = len(self._jobs)
                 await self.set_state("success", "%d job%s succeeded" % (
                     count, "s" if count > 1 else ""))
 
             else:
                 # we had some unsucessful jobs:
 
-                if self.jobs_errored:
+                if self._jobs_errored:
                     # one or more jobs errored.
-                    count = len(self.jobs_errored)
+                    count = len(self._jobs_errored)
                     await self.set_state("error", "%d job%s errored" % (
                         count, "s" if count > 1 else ""))
 
                 else:
                     # one or more jobs failed.
-                    count = len(self.jobs)
+                    count = len(self._jobs)
                     await self.set_state("failure", "%d/%d job%s failed" % (
-                        count - len(self.jobs_succeeded),
+                        count - len(self._jobs_succeeded),
                         count, "s" if count > 1 else ""))
         finally:
             # build is completed now!
             if not CFG.volatile:
                 self.path.joinpath("_completed").touch()
-            self.completed = time.time()
-            self.finished = True
+            self._finished = True
+            self._running = False
+            self.completed = True
+
+            # remove all watchers, since we're done
+            await self.send_update(StopIteration)
 
     async def abort(self):
         """ Abort this build """
 
-        if self.finished:
+        if self._finished:
             return
 
         if self._queue is not None:
-            for job in self.jobs_pending.copy():
+            for job in (self._jobs_pending | self._jobs_running):
                 await self._queue.cancel_job(job)
 
         await self._finish()
+
+    @property
+    def completed(self):
+        return self._completed
+
+    @completed.setter
+    def completed(self, val: bool):
+        self._completed = val
+        if self._completed:
+            for fun in self._on_complete.values():
+                fun(self)
+            self._on_complete.clear()
+
+    def call_on_complete(self, id: object, fun: Callable[[Build], None]) -> None:
+        self._on_complete[id] = fun
+
+    def rm_call_on_complete(self, id: object) -> None:
+        del self._on_complete[id]

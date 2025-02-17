@@ -23,14 +23,15 @@ class BuildManager:
     """
 
     def __init__(self, max_cached: int) -> None:
+        del_id = object()
         def delete_check(build: Build, deleter: Callable[[], None]) -> bool:
             if not build.completed:
-                build.call_on_complete(deleter)
+                build.call_on_complete(del_id, lambda _build: deleter())
                 return False
             return True
 
         def revive(build: Build):
-            build.call_on_complete(None)
+            build.rm_call_on_complete(del_id)
 
         # stores known builds by (project, hash) -> build
         self._builds: LRUStore[build_id_t, Build] = LRUStore(max_size=max_cached,

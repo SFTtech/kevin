@@ -9,7 +9,7 @@ import typing
 from abc import ABC
 
 if typing.TYPE_CHECKING:
-    from .project import Project
+    from ..project import Project
 
 
 class Service(ABC):
