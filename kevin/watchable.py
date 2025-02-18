@@ -65,15 +65,15 @@ class Watchable:
         receiving the update. (called with func(subscriber))
         """
 
-        if isinstance(update, Update):
-            print(f"{self} => {type(update)}= {update.dump()}")
+        # for enhanced debugging experience,
+        # usable in the non-existant case that kevin has bugs.
+        #if isinstance(update, Update):
+        #    print(f"{self} => {type(update)}= {update.dump()}")
 
         if self._updates_concluded:
             raise Exception("this watcher sent something after StopIteration")
 
         if update is StopIteration:
-            import traceback
-            traceback.print_stack()
             self._updates_concluded = True
 
         self.on_send_update(update, **kwargs)

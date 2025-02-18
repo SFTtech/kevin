@@ -624,9 +624,6 @@ class Job(Watcher, Watchable):
                 await self.set_step_state(step, 'error',
                                           'step result was not reported')
 
-            # the job is completed!
-            self.completed = clock.time()
-
             if not CFG.volatile:
                 # the job is now officially completed
                 self.path.joinpath("_completed").touch()
@@ -637,6 +634,9 @@ class Job(Watcher, Watchable):
 
             await self.send_update(JobFinished(self.name))
             await self.send_update(StopIteration)
+
+            # the job is completed!
+            self.completed = clock.time()
 
             # perform state compression
             await self._merge_updates()

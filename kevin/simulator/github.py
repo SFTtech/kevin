@@ -171,7 +171,7 @@ class GitHub(service.Service):
         async with ClientSession() as session:
             async with session.post(target_url,
                                     data=payload_raw, headers=headers) as resp:
-                print(f"hook answer {'ok' if resp.ok else 'bad'}: {await resp.text()!r}")
+                print(f"hook answer {'ok' if resp.ok else 'bad'} ({resp.status}): {await resp.text()!r}")
 
     async def _handle_status_msg(self, request: Request) -> Response:
         print(f"\x1b[34mUpdate from {request.remote}:\x1b[m", end=" ")

@@ -66,7 +66,7 @@ class GitHubStatus(Action):
         super().__init__(cfg, project)
         self.auth_user = cfg["user"]
         self.auth_pass = cfg["token"]
-        self.repos = set()
+        self.repos: set[str] = set()
         for repo in cfg.get("repos", "any").split(","):
             repo = repo.strip()
             if repo:

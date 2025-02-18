@@ -7,11 +7,11 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import traceback
 import typing
 
 if typing.TYPE_CHECKING:
     from .build import Build
-    from .project import Project
     from .job import Job
     from .job_manager import JobManager
 
@@ -167,14 +167,16 @@ class TaskQueue:
                     self._jobs.values(),
                     return_when=asyncio.FIRST_COMPLETED)
 
-    def job_done(self, task, job):
+    def job_done(self, task: asyncio.Task, job: Job) -> None:
         """ callback for finished jobs """
-        del task  # unused
-
         logging.info("[queue] Job %s.%s finished for [\x1b[34m%s\x1b[m].",
                      job.build.project.name,
                      job.name,
                      job.build.commit_hash)
+
+        exc = task.exception()
+        if exc:
+            logging.error("[queue] job %s excepted: %s", job, "".join(traceback.format_exception(exc)))
 
         try:
             del self._jobs[job]

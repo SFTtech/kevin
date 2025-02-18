@@ -14,6 +14,7 @@ from ...update import (BuildState, JobState, StepState)
 from ...watcher import Watcher
 
 if typing.TYPE_CHECKING:
+    from .action import GitHubStatus
     from ...update import UpdateStep
     from ...build import Build
 
@@ -38,7 +39,7 @@ class GitHubBuildStatusUpdater(Watcher):
     For each GitHub status url (where github accepts messages for displaying to users),
     launches a GitHubStatuSender.
     """
-    def __init__(self, build: Build, config) -> None:
+    def __init__(self, build: Build, config: GitHubStatus) -> None:
         self._cfg = config
         self._build = build
 
@@ -77,7 +78,7 @@ class GitHubBuildStatusUpdater(Watcher):
 
 
 class GitHubStatusSender(Watcher):
-    def __init__(self, config, build: Build, url: str) -> None:
+    def __init__(self, config: GitHubStatus, build: Build, url: str) -> None:
         self._cfg = config
         self._build = build
         self._destination = url

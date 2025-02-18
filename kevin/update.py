@@ -96,8 +96,7 @@ class GeneratedUpdate(Update):
     An update that is created by processing other updates,
     therefore should never be stored.
 
-    When the other updates are replayed, this update is triggered again.
-    This is why it must not be stored.
+    When the other updates are replayed, this update is produced again anyway.
     """
     pass
 
