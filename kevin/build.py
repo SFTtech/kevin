@@ -409,7 +409,7 @@ class Build(Watchable, Watcher):
         for update in self.updates:
             await watcher.on_update(update)
 
-    def on_send_update(self, update, reconstruct=False):
+    async def on_send_update(self, update, reconstruct=False):
         """ Called before this update is sent to all watchers. """
 
         if isinstance(update, BuildSource):
@@ -426,8 +426,9 @@ class Build(Watchable, Watcher):
                 logging.debug("remember job %s for reconstruction", update.job_name)
                 self._jobs_to_reconstruct[update.job_name] = update.machine_name
 
-        # stored the update to be sent to a new subscriber
-        self.updates.append(update)
+        async with self._update_lock:
+            # stored the update to be sent to a new subscriber
+            self.updates.append(update)
 
         # if reconstructing, we're just reading from the disk
         store_to_disk = not reconstruct

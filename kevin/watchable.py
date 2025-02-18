@@ -65,7 +65,7 @@ class Watchable:
         #if isinstance(update, Update):
         #    print(f"{self} => {type(update)}= {update.dump()}")
 
-        self.on_send_update(update, **kwargs)
+        await self.on_send_update(update, **kwargs)
 
         # copy list of watchers so an update can add and remove watchers
         for watcher in self._watchers.copy():
@@ -74,6 +74,6 @@ class Watchable:
 
             await watcher.on_update(update)
 
-    def on_send_update(self, update: Update, **kwargs):
+    async def on_send_update(self, update: Update, **kwargs):
         """ Called when an update is about to be sent """
         pass

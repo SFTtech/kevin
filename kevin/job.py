@@ -319,7 +319,7 @@ class Job(Watcher, Watchable):
     def __str__(self):
         return f"<Job {self.build.project.name}.{self.name} [\x1b[33m{self.build.commit_hash}\x1b[m]>"
 
-    def on_send_update(self, update: Update, **kwargs):
+    async def on_send_update(self, update: Update, **kwargs):
         """
         When an update is to be sent to all watchers
         """
