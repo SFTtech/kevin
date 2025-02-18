@@ -260,8 +260,12 @@ class StepState(JobUpdate, State):
 
 
 class OutputItem(JobUpdate):
-    """ Job has produced an output item """
-    def __init__(self, job_name, name, isdir, size=0):
+    """
+    Job has produced an output item
+
+    compat: step_name is a new parameter.
+    """
+    def __init__(self, job_name, name, isdir, step_name=None, size=0):
         JobUpdate.__init__(self, job_name)
 
         if not name:
@@ -271,6 +275,7 @@ class OutputItem(JobUpdate):
         if not name.isprintable() or (set("/\\'\"") & set(name)):
             raise ValueError("output item name contains illegal characters")
 
+        self.step_name = step_name
         self.name = name
         self.isdir = isdir
         self.size = size

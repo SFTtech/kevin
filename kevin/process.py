@@ -11,7 +11,7 @@ import subprocess
 import sys
 from typing import Sequence, Callable
 
-from .util import INF, SSHKnownHostFile, AsyncWith
+from .util import INF, SSHKnownHostFile, AsyncWith, strlazy
 
 
 class ProcessError(subprocess.SubprocessError):
@@ -137,7 +137,7 @@ class Process(AsyncWith):
         if self.created:
             raise Exception("process already created")
 
-        logging.debug("creating process '%s'...", self.args)
+        logging.debug("creating process '%s'...", strlazy(lambda: shlex.join(self.args)))
 
         self.transport, self.protocol = await self.proc
         self.created = True

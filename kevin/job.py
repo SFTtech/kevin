@@ -161,8 +161,10 @@ class Job(Watcher, Watchable):
         job_state: JobState | None = None
         # all step_states. step_name -> state
         step_states: dict[str, StepState] = dict()
-        # step_name -> output strings
+        # step_name -> [output string]
         output: dict[str | None, list[str]] = defaultdict(list)
+        # step_name -> [output item]
+        output_item: dict[str | None, list[OutputItem]] = defaultdict(list)
         other_updates: list[JobUpdate] = list()
 
         current_step: str | None = None
@@ -193,6 +195,10 @@ class Job(Watcher, Watchable):
                     # we track the current_step above for backward compatibility
                     # new versions of StdOut know their step_name on their own!
                     output[update.step_name or current_step].append(update.data)
+                case OutputItem():
+                    if not update.step_name:
+                        update.step_name = current_step
+                    output_item[update.step_name].append(update)
                 case JobUpdate():
                     other_updates.append(update)
                 case _:
@@ -217,6 +223,9 @@ class Job(Watcher, Watchable):
                 updates.append(StdOut(job_name=self.name,
                                       step_name=step_name,
                                       data="".join(step_output)))
+            if step_items := output_item.get(step_name):
+                updates.extend(step_items)
+
         updates.extend(other_updates)
 
         if self._updates_fd is not None:
@@ -764,7 +773,8 @@ class Job(Watcher, Watchable):
                 self._current_output_item = OutputItem(
                     self.name,
                     path,
-                    isdir=(cmd == 'output-dir')
+                    isdir=(cmd == 'output-dir'),
+                    step_name=self._current_step,
                 )
 
             if cmd == 'output-file':

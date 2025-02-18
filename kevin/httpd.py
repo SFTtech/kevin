@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 from abc import abstractmethod
 import logging
-import traceback
 import typing
 
 from tornado import websocket, web, httpserver
@@ -201,8 +200,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
             await self.build.load(self.get_parameter("filter"))
 
         except Exception as exc:
-            print("websocket handling error:")
-            traceback.print_exc()
+            logging.exception("%s httpd websocket handling error", self.build)
             self.send_error(f"Error: {str(exc)}")
             return
 
@@ -225,7 +223,7 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         try:
             self.write_message(msg.json())
         except websocket.WebSocketClosedError:
-            print("failed to write error because websocket closed: %s" % msg.json())
+            logging.exception("failed to write error because websocket closed: %s" % msg.json())
 
     def on_close(self):
         if self.build is not None:
