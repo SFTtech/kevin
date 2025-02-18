@@ -16,7 +16,8 @@ from .job import Job
 from .project import Project
 from .update import (BuildState, BuildSource, QueueActions, JobState,
                      BuildJobCreated, JobUpdate, RegisterActions, Update,
-                     GeneratedUpdate, JobEmergencyAbort, JobStarted, JobFinished)
+                     GeneratedUpdate, JobEmergencyAbort, BuildStarted, BuildFinished,
+                     JobStarted, JobFinished)
 from .watchable import Watchable
 from .watcher import Watcher
 
@@ -328,6 +329,8 @@ class Build(Watchable, Watcher):
             for update in self.updates:
                 self._save_update(update)
 
+            await self.send_update(BuildStarted())
+
         # add jobs and other actions defined by the project.
         # some of the actions (like jobs) may be skipped if the build is completed already.
         await self.project.attach_actions(self, self.completed)
@@ -456,10 +459,6 @@ class Build(Watchable, Watcher):
         now relay it to watchers that may want to see it.
         """
 
-        # e.g. a job is done
-        if update is StopIteration:
-            return
-
         # shall we relay the message to the watchers of the build?
         distribute = False
 
@@ -560,8 +559,8 @@ class Build(Watchable, Watcher):
             self._running = False
             self.completed = True
 
-            # remove all watchers, since we're done
-            await self.send_update(StopIteration)
+            # remove all build-relevant watchers, since we're done
+            await self.send_update(BuildFinished())
 
     async def abort(self):
         """ Abort this build """

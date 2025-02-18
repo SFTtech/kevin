@@ -15,13 +15,14 @@ from .generator import BadgeGenerator
 
 from ...action import Action
 from ...config import CFG
-from ...update import BuildState, UpdateStep
+from ...update import BuildState, BuildFinished
 from ...watcher import Watcher
 
 
 if typing.TYPE_CHECKING:
     from ...build import Build
     from ...project import Project
+    from ...update import Update
 
 
 class BadgeType(enum.Enum):
@@ -72,10 +73,7 @@ class _BadgeCreator(Watcher):
         self._build = build
         self._cfg = config
 
-    async def on_update(self, update: UpdateStep) -> None:
-        if update is StopIteration:
-            return
-
+    async def on_update(self, update: Update) -> None:
         badge_type: BadgeType | None = None
 
         match update:
@@ -90,6 +88,9 @@ class _BadgeCreator(Watcher):
                             badge_type = BadgeType.error
                         case _:
                             return
+
+            case BuildFinished():
+                self._build.deregister_watcher(self)
 
             case _:
                 return

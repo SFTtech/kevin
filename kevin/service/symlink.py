@@ -12,11 +12,12 @@ from pathlib import Path
 
 from ..action import Action
 from ..config import CFG
-from ..update import BuildSource, BuildState
+from ..update import BuildSource, BuildState, BuildFinished
 from ..util import strlazy
 from ..watcher import Watcher
 
 if typing.TYPE_CHECKING:
+    from ..update import Update
     from ..build import Build
     from ..project import Project
 
@@ -103,10 +104,7 @@ class SymlinkCreator(Watcher):
         # build sources
         self._build_sources: list[BuildSource] = list()
 
-    async def on_update(self, update):
-        if update is StopIteration:
-            return
-
+    async def on_update(self, update: Update):
         match update:
             case BuildSource():
                 if self._cfg.source_allowed(update):
@@ -119,6 +117,10 @@ class SymlinkCreator(Watcher):
                 if update.is_completed():
                     for source in self._build_sources:
                         self._link_source(source)
+
+            case BuildFinished():
+                self._build.deregister_watcher(self)
+
             case _:
                 pass
 

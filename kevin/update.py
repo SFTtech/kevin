@@ -87,9 +87,6 @@ class Update(metaclass=_UpdateMeta):
             raise Exception("Failed reconstructing %s: %r" % (
                 classname, err)) from err
 
-# when StopIteration is sent, signals end of stream to trigger unsubscription/closing of connection.
-UpdateStep = Update | type[StopIteration]
-
 
 class GeneratedUpdate(Update):
     """
@@ -177,6 +174,14 @@ class BuildState(GeneratedUpdate, State):
 
     def __init__(self, project_name, build_id, state, text, time=None):
         State.__init__(self, project_name, build_id, state, text, time)
+
+class BuildStarted(GeneratedUpdate):
+    """ Sent when a build starts processing """
+
+
+class BuildFinished(GeneratedUpdate):
+    """ Sent when a build is finished processing """
+    pass
 
 
 class JobUpdate(Update):

@@ -8,7 +8,7 @@ from __future__ import annotations
 import typing
 
 if typing.TYPE_CHECKING:
-    from .update import UpdateStep
+    from .update import Update
 
 
 class Watcher:
@@ -19,7 +19,7 @@ class Watcher:
     each update will be supplied to the watcher then.
     """
 
-    async def on_update(self, update: UpdateStep) -> None:
+    async def on_update(self, update: Update) -> None:
         """
         Process the update here.
         """

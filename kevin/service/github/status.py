@@ -10,12 +10,12 @@ import aiohttp
 
 from .update import GitHubStatusURL, GitHubLabelUpdate
 from ...config import CFG
-from ...update import (BuildState, JobState, StepState)
+from ...update import (BuildFinished, BuildState, JobState, StepState)
 from ...watcher import Watcher
 
 if typing.TYPE_CHECKING:
     from .action import GitHubStatus
-    from ...update import UpdateStep
+    from ...update import Update
     from ...build import Build
 
 
@@ -46,16 +46,13 @@ class GitHubBuildStatusUpdater(Watcher):
         # target_id -> status sender
         self._senders: dict[str, GitHubStatusSender] = dict()
 
-    async def on_update(self, update: UpdateStep):
+    async def on_update(self, update: Update):
         """
         Translates the update to a JSON GitHub status update request
 
         This method sends certain job updates to github,
         to allow near real-time status information.
         """
-
-        if update is StopIteration:
-            return
 
         match update:
             case GitHubStatusURL():
@@ -90,11 +87,8 @@ class GitHubStatusSender(Watcher):
             self._github_status_worker()
         )
 
-    async def on_update(self, update: UpdateStep) -> None:
+    async def on_update(self, update: Update) -> None:
         match update:
-            case StopIteration():
-                return
-
             case GitHubLabelUpdate():
                 if ("any" not in self._cfg.repos
                     and update.repo not in self._cfg.repos):
@@ -106,10 +100,13 @@ class GitHubStatusSender(Watcher):
                     await self._github_send_status(None, "delete", custom_url=url)
                 return
 
+            case BuildFinished():
+                self._build.deregister_watcher(self)
+
         # then actually notify github.
         await self._github_notify(update)
 
-    async def _github_notify(self, update: UpdateStep) -> None:
+    async def _github_notify(self, update: Update) -> None:
         """ prepare sending an update to github. """
 
         # craft the update message

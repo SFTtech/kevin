@@ -19,8 +19,8 @@ from .config import CFG
 from .justin_machine import MachineError
 from .process import (ProcTimeoutError, ProcessFailed, ProcessError)
 from .update import (Update, JobState, JobUpdate, JobStarted, JobFinished,
-                     StdOut, OutputItem, QueueActions, UpdateStep, StepState,
-                     GeneratedUpdate, JobEmergencyAbort, RegisterActions)
+                     StdOut, OutputItem, QueueActions, StepState,
+                     GeneratedUpdate, JobEmergencyAbort, RegisterActions, BuildFinished)
 from .watchable import Watchable
 from .watcher import Watcher
 
@@ -310,13 +310,10 @@ class Job(Watcher, Watchable):
     def __str__(self):
         return f"<Job {self.build.project.name}.{self.name} [\x1b[33m{self.build.commit_hash}\x1b[m]>"
 
-    def on_send_update(self, update: UpdateStep, **kwargs):
+    def on_send_update(self, update: Update, **kwargs):
         """
         When an update is to be sent to all watchers
         """
-
-        if update is StopIteration:
-            return
 
         reconstruct = kwargs.get("reconstruct", False)
         # when reconstructing, the update just came from the file
@@ -362,7 +359,7 @@ class Job(Watcher, Watchable):
         self._updates_fd.write(update.json())
         self._updates_fd.write("\n")
 
-    async def on_update(self, update: UpdateStep):
+    async def on_update(self, update: Update):
         """
         When this job receives updates from any of its watched
         watchables, the update is processed here.
@@ -370,21 +367,25 @@ class Job(Watcher, Watchable):
         That means normally: the Build notifies this Job to queue/run itself.
         """
 
-        if isinstance(update, RegisterActions):
-            await self.register_to_build()
+        match update:
+            case RegisterActions():
+                await self.register_to_build()
 
-        elif isinstance(update, QueueActions):
-            if not self._all_loaded:
+            case QueueActions():
+                if not self._all_loaded:
 
-                if self.completed:
-                    # we can reconstruct as the _completed file exists.
-                    await self.load()
+                    if self.completed:
+                        # we can reconstruct as the _completed file exists.
+                        await self.load()
 
-                else:
-                    self._purge_fs()
-                    # run the job by adding it to the processing queue
-                    await update.queue.add_job(self)
-                    await self.set_state("waiting", "enqueued")
+                    else:
+                        self._purge_fs()
+                        # run the job by adding it to the processing queue
+                        await update.queue.add_job(self)
+                        await self.set_state("waiting", "enqueued")
+
+            case BuildFinished():
+                self.build.deregister_watcher(self)
 
     def step_update(self, update: StepState):
         """ apply a step update to this job. """
@@ -421,10 +422,6 @@ class Job(Watcher, Watchable):
         # send all previous job updates to the watcher
         for update in self._updates:
             await watcher.on_update(update)
-
-        # and send stop if this job is finished
-        if self.completed:
-            await watcher.on_update(StopIteration)
 
     async def register_to_build(self) -> None:
         """
@@ -633,7 +630,6 @@ class Job(Watcher, Watchable):
                 self._updates_fd = None
 
             await self.send_update(JobFinished(self.name))
-            await self.send_update(StopIteration)
 
             # the job is completed!
             self.completed = clock.time()

@@ -11,9 +11,6 @@ import typing
 from .watcher import Watcher
 from .update import Update
 
-if typing.TYPE_CHECKING:
-    from .update import UpdateStep
-
 
 class Watchable:
     """
@@ -23,8 +20,6 @@ class Watchable:
     def __init__(self) -> None:
         self._watchers: set[Watcher] = set()
         self._watchers_lock = asyncio.Lock()
-
-        self._updates_concluded = False
 
     async def register_watcher(self, watcher: Watcher):
         """
@@ -56,7 +51,7 @@ class Watchable:
         """ Custom actions when a watcher unsubscribes """
         pass
 
-    async def send_update(self, update: UpdateStep,
+    async def send_update(self, update: Update,
                           exclude: typing.Callable[[Watcher], bool] | None = None,
                           **kwargs):
         """
@@ -70,12 +65,6 @@ class Watchable:
         #if isinstance(update, Update):
         #    print(f"{self} => {type(update)}= {update.dump()}")
 
-        if self._updates_concluded:
-            raise Exception("this watcher sent something after StopIteration")
-
-        if update is StopIteration:
-            self._updates_concluded = True
-
         self.on_send_update(update, **kwargs)
 
         # copy list of watchers so an update can add and remove watchers
@@ -84,9 +73,7 @@ class Watchable:
                 continue
 
             await watcher.on_update(update)
-            if update is StopIteration:
-                self.deregister_watcher(watcher)
 
-    def on_send_update(self, update: UpdateStep, **kwargs):
+    def on_send_update(self, update: Update, **kwargs):
         """ Called when an update is about to be sent """
         pass

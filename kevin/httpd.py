@@ -16,8 +16,8 @@ from tornado import websocket, web, httpserver
 from .config import CFG
 from .trigger import Trigger
 from .update import (
-    BuildJobCreated, JobUpdate, JobState,
-    StdOut, BuildState, BuildSource, RequestError
+    BuildJobCreated, JobUpdate, JobState, BuildFinished,
+    StdOut, BuildState, BuildSource, RequestError, JobFinished
 )
 from .watcher import Watcher
 
@@ -239,25 +239,26 @@ class WebSocketHandler(websocket.WebSocketHandler, Watcher):
         """
         Called by the watched build when an update arrives.
         """
-        if update is StopIteration:
-            self.close()
-            return
 
-        if isinstance(update, JobUpdate):
-            if isinstance(update, BuildJobCreated):
-                # those are not interesting for the webinterface.
-                return
-            if isinstance(update, JobState):
-                filter_ = self.state_filter
-            else:
-                filter_ = self._filter
+        match update:
+            case BuildFinished():
+                self.close()
 
-            if filter_(update.job_name):
+            case JobUpdate():
+                if isinstance(update, BuildJobCreated):
+                    # those are not interesting for the webinterface.
+                    return
+                if isinstance(update, JobState):
+                    filter_ = self.state_filter
+                else:
+                    filter_ = self._filter
+
+                if filter_(update.job_name):
+                    self.write_message(update.json())
+
+            case BuildState() | BuildSource():
+                # these build-specific updates are never filtered.
                 self.write_message(update.json())
-
-        elif isinstance(update, (BuildState, BuildSource)):
-            # these build-specific updates are never filtered.
-            self.write_message(update.json())
 
     def check_origin(self, origin):
         # Allow connections from anywhere.
@@ -336,32 +337,35 @@ class PlainStreamHandler(web.RequestHandler, Watcher):
         while True:
             update = await self.queue.get()
 
-            if update is StopIteration:
-                break
+            match update:
+                case StopIteration() | JobFinished():
+                    break
 
-            if isinstance(update, StdOut):
-                self.write(update.data.encode())
+                case StdOut():
+                    self.write(update.data.encode())
 
-            elif isinstance(update, JobState):
-                if update.is_errored():
-                    self.write(
-                        ("\x1b[31merror:\x1b[m %s\n" %
-                         (update.text)).encode()
-                    )
-                elif update.is_succeeded():
-                    self.write(
-                        ("\x1b[32msuccess:\x1b[m %s\n" %
-                         (update.text)).encode()
-                    )
-                elif update.is_completed():
-                    # if finished but not errored or succeeded,
-                    # this must be a failure.
-                    # TODO: is this a good way to implement this?
-                    #       certainly caused me a WTF moment...
-                    self.write(
-                        ("\x1b[31mfailed:\x1b[m %s\n" %
-                         (update.text)).encode()
-                    )
+                case JobState():
+                    if update.is_errored():
+                        self.write(
+                            ("\x1b[31merror:\x1b[m %s\n" %
+                            (update.text)).encode()
+                        )
+                    elif update.is_succeeded():
+                        self.write(
+                            ("\x1b[32msuccess:\x1b[m %s\n" %
+                            (update.text)).encode()
+                        )
+                    elif update.is_completed():
+                        # if finished but not errored or succeeded,
+                        # this must be a failure.
+                        # TODO: is this a good way to implement this?
+                        #       certainly caused me a WTF moment...
+                        self.write(
+                            ("\x1b[31mfailed:\x1b[m %s\n" %
+                            (update.text)).encode()
+                        )
+                case _:
+                    continue
 
             await self.flush()
 
