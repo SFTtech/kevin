@@ -35,9 +35,11 @@ def log_setup(setting, default=1):
     factor = clamp(default + setting, 0, len(levels) - 1)
     level = levels[factor]
 
-    logging.basicConfig(level=level, format="[%(asctime)s] %(message)s")
+    logging.basicConfig(level=level, format="[%(asctime)s] [%(name)s] %(message)s")
     logging.error("loglevel: %s", logging.getLevelName(level))
     logging.captureWarnings(True)
+
+    logging.getLogger("asyncio").setLevel(level=logging.WARNING)
 
 
 def clamp(number, smallest, largest):
