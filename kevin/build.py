@@ -238,18 +238,29 @@ class Build(Watchable, Watcher):
         """
 
         async with self._update_lock:
-
+            pre_actions = True
             new_updates: list[Update] = list()
+            post_updates: list[Update] = list()
 
             # remove all updates from the job that sent us merged ones.
             # so we can replace them.
             for update in self.updates:
-                if isinstance(update, JobUpdate) and update.job_name == job_name:
-                    continue
+                match update:
+                    case JobUpdate():
+                        if update.job_name == job_name:
+                            continue
+                    case QueueActions():
+                        pre_actions = False
+                        new_updates.append(update)
+                        continue
 
-                new_updates.append(update)
+                if pre_actions:
+                    new_updates.append(update)
+                else:
+                    post_updates.append(update)
 
             new_updates.extend(merged_updates)
+            new_updates.extend(post_updates)
             self.updates = new_updates
 
     async def set_state(self, state, text, timestamp=None):
