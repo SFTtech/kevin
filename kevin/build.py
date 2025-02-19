@@ -64,6 +64,10 @@ class Build(Watchable, Watcher):
         # Is this build currently being processed
         self._running = False
 
+        # Was this build reconstructed, but not enqueued yet?
+        # If true, actions were not attached yet.
+        self._half_loaded = False
+
         # The Queue where this build was put in
         self._queue: TaskQueue | None = None
 
@@ -159,6 +163,8 @@ class Build(Watchable, Watcher):
             await self._reconstruct_jobs(preferred_job_name)
             logging.debug("reconstruction complete")
 
+            # we just restored all updates and jobs, but didn't attach anything else
+            self._half_loaded = True
             self.completed = True
 
     async def _load_from_fs(self):
@@ -305,7 +311,7 @@ class Build(Watchable, Watcher):
             return False
         if not self.completed:
             return True
-        if self._jobs_to_reconstruct:
+        if self._half_loaded:
             return True
         return False
 
@@ -343,7 +349,7 @@ class Build(Watchable, Watcher):
             await self.send_update(BuildStarted())
 
         # add jobs and other actions defined by the project.
-        # some of the actions (like jobs) may be skipped if the build is completed already.
+        # some of the actions (like jobs) may be skipped if the build is completed (or half_loaded) already.
         await self.project.attach_actions(self, self.completed)
 
         # tell all watchers (e.g. jobs) that they were attached,
@@ -356,6 +362,9 @@ class Build(Watchable, Watcher):
         # this will trigger a call to Job.run
         await self.send_update(QueueActions(self.commit_hash, queue,
                                             self.project))
+
+        # now we attached all actions
+        self._half_loaded = False
 
     async def create_job(self, job_name: str, machine_name: str) -> Job:
         """
