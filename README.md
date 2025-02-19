@@ -71,14 +71,13 @@ Requires:
 **How?** [Lurk into our setup guide](doc/setup.md).
 
 
-### TODO
+### Supported Services
 
-* More actions: Email, Matrix, IRC, ...
-* More hosting services:
+* Hosting [services](/kevin/service/):
   * [X] [GitHub](https://github.com/),
   * [ ] [GitLab](https://gitlab.com/),
   * [ ] ...
-* [Support for more container/vm types](/justin/machine/)
+* [Supported container/VM tools](/justin/machine/)
   * [X] [qemu](http://qemu-project.org)
   * [X] [podman](https://podman.io/)
   * [x] [lxd](https://linuxcontainers.org/lxd)
@@ -87,7 +86,6 @@ Requires:
   * [ ] [xen](https://www.xenproject.org/)
   * [ ] [nspawn](http://www.freedesktop.org/software/systemd/man/systemd-nspawn.html)
   * [ ] ...
-* Kevinception: Test Kevin with Kevin
 
 
 ### Contact
